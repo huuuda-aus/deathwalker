@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Soldier } from './enemies';
 import type { World } from './world';
+import type { Building } from './building';
 
 export type HitKind = 'enemy' | 'wall' | 'ground' | 'backdrop';
 
@@ -8,6 +9,8 @@ export interface Hit {
   kind: HitKind;
   point: THREE.Vector3;
   enemy?: Soldier;
+  /** the building that was hit (kind 'wall') */
+  building?: Building;
 }
 
 /** Plane behind the far parallax layers, so skyward shots still resolve to a point. */
@@ -20,6 +23,7 @@ export function castRay(ray: THREE.Ray, enemies: Soldier[], world: World, out: H
   let bestT = Infinity;
   out.kind = 'backdrop';
   out.enemy = undefined;
+  out.building = undefined;
 
   // backdrop (always a fallback)
   if (ray.direction.z < 0) {
@@ -33,7 +37,7 @@ export function castRay(ray: THREE.Ray, enemies: Soldier[], world: World, out: H
   }
   // walls
   const wt = world.raycast(ray, tmp);
-  if (wt < bestT) { bestT = wt; out.kind = 'wall'; out.point.copy(tmp); }
+  if (wt < bestT) { bestT = wt; out.kind = 'wall'; out.point.copy(tmp); out.building = world.lastBuilding ?? undefined; }
   // enemies
   for (const e of enemies) {
     if (!e.alive) continue;

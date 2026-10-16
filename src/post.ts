@@ -5,7 +5,7 @@ import {
 } from 'postprocessing';
 
 const SHUTTER = 0.08;
-const EXPOSURE = 1.4;
+const EXPOSURE = 1.25;
 
 const frag = /* glsl */ `
 uniform float uVel;      // camera speed (world units / s)

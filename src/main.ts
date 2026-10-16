@@ -4,6 +4,7 @@ import { Input } from './input';
 import { Mech, setMechEnvironment, LANE } from './mech';
 import { castRay, newHit } from './targeting';
 import { World, FOG_COLOR } from './world';
+import { Sky } from './sky';
 import { Fx } from './fx';
 import { Soldier } from './enemies';
 import { Weapon } from './weapon';
@@ -37,8 +38,8 @@ const level = new LevelRunner();
 
 // neutral studio reflections on the mech only, so silver/black reads as metal under coloured light
 setMechEnvironment(new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture);
-scene.add(new THREE.HemisphereLight(0x405288, 0x103a30, 1.5));
-const sun = new THREE.DirectionalLight(0xa4b0d8, 1.5); // moonlight
+scene.add(new THREE.HemisphereLight(0x34447a, 0x0a2a22, 0.75));
+const sun = new THREE.DirectionalLight(0x98a6d8, 1.15); // moonlight
 sun.position.set(-30, 25, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -51,6 +52,7 @@ scene.add(rim, rim.target);
 const dust = new Dust(scene);
 const debris = new Debris(scene, dust);
 const world = new World(scene, debris, dust);
+const sky = new Sky(scene);
 const mech = new Mech();
 debris.setColliders(mech.colliders);
 Soldier.blockers = (x, z, r, out) => debris.collectBlockers(x, z, r, out);
@@ -169,6 +171,7 @@ function frame() {
   // aim: mouse ray -> nearest thing in the world (enemy / wall / ground / backdrop)
   raycaster.setFromCamera(new THREE.Vector2(input.mouse.x, input.mouse.y), camera);
   castRay(raycaster.ray, enemies, world, aimHit);
+  mech.firing = weapon.firing;
   mech.update(dt, vx + autoVx, vz, aimHit.point);
 
   mech.root.updateMatrixWorld(true);
@@ -253,6 +256,7 @@ function frame() {
   reticle.style.opacity = mech.canFire ? '1' : '0.35';
   reticle.style.transform = `translate(${input.mousePx.x}px, ${input.mousePx.y}px)`;
 
+  sky.update(camera, now / 1000);
   post.render(dt, camVel);
   requestAnimationFrame(frame);
 }

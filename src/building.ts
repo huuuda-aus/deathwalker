@@ -12,7 +12,13 @@ const BEARING_MIN = 0.6;
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const MAT = new THREE.MeshStandardMaterial({ roughness: 0.9 });
-const INTERIOR_MAT = new THREE.MeshStandardMaterial({ color: 0x090d18, roughness: 1 });
+/** background rows: unlit near-black cut-outs against the sky (one material per shade) */
+const silMats = new Map<number, THREE.MeshBasicMaterial>();
+const silMat = (color: number): THREE.MeshBasicMaterial => {
+  let m = silMats.get(color);
+  if (!m) { m = new THREE.MeshBasicMaterial({ color, fog: false }); silMats.set(color, m); }
+  return m;
+};
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** Structural cell kinds. */
@@ -69,6 +75,8 @@ export class Building {
   private ledges: Ledge[] = [];
   /** set once the building has collapsed: it no longer hosts enemies */
   down = false;
+  /** false for background rows: they never host enemies or rubble */
+  hostsEnemies = true;
   private initialAlive = 0;
   private ruinCount = 0;
   private rubbleDone = false;
@@ -167,11 +175,6 @@ export class Building {
       }
     }
     this.object.add(this.mesh);
-
-    // dark interior back wall, visible through broken glazing and gaps
-    const back = new THREE.Mesh(new THREE.BoxGeometry(this.width, this.height, 0.1), INTERIOR_MAT);
-    back.position.set(x0 + this.width / 2, this.height / 2, z0 - DEPTH - 0.05);
-    this.object.add(back);
   }
 
   /** Knock the building about so it reads as a ruin, not a clean block. Edits `type` in place. */
@@ -223,6 +226,13 @@ export class Building {
     }
   }
 
+  /** Turn this building into a flat black cut-out of the same ruined shape (far rows). */
+  asSilhouette(color: number): void {
+    this.hostsEnemies = false;
+    this.mesh.material = silMat(color);
+    this.mesh.castShadow = this.mesh.receiveShadow = false;
+  }
+
   /** Pre-existing wreckage in front of the building, created when the camera gets near. */
   spawnRuinRubble(): void {
     if (this.rubbleDone) return;
@@ -263,7 +273,7 @@ export class Building {
 
   /** Firing bays whose centre is within [minX, maxX] and whose floor is still intact. */
   ledgeList(minX: number, maxX: number): Ledge[] {
-    if (this.down) return [];
+    if (this.down || !this.hostsEnemies) return [];
     return this.ledges.filter((l) => {
       if (l.x < minX || l.x > maxX) return false;
       for (let c = l.c0; c <= l.c1; c++) if (this.hp[c * this.rows + l.r] === 0) return false;

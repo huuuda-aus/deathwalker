@@ -4,8 +4,8 @@ import type { Blocker } from './debris';
 import { MECH_SCALE, LANE } from './mech';
 import { CAM_DIST } from './level';
 
-const BODY = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.8 });
-const SKIN = new THREE.MeshStandardMaterial({ color: 0xd6d9dc, roughness: 0.8 });
+const BODY = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.8 });
+const SKIN = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
 const GUN_IDLE = new THREE.MeshStandardMaterial({ color: 0x222222 });
 
 /** Soldier is 1/8 of the mech's height, +15%. Model is authored ~2 units tall. */

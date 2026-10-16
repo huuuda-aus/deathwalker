@@ -18,6 +18,9 @@ const JITTER = new THREE.Vector3();
 /** Hitscan machine gun: ray ends at the reticle (+ heat jitter); damage resolved there. */
 export class Weapon {
   heat = 0;
+  /** true while shots are leaving the barrels (a short grace so the fire is continuous between shots) */
+  get firing(): boolean { return this.sinceShot < 0.09; }
+  private sinceShot = 1;
   locked = false;
   private cooldown = 0;
   private side = 0;
@@ -38,6 +41,7 @@ export class Weapon {
     debris: Debris,
   ): void {
     this.cooldown -= dt;
+    this.sinceShot += dt;
 
     if (this.locked) {
       this.heat = Math.max(0, this.heat - LOCK_COOL_RATE * dt);
@@ -67,7 +71,7 @@ export class Weapon {
     this.ray.direction.add(JITTER.set(Math.cos(a) * d, Math.sin(a) * d, 0)).normalize();
 
     const hit = castRay(this.ray, enemies, world, this.hit);
-    fx.muzzleFlash(muzzle);
+    this.sinceShot = 0;
     // rubble is cover: if a chunk lies on the line from the gun to the target, the bullet hits that instead
     if (debris.segmentHit(muzzle, hit.point, this.cover)) {
       fx.sparks(this.cover, 2, 2.5, [0xffd080, 0xffffff]);
@@ -81,7 +85,7 @@ export class Weapon {
     }
     fx.sparks(hit.point, 2, 2.5, [0xffd080, 0xffa040, 0xffffff]);
     if (hit.kind === 'wall') {
-      world.damage(hit.point.x, hit.point.y, WALL_RADIUS);
+      hit.building?.damage(hit.point.x, hit.point.y, WALL_RADIUS);
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.6);
     } else if (hit.kind === 'ground') {
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.5);

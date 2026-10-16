@@ -11,109 +11,83 @@ function mulberry32(a: number) {
   };
 }
 
-function windowTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#8c8680'; g.fillRect(0, 0, 64, 64);
-  for (let y = 4; y < 64; y += 16) {
-    for (let x = 4; x < 64; x += 16) {
-      g.fillStyle = Math.random() < 0.15 ? '#ffb347' : '#2a2a30';
-      g.fillRect(x, y, 8, 10);
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = THREE.NearestFilter;
-  return t;
-}
+/** Distance haze: the ground and near rows fade to near-black, not green. */
+export const FOG_COLOR = 0x030d0b;
 
-function skyTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 4; c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  // deep blue night, faint radioactive green glow right at the horizon (~half way down the screen)
-  grad.addColorStop(0, '#02040d');
-  grad.addColorStop(0.25, '#050d2b');
-  grad.addColorStop(0.42, '#0a2448');
-  grad.addColorStop(0.5, '#1c8a50');
-  grad.addColorStop(0.58, '#0e3a2e');
-  grad.addColorStop(1, '#070f16');
-  g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-export const FOG_COLOR = 0x0d4a38;
-
-interface Layer { z: number; minH: number; maxH: number; minW: number; maxW: number; gap: number; tint: number }
-
-const LAYERS: Layer[] = [
-  { z: -14, minH: 4, maxH: 10, minW: 5, maxW: 10, gap: 2, tint: 0x4a587c },
-  { z: -32, minH: 6, maxH: 14, minW: 8, maxW: 16, gap: 1, tint: 0x3c4a6c },
-  { z: -60, minH: 8, maxH: 18, minW: 10, maxW: 22, gap: 0, tint: 0x30405e },
+const FAR_ROWS: [z: number, scale: number, color: number, dense: boolean][] = [
+  [-32, 1.8, 0x010309, false],
+  [-50, 2.2, 0x03080e, true],
+  [-75, 2.8, 0x02060b, true],
+  [-105, 3.6, 0x010407, true],
+  [-140, 4.5, 0x010204, true],
 ];
 
-/** Procedural parallax city. Buildings are generated in chunks around the camera. */
+/**
+ * Procedural city in four rows, generated in chunks around the camera:
+ *  1. front row (z -5): destructible ruins that host enemies,
+ *  2. second row (z -14): the same destructible ruins, scenery only,
+ *  3+. far rows (z -32 ... -140): dark cut-outs of the same ruined shapes against the night sky,
+ *      dense behind the third row and fading into black with distance.
+ */
 export class World {
   readonly group = new THREE.Group();
   private chunkSize = 120;
-  private chunks = new Map<number, { group: THREE.Group; buildings: Building[] }>();
-  private winTex = windowTexture();
+  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[] }>();
+  /** the building hit by the last raycast() */
+  lastBuilding: Building | null = null;
 
   constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust) {
-    scene.background = skyTexture();
     scene.fog = new THREE.Fog(FOG_COLOR, 35, 140);
 
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(4000, 200),
+      new THREE.PlaneGeometry(4000, 260),
       new THREE.MeshStandardMaterial({ color: 0x121a2e, roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.z = -50;
+    ground.position.z = -80;
     ground.receiveShadow = true;
     this.group.add(ground);
 
     scene.add(this.group);
   }
 
-  private buildChunk(index: number): { group: THREE.Group; buildings: Building[] } {
+  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[] } {
     const rng = mulberry32(index * 7919 + 13);
     const g = new THREE.Group();
     const buildings: Building[] = [];
+    const props: Building[] = [];
     const x0 = index * this.chunkSize;
 
-    // Destructible front row, just behind the gameplay lane.
-    let fx = x0;
-    while (fx < x0 + this.chunkSize) {
-      const b = new Building(fx, -5, 0x82848c, rng, this.debris, this.dust);
-      g.add(b.object);
-      buildings.push(b);
-      fx += b.width + 2.5 + rng() * 4;
-    }
-
-    for (const L of LAYERS) {
-      let x = x0;
+    // destructible rows: the front row hosts enemies, the second row is scenery you can still wreck
+    const row = (z0: number, tint: number, offset: number, gapMin: number, gapVar: number, hosts: boolean): void => {
+      let x = x0 + offset;
       while (x < x0 + this.chunkSize) {
-        const w = L.minW + rng() * (L.maxW - L.minW);
-        const h = L.minH + rng() * (L.maxH - L.minH);
-        const tex = this.winTex.clone();
-        tex.needsUpdate = true;
-        tex.repeat.set(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
-        const mat = new THREE.MeshStandardMaterial({ color: L.tint, map: tex, roughness: 0.9 });
-        const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.8), mat);
-        b.position.set(x + w / 2, h / 2, L.z + (rng() - 0.5) * 2);
-        b.castShadow = b.receiveShadow = true;
-        // ruined: chop top with tilted slab for gameplay-layer silhouette variety
-        if (rng() < 0.4) b.rotation.z = (rng() - 0.5) * 0.06;
-        g.add(b);
-        x += w + L.gap + rng() * 3;
+        const b = new Building(x, z0, tint, rng, this.debris, this.dust);
+        b.hostsEnemies = hosts;
+        g.add(b.object);
+        buildings.push(b);
+        x += b.width + gapMin + rng() * gapVar;
       }
-    }
-    return { group: g, buildings };
+    };
+    row(-5, 0x82848c, 0, 2.5, 4, true);
+    row(-14, 0x78808e, rng() * 6, 3, 7, false);
+
+    // Far rows: the same ruined shapes as flat dark cut-outs. Row 3 stands apart with gaps; everything
+    // behind it is packed dense, and each row is a little darker until it all fades into black.
+    const silhouettes = (z: number, scale: number, color: number, dense: boolean): void => {
+      let x = x0 - 6 * scale + rng() * 8;
+      while (x < x0 + this.chunkSize) {
+        const b = new Building(0, 0, 0x000000, rng, this.debris, this.dust);
+        b.asSilhouette(color);
+        b.object.scale.setScalar(scale);
+        b.object.position.set(x, 0, z + (rng() - 0.5) * 4);
+        g.add(b.object);
+        props.push(b);
+        x += b.width * scale * (dense ? 0.45 + 0.4 * rng() : 1 + 0.3 * rng()) + (dense ? 0 : 2.5);
+      }
+    };
+    for (const [z, scale, color, dense] of FAR_ROWS) silhouettes(z, scale, color, dense);
+    return { group: g, buildings, props };
   }
 
   /** Damage destructible buildings at a point on the gameplay plane. */
@@ -157,10 +131,11 @@ export class World {
   raycast(ray: THREE.Ray, out: THREE.Vector3): number {
     let best = Infinity;
     const p = new THREE.Vector3();
+    this.lastBuilding = null;
     for (const c of this.chunks.values()) {
       for (const b of c.buildings) {
         const t = b.raycast(ray, p);
-        if (t < best) { best = t; out.copy(p); }
+        if (t < best) { best = t; out.copy(p); this.lastBuilding = b; }
       }
     }
     return best;
@@ -180,6 +155,7 @@ export class World {
       if (!wanted.has(i)) {
         this.group.remove(c.group);
         c.buildings.forEach((b) => b.dispose());
+        c.props.forEach((b) => b.dispose());
         c.group.traverse((o) => {
           if (o instanceof THREE.Mesh && !(o instanceof THREE.InstancedMesh)) {
             o.geometry.dispose(); (o.material as THREE.Material).dispose();
@@ -191,7 +167,7 @@ export class World {
     // pre-existing wreckage appears once the camera is close enough for it to settle in time
     for (const c of this.chunks.values()) {
       for (const b of c.buildings) {
-        if (Math.abs(cameraX - (b.x0 + b.width / 2)) < 45) b.spawnRuinRubble();
+        if (b.hostsEnemies && Math.abs(cameraX - (b.x0 + b.width / 2)) < 45) b.spawnRuinRubble();
       }
     }
     this.group.children.forEach((o) => { if (o instanceof THREE.Mesh) o.position.x = cameraX; });

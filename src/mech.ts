@@ -46,6 +46,52 @@ function cyl(r: number, len: number, mat: THREE.Material, axis: 'x' | 'y' | 'z',
   return m;
 }
 
+/** Teardrop flame: white-hot at the barrel (right edge), orange, fading red at the tip (left). */
+function flameTexture(): THREE.CanvasTexture {
+  const W = 256, H = 96;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(W, 0, 0, 0);
+  grad.addColorStop(0, 'rgba(255,255,235,1)');
+  grad.addColorStop(0.22, 'rgba(255,215,110,0.97)');
+  grad.addColorStop(0.55, 'rgba(255,120,25,0.65)');
+  grad.addColorStop(1, 'rgba(190,40,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+  // soft elongated mask: wide at the muzzle, tapering to the tip
+  g.globalCompositeOperation = 'destination-in';
+  g.setTransform((W * 0.98) / (H / 2), 0, 0, 1, W, H / 2);
+  const mask = g.createRadialGradient(0, 0, 0, 0, 0, H / 2);
+  mask.addColorStop(0, 'rgba(255,255,255,1)');
+  mask.addColorStop(0.5, 'rgba(255,255,255,0.75)');
+  mask.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = mask;
+  g.fillRect(-W, -H, 2 * W, 2 * H);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function glowTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  r.addColorStop(0, 'rgba(255,255,255,1)');
+  r.addColorStop(0.25, 'rgba(255,200,110,0.8)');
+  r.addColorStop(0.6, 'rgba(255,110,20,0.25)');
+  r.addColorStop(1, 'rgba(255,60,0,0)');
+  g.fillStyle = r;
+  g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** One barrel's muzzle fire: two crossed flame planes, a hot glow sprite and a local light. */
+interface Flame { root: THREE.Group; planes: THREE.Mesh[]; glow: THREE.Sprite; light: THREE.PointLight }
+
 /** Collider radii in world units (the model is scaled by MECH_SCALE). */
 const R_ANKLE = 0.22, R_TOE = 0.22, R_KNEE = 0.2, R_BODY = 0.5;
 
@@ -70,6 +116,9 @@ export class Mech {
   canFire = true;
   /** Kinematic spheres (ankle, toe, knee per leg + body) that shove rubble. Updated in place. */
   readonly colliders: Collider[] = [];
+  /** set by the game: guns are firing this frame (drives the muzzle fire) */
+  firing = false;
+  private flames: Flame[] = [];
   /** world-space cockpit pivot, used for aiming */
   readonly pivotWorld = new THREE.Vector3();
 
@@ -120,6 +169,56 @@ export class Mech {
       muzzle.position.set(-2.25, 0, z);
       this.cockpit.add(muzzle);
       this.muzzles.push(muzzle);
+      this.flames.push(this.buildFlame(muzzle));
+    }
+  }
+
+  private buildFlame(muzzle: THREE.Object3D): Flame {
+    const root = new THREE.Group();
+    root.visible = false;
+    const tex = flameTexture();
+    // HDR colour (> 1) so the flame blooms; additive so overlapping layers add up
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      toneMapped: false, side: THREE.DoubleSide, color: new THREE.Color(3.2, 2.2, 1.2),
+    });
+    const planes: THREE.Mesh[] = [];
+    for (const roll of [0, Math.PI / 2]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      m.rotation.x = roll;
+      root.add(m);
+      planes.push(m);
+    }
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      toneMapped: false, color: new THREE.Color(3, 2, 1),
+    }));
+    root.add(glow);
+    const light = new THREE.PointLight(0xff9a3c, 0, 9, 2);
+    root.add(light);
+    muzzle.add(root);
+    return { root, planes, glow, light };
+  }
+
+  /** Fast, random flicker while firing: length, width, brightness and the odd dropout change every frame. */
+  private updateFlames(): void {
+    for (const f of this.flames) {
+      f.root.visible = this.firing;
+      f.light.intensity = this.firing ? 25 + Math.random() * 70 : 0;
+      if (!this.firing) continue;
+      const dropout = Math.random() < 0.12;
+      const len = (dropout ? 0.5 : 1.7 + Math.random() * 1.5);           // model units (the mech is scaled 0.5)
+      const wid = (dropout ? 0.2 : 0.55 + Math.random() * 0.45);
+      for (const p of f.planes) {
+        p.scale.set(len, wid, 1);
+        p.position.x = -len / 2;                                          // base at the barrel tip, extends forward (-x)
+      }
+      const k = 0.7 + Math.random() * 0.9;
+      (f.planes[0].material as THREE.MeshBasicMaterial).color.setRGB(3.2 * k, 2.2 * k, 1.2 * k);
+      const gs = dropout ? 0.5 : 1.1 + Math.random() * 0.9;
+      f.glow.scale.set(gs, gs, 1);
+      f.glow.position.x = -0.15;
+      (f.glow.material as THREE.SpriteMaterial).color.setRGB(3 * k, 2 * k, 1 * k);
     }
   }
 
@@ -210,6 +309,7 @@ export class Mech {
     this.cockpit.rotation.set(0, yaw, pitch, 'YZX');
 
     this.updateColliders(dt);
+    this.updateFlames();
   }
 
   private prevReady = false;
