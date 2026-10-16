@@ -35,7 +35,7 @@ export type SoldierState = 'enter' | 'jump' | 'walk' | 'aim' | 'cooldown' | 'dea
 export interface Perch {
   ledgeZ: number;
   backZ: number;
-  floorTop: (x: number, yMax: number) => number;
+  floorTop: (x: number, z: number, yMax: number) => number;
 }
 
 export class Soldier {
@@ -258,7 +258,7 @@ export class Soldier {
       this.vel.y -= 16 * dt;
       g.position.addScaledVector(this.vel, dt);
       this.body.scale.x = (Math.sign(target.x - this.x) || 1) * this.k;
-      const land = this.perch ? this.perch.floorTop(this.x, g.position.y + 0.05) : 0;
+      const land = this.perch ? this.perch.floorTop(this.x, this.z, g.position.y + 0.05) : 0;
       if (g.position.y <= land) {
         const fell = this.fallStart - land;
         g.position.y = land;
@@ -295,7 +295,7 @@ export class Soldier {
     const dist = Math.hypot(dxT, dzT);
 
     // a perched soldier whose floor was shot away falls
-    if (this.perch && this.perch.floorTop(this.x, g.position.y + 0.05) < g.position.y - 0.03) {
+    if (this.perch && this.perch.floorTop(this.x, this.z, g.position.y + 0.05) < g.position.y - 0.03) {
       this.state = 'jump';
       this.vel.set(0, 0, 0);
       this.fallStart = g.position.y;

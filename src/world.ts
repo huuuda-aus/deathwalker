@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Building, type DamageResult, type Ledge } from './building';
+import { Building, type Ledge } from './building';
 import type { Debris, Dust } from './debris';
 import { GROUND_TILE, makeGroundTextures } from './ground';
 import { Coals, FireBarrel, FireLights, type BarrelContext } from './fire';
@@ -108,7 +108,7 @@ export class World {
     const silhouettes = (z: number, scale: number, color: number, dense: boolean): void => {
       let x = x0 - 6 * scale + rng() * 8;
       while (x < x0 + this.chunkSize) {
-        const b = new Building(0, 0, 0x000000, rng, this.debris, this.dust);
+        const b = new Building(0, 0, 0x000000, rng, this.debris, this.dust, false);
         b.asSilhouette(color);
         b.object.scale.setScalar(scale);
         b.object.position.set(x, 0, z + (rng() - 0.5) * 4);
@@ -121,19 +121,6 @@ export class World {
     const water = Puddles.build(index, this.chunkSize);
     g.add(water.mesh);
     return { group: g, buildings, props, barrels, puddles: water.list };
-  }
-
-  /** Damage destructible buildings at a point on the gameplay plane. */
-  damage(x: number, y: number, radius: number): DamageResult {
-    const total = { hit: false, destroyed: 0 };
-    for (const c of this.chunks.values()) {
-      for (const b of c.buildings) {
-        const r = b.damage(x, y, radius);
-        total.hit ||= r.hit;
-        total.destroyed += r.destroyed;
-      }
-    }
-    return total;
   }
 
   /** Visit every destructible building whose x-range overlaps [minX, maxX]. */

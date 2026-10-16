@@ -9,6 +9,8 @@ const SPAN = 5;
 const INF = 1000;
 /** A storey that keeps less than this share of its load-bearing cells can no longer carry what is above it. */
 const BEARING_MIN = 0.6;
+/** Most depth layers a deep member (slab, pillar, stair) is built from. */
+const MAXL = 4;
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const MAT = new THREE.MeshStandardMaterial({ roughness: 0.9 });
@@ -43,6 +45,9 @@ const SPEC: Record<number, Spec> = {
   [T.Stair]:  { hp: 3, front: -1.25 * CELL,  thick: 2.5 * CELL,  span: false, structural: true },
 };
 
+/** Deep members are built from layers through their depth, so a bullet chews in layer by layer. */
+const DEEP: Record<number, number> = { [T.Slab]: MAXL, [T.Pillar]: MAXL, [T.Stair]: 2 };
+
 type BayKind = 'window' | 'open' | 'blank' | 'stair';
 interface Bay { kind: BayKind; width: number; start: number; /** per storey: open firing bay (no glazing/sill) */ open: boolean[] }
 
@@ -69,7 +74,12 @@ export class Building {
   private rows: number;
   private type: Uint8Array;
   private hp: Uint8Array;
-  private colors: THREE.Color[] = [];
+  /** per-member count of intact layers (0 = gone); the solver and most queries use this */
+  /** per layer (member index * MAXL + k): hit points, instance index, colour */
+  private lhp!: Uint8Array;
+  private inst!: Int32Array;
+  private layerColors: (THREE.Color | null)[] = [];
+  private deepLayers: number;
   private ledges: Ledge[] = [];
   /** bumped whenever cells change; lets the rain height-map know to rebuild */
   version = 0;
@@ -89,8 +99,11 @@ export class Building {
   constructor(
     x0: number, z0: number, tint: number, rnd: () => number,
     private debris: Debris, private dust: Dust,
+    /** false for the cheap background copies: deep members stay a single block */
+    layered = true,
   ) {
     this.x0 = x0; this.z0 = z0;
+    this.deepLayers = layered ? MAXL : 1;
 
     // ---- layout: pillars between bays; variable height
     const stories = [1, 2, 2, 3, 3, 4, 5][Math.floor(rnd() * 7)];
@@ -135,7 +148,7 @@ export class Building {
 
     // ---- ruin: missing roof, fallen upper pillars, holes in floors, shell damage, broken glazing
     this.ruin(colInfo, stories, rnd);
-    for (let i = 0; i < this.type.length; i++) this.hp[i] = this.type[i] === T.Empty ? 0 : SPEC[this.type[i]].hp;
+    for (let i = 0; i < this.type.length; i++) this.hp[i] = this.type[i] === T.Empty ? 0 : this.layersOf(this.type[i]);
     // whatever lost its load path in the ruin pass has fallen already: remove it silently
     for (const i of this.unsupported(false)) { this.type[i] = T.Empty; this.hp[i] = 0; this.ruinCount++; }
 
@@ -152,10 +165,19 @@ export class Building {
     }
     this.initialAlive = this.hp.reduce((a, h) => a + (h > 0 ? 1 : 0), 0);
 
-    // ---- instances
+    // ---- instances: one per layer of every member
     const concrete = new THREE.Color(tint);
-    const n = this.cols * this.rows;
-    this.mesh = new THREE.InstancedMesh(BOX, MAT, n);
+    const members = this.cols * this.rows;
+    this.lhp = new Uint8Array(members * MAXL);
+    this.inst = new Int32Array(members * MAXL).fill(-1);
+    this.layerColors = new Array(members * MAXL).fill(null);
+    let total = 0;
+    for (let i = 0; i < members; i++) {
+      const t = this.type[i];
+      if (t === T.Empty) continue;
+      for (let k = 0; k < this.layersOf(t); k++) { this.lhp[i * MAXL + k] = this.layerHpOf(t); this.inst[i * MAXL + k] = total++; }
+    }
+    this.mesh = new THREE.InstancedMesh(BOX, MAT, Math.max(1, total));
     this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -164,17 +186,34 @@ export class Building {
       for (let r = 0; r < this.rows; r++) {
         const i = c * this.rows + r;
         const t = this.type[i];
-        const col = this.cellColor(t, concrete, rnd);
-        this.colors.push(col);
-        this.mesh.setColorAt(i, col);
-        if (t === T.Empty) { this.mesh.setMatrixAt(i, ZERO); continue; }
-        const spec = SPEC[t];
-        const zc = z0 + spec.front - spec.thick / 2;
-        this.mat.compose(new THREE.Vector3(x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, zc), q, new THREE.Vector3(CELL, CELL, spec.thick));
-        this.mesh.setMatrixAt(i, this.mat);
+        if (t === T.Empty) continue;
+        const spec = SPEC[t], L = this.layersOf(t), lt = spec.thick / L;
+        const base = this.cellColor(t, concrete, rnd);
+        for (let k = 0; k < L; k++) {
+          const li = i * MAXL + k;
+          // deeper layers are a touch darker, so the layers read when a shot peels the front one away
+          const col = base.clone().multiplyScalar((1 - 0.06 * k) * (0.96 + rnd() * 0.08));
+          this.layerColors[li] = col;
+          this.mesh.setColorAt(this.inst[li], col);
+          const zc = z0 + spec.front - (k + 0.5) * lt;
+          this.mat.compose(new THREE.Vector3(x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, zc), q, new THREE.Vector3(CELL, CELL, lt));
+          this.mesh.setMatrixAt(this.inst[li], this.mat);
+        }
       }
     }
     this.object.add(this.mesh);
+  }
+
+  /** How many depth layers this kind of member is built from. */
+  private layersOf(t: number): number {
+    const deep = DEEP[t];
+    return deep ? Math.min(deep, this.deepLayers) : 1;
+  }
+
+  /** Each layer of a layered member has half the member's old hit points (the whole depth still adds up to more). */
+  private layerHpOf(t: number): number {
+    const spec = SPEC[t];
+    return this.layersOf(t) > 1 ? Math.max(1, Math.ceil(spec.hp / 2)) : spec.hp;
   }
 
   /** Knock the building about so it reads as a ruin, not a clean block. Edits `type` in place. */
@@ -309,7 +348,7 @@ export class Building {
   }
 
   /** Spawn data for an enemy that walks from the back of the floor to the ledge edge. */
-  ledgeSpawn(l: Ledge): { pos: THREE.Vector3; ledgeZ: number; backZ: number; floorTop: (x: number, yMax: number) => number } {
+  ledgeSpawn(l: Ledge): { pos: THREE.Vector3; ledgeZ: number; backZ: number; floorTop: (x: number, z: number, yMax: number) => number } {
     const y = (l.r + 1) * CELL;
     const backZ = this.z0 - DEPTH + 0.75 * CELL;
     const x = l.x + (Math.random() - 0.5) * 2 * CELL;
@@ -317,17 +356,29 @@ export class Building {
       pos: new THREE.Vector3(x, y, backZ),
       ledgeZ: this.z0 - 0.5 * CELL,
       backZ,
-      floorTop: (fx, yMax) => this.floorTop(fx, yMax),
+      floorTop: (fx, fz, yMax) => this.floorTop(fx, fz, yMax),
     };
   }
 
-  /** Top of the highest intact floor slab under x that is at or below yMax (0 = ground). */
-  floorTop(x: number, yMax: number): number {
+  /** Which layer of member i contains depth z (or -1), given its box. */
+  private layerAt(i: number, z: number): number {
+    const t = this.type[i];
+    if (t === T.Empty) return -1;
+    const spec = SPEC[t], L = this.layersOf(t), lt = spec.thick / L;
+    const zf = this.z0 + spec.front;
+    if (z > zf + 0.005 || z < zf - spec.thick - 0.005) return -1;
+    return Math.min(L - 1, Math.max(0, Math.floor((zf - z) / lt)));
+  }
+
+  /** Top of the highest intact floor slab under (x, z) that is at or below yMax (0 = ground). */
+  floorTop(x: number, z: number, yMax: number): number {
     const c = Math.floor((x - this.x0) / CELL);
     if (c < 0 || c >= this.cols) return 0;
     for (let r = Math.min(this.rows - 1, Math.floor(yMax / CELL)); r >= 0; r--) {
       const i = c * this.rows + r;
-      if (this.hp[i] > 0 && this.type[i] === T.Slab) return (r + 1) * CELL;
+      if (this.hp[i] === 0 || this.type[i] !== T.Slab) continue;
+      const k = this.layerAt(i, z);
+      if (k >= 0 && this.lhp[i * MAXL + k] > 0) return (r + 1) * CELL;
     }
     return 0;
   }
@@ -367,19 +418,24 @@ export class Building {
       if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) break;
       const i = c * this.rows + r;
       if (this.hp[i] > 0) {
-        // exact test against this member's own box
-        const spec = SPEC[this.type[i]];
-        const zf = this.z0 + spec.front, zb = zf - spec.thick;
+        // exact test against each intact layer of this member; the nearest wins
+        const spec = SPEC[this.type[i]], L = this.layersOf(this.type[i]), lt = spec.thick / L;
         const bx0 = this.x0 + c * CELL, by0 = r * CELL;
-        let a0 = 0, a1 = Infinity, miss = false;
-        for (const [oo, dd, lo, hi] of [[o.x, d.x, bx0, bx0 + CELL], [o.y, d.y, by0, by0 + CELL], [o.z, d.z, zb, zf]] as const) {
-          if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) { miss = true; break; } continue; }
-          let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd;
-          if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
-          a0 = Math.max(a0, t1); a1 = Math.min(a1, t2);
-          if (a0 > a1) { miss = true; break; }
+        let bestT = Infinity;
+        for (let k = 0; k < L; k++) {
+          if (this.lhp[i * MAXL + k] === 0) continue;
+          const zf = this.z0 + spec.front - k * lt, zb = zf - lt;
+          let a0 = 0, a1 = Infinity, miss = false;
+          for (const [oo, dd, lo, hi] of [[o.x, d.x, bx0, bx0 + CELL], [o.y, d.y, by0, by0 + CELL], [o.z, d.z, zb, zf]] as const) {
+            if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) { miss = true; break; } continue; }
+            let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd;
+            if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+            a0 = Math.max(a0, t1); a1 = Math.min(a1, t2);
+            if (a0 > a1) { miss = true; break; }
+          }
+          if (!miss && a0 < bestT) bestT = a0;
         }
-        if (!miss) { out.set(o.x + d.x * a0, o.y + d.y * a0, o.z + d.z * a0); return a0; }
+        if (bestT < Infinity) { out.set(o.x + d.x * bestT, o.y + d.y * bestT, o.z + d.z * bestT); return bestT; }
       }
       // advance to the next cell the ray enters
       if (tMaxX < tMaxY) { if (tMaxX > tf) break; c += stepX; tMaxX += tDX; }
@@ -388,29 +444,43 @@ export class Building {
     return Infinity;
   }
 
-  /** Apply damage in a circle (world xy). hit = a live cell was within the radius. */
-  damage(px: number, py: number, radius: number): DamageResult {
+  /**
+   * Apply damage around a 3D impact point: every intact layer within `radius` of the point (its box, not
+   * its centre) is weakened. A shot at the face hits the front layer; once that is gone the next shot
+   * reaches the layer behind it; a shot at a side face hits the layer at that depth.
+   */
+  damage(px: number, py: number, pz: number, radius: number): DamageResult {
     const res = { hit: false, destroyed: 0 };
     if (px < this.x0 - radius || px > this.x0 + this.width + radius || py > this.height + radius) return res;
     const cMin = Math.max(0, Math.floor((px - radius - this.x0) / CELL));
     const cMax = Math.min(this.cols - 1, Math.floor((px + radius - this.x0) / CELL));
     const rMin = Math.max(0, Math.floor((py - radius) / CELL));
     const rMax = Math.min(this.rows - 1, Math.floor((py + radius) / CELL));
+    const reach = radius * 0.9;
     let changed = false;
     for (let c = cMin; c <= cMax; c++) {
       for (let r = rMin; r <= rMax; r++) {
         const i = c * this.rows + r;
         if (this.hp[i] === 0) continue;
-        const cx = this.x0 + (c + 0.5) * CELL, cy = (r + 0.5) * CELL;
-        if (Math.hypot(cx - px, cy - py) > radius + CELL * 0.35) continue;
-        res.hit = changed = true;
-        this.hp[i]--;
-        if (this.hp[i] === 0) {
-          res.destroyed++;
-          this.breakCell(c, r, true);
-        } else {
-          this.tmpColor.copy(this.colors[i]).multiplyScalar(0.65);
-          this.mesh.setColorAt(i, this.tmpColor); // cracked / scorched
+        const spec = SPEC[this.type[i]], L = this.layersOf(this.type[i]), lt = spec.thick / L;
+        const bx0 = this.x0 + c * CELL, by0 = r * CELL;
+        const dx = Math.max(bx0 - px, 0, px - (bx0 + CELL)), dy = Math.max(by0 - py, 0, py - (by0 + CELL));
+        if (dx * dx + dy * dy > reach * reach) continue;
+        for (let k = 0; k < L; k++) {
+          const li = i * MAXL + k;
+          if (this.lhp[li] === 0) continue;
+          const zf = this.z0 + spec.front - k * lt, zb = zf - lt;
+          const dz = Math.max(zb - pz, 0, pz - zf);
+          if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+          res.hit = changed = true;
+          this.lhp[li]--;
+          if (this.lhp[li] === 0) {
+            res.destroyed++;
+            this.breakLayer(c, r, k, true);
+          } else {
+            this.tmpColor.copy(this.layerColors[li]!).multiplyScalar(0.65);
+            this.mesh.setColorAt(this.inst[li], this.tmpColor); // cracked / scorched
+          }
         }
       }
     }
@@ -423,11 +493,6 @@ export class Building {
     return res;
   }
 
-  private cellCenter(c: number, r: number): THREE.Vector3 {
-    const spec = SPEC[this.type[c * this.rows + r]];
-    return new THREE.Vector3(this.x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, this.z0 + spec.front - spec.thick / 2);
-  }
-
   /** Top of the highest intact cell under (x, z) whose top is at or below yBelow; 0 = ground. */
   solidTop(x: number, z: number, yBelow: number): number {
     if (z > this.z0 + 0.4 * CELL || z < this.z0 - DEPTH) return 0;
@@ -436,57 +501,56 @@ export class Building {
     for (let r = Math.min(this.rows - 1, Math.floor((yBelow + 0.05) / CELL) - 1); r >= 0; r--) {
       const i = c * this.rows + r;
       if (this.hp[i] === 0) continue;
-      // thin members (glazing, walls) only occupy part of the depth: no standing on thin air behind them
-      const spec = SPEC[this.type[i]];
-      const zf = this.z0 + spec.front;
-      if (z <= zf + 0.02 && z >= zf - spec.thick - 0.02) return (r + 1) * CELL;
+      // thin members and removed layers only occupy part of the depth: no standing on thin air behind them
+      const k = this.layerAt(i, z);
+      if (k >= 0 && this.lhp[i * MAXL + k] > 0) return (r + 1) * CELL;
     }
     return 0;
   }
 
-  /** Is the point inside an intact member (respecting each member's real depth)? Used for small bodies like coals. */
+  /** Is the point inside an intact layer of a member? Used for small bodies like coals. */
   solidAt(x: number, y: number, z: number): boolean {
     if (x < this.x0 || x >= this.x0 + this.width || y < 0 || y >= this.height) return false;
     if (z > this.z0 + 0.4 * CELL || z < this.z0 - DEPTH) return false;
     const i = Math.floor((x - this.x0) / CELL) * this.rows + Math.floor(y / CELL);
     if (this.hp[i] === 0) return false;
-    const spec = SPEC[this.type[i]];
-    const zf = this.z0 + spec.front;
-    return z <= zf + 0.005 && z >= zf - spec.thick - 0.005;
+    const k = this.layerAt(i, z);
+    return k >= 0 && this.lhp[i * MAXL + k] > 0;
   }
 
   private floorFn = (x: number, z: number, y: number): number => this.solidTop(x, z, y);
 
-  /** @param fallH height of the cell above where support was lost (structural collapse only) */
-  private breakCell(c: number, r: number, byBullet: boolean, fallH = 0): void {
-    const i = c * this.rows + r;
-    const pos = this.cellCenter(c, r);
-    pos.z = this.z0 + SPEC[this.type[i]].front; // spawn at the visible face
-    this.hp[i] = 0;
-    this.mesh.setMatrixAt(i, ZERO);
-    this.debris.wakeNear(pos, CELL * 1.2); // rubble that was resting on this cell
-    const col = this.colors[i];
-    const glass = this.type[i] === T.Window;
+  /**
+   * Remove one layer of a member and throw its rubble.
+   * @param fallH height of the cell above where support was lost (structural collapse only)
+   */
+  private breakLayer(c: number, r: number, k: number, byBullet: boolean, fallH = 0): void {
+    const i = c * this.rows + r, li = i * MAXL + k;
+    const t = this.type[i], spec = SPEC[t], L = this.layersOf(t), lt = spec.thick / L;
+    this.lhp[li] = 0;
+    this.hp[i]--;
+    this.mesh.setMatrixAt(this.inst[li], ZERO);
+    const zf = this.z0 + spec.front - k * lt;
+    const pos = new THREE.Vector3(this.x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, byBullet ? zf : zf - Math.random() * lt);
+    this.debris.wakeNear(pos, CELL * 1.2); // rubble that was resting here
+    const col = this.layerColors[li]!;
+    const glass = t === T.Window;
     // Rubble comes in varied small pieces (never bigger than ~0.3): a soldier can see and be seen over
     // the small ones, and the big ones are not tall enough to hide a whole soldier for long.
     const piece = (lo: number, hi: number) => CELL * (lo + Math.random() * (hi - lo));
     if (byBullet) {
       const v = (spread: number, up: number) => new THREE.Vector3((Math.random() - 0.5) * spread, up * (0.3 + Math.random()), 1 + Math.random() * 3);
-      for (let k = 0; k < 2; k++) this.debris.spawn(pos, col, glass ? piece(0.2, 0.35) : piece(0.4, 0.7), v(3, 3), this.floorFn);
-      for (let k = 0; k < 2; k++) this.debris.spawn(pos, col, piece(0.2, 0.35), v(6, 4), this.floorFn);
-      this.dust.puff(pos, glass ? 1 : 2, CELL * 2.2, 1.5);
+      for (let n = 0; n < 2; n++) this.debris.spawn(pos, col, glass ? piece(0.2, 0.35) : piece(0.35, 0.65), v(3, 3), this.floorFn);
+      this.debris.spawn(pos, col, piece(0.2, 0.35), v(6, 4), this.floorFn);
+      this.dust.puff(pos, 1, CELL * 2.2, 1.5);
     } else {
-      // structural collapse: the member drops from somewhere within its depth, so it can crush whatever is inside
-      const spec = SPEC[this.type[i]];
-      // the structure topples out into the street like a falling wall: the higher the cell,
-      // the harder it is thrown outward (+z), as if rotating about the base's front edge
+      // structural collapse: the layer drops from somewhere within its depth, so it can crush whatever is inside.
+      // The structure topples out into the street like a falling wall: the higher the cell, the harder it is
+      // thrown outward (+z), as if rotating about the base's front edge.
       const outBase = Math.min(5, 1.0 + 0.6 * fallH);
-      const n = this.debris.count > 6000 ? 2 : 3; // stay under the chunk cap in big levels
-      for (let k = 0; k < n; k++) {
-        pos.z = this.z0 + spec.front - Math.random() * spec.thick;
-        const out = outBase * (0.7 + Math.random() * 0.6);
-        this.debris.spawn(pos, col, piece(0.3, 0.75), new THREE.Vector3((Math.random() - 0.5) * 1.6, -0.5 - Math.random() * 0.5, out), this.floorFn);
-      }
+      const out = outBase * (0.7 + Math.random() * 0.6);
+      this.debris.spawn(pos, col, piece(0.35, 0.8), new THREE.Vector3((Math.random() - 0.5) * 1.6, -0.5 - Math.random() * 0.5, out), this.floorFn);
+      if (this.debris.count < 4000) this.debris.spawn(pos, col, piece(0.25, 0.5), new THREE.Vector3((Math.random() - 0.5) * 1.6, -0.5, out * 0.8), this.floorFn);
     }
   }
 
@@ -533,7 +597,8 @@ export class Building {
       for (let c = 0; c < cols; c++) {
         for (let k = 1; k < STORY; k++) {
           const i = c * rows + st * STORY + k;
-          if (hp[i] > 0 && (type[i] === T.Pillar || type[i] === T.Wall || type[i] === T.Stair)) alive++;
+          // a layered member counts by how much of its depth is left, so wearing pillars down weakens the storey
+          if (hp[i] > 0 && (type[i] === T.Pillar || type[i] === T.Wall || type[i] === T.Stair)) alive += hp[i] / this.layersOf(type[i]);
         }
       }
       if (alive < this.bearingTotal[st] * BEARING_MIN) { collapseFrom = (st + 1) * STORY; break; }
@@ -572,15 +637,21 @@ export class Building {
     for (let i = 0; i < this.hp.length; i++) if (this.hp[i] > 0) alive++;
     // a storey that failed, or most of the structure gone: the building is down for good
     if (this.storeyFailed || alive < this.initialAlive * 0.4) this.down = true;
-    const { rows, hp } = this;
+    const { rows } = this;
     if (falling.length === 0) return;
-    for (const i of falling) hp[i] = 0; // mark first so floor lookups see the final state
     let baseRow = rows;
     for (const i of falling) baseRow = Math.min(baseRow, i % rows);
+    // mark every falling layer gone first so floor lookups see the final state, then throw the rubble
+    const pending: { c: number; r: number; k: number }[] = [];
     for (const i of falling) {
       const c = Math.floor(i / rows), r = i % rows;
-      hp[i] = 1; // breakCell zeroes it again; keeps cellCenter/type lookups valid
-      this.breakCell(c, r, false, (r - baseRow) * CELL);
+      for (let k = 0; k < MAXL; k++) if (this.lhp[i * MAXL + k] > 0) pending.push({ c, r, k });
+    }
+    for (const p of pending) this.lhp[(p.c * rows + p.r) * MAXL + p.k] = 0;
+    for (const p of pending) {
+      const i = p.c * rows + p.r;
+      this.lhp[i * MAXL + p.k] = 1; // breakLayer zeroes it again; keeps the lookups it makes valid
+      this.breakLayer(p.c, p.r, p.k, false, (p.r - baseRow) * CELL);
     }
     this.dust.puff(new THREE.Vector3(this.x0 + this.width / 2, 0.5, this.z0 + 1.0), 4, CELL * 3, 2.5);
   }

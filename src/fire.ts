@@ -409,7 +409,7 @@ export class FireBarrel {
     this.t += dt;
     if (this.building.down && !this.shot) this.burn = Math.max(0, this.burn - dt / 1.4);
     // the fire dies with the floor it stands on
-    if (this.building.floorTop(this.group.position.x, this.group.position.y + 0.05) < this.group.position.y - 0.05) this.gone = true;
+    if (this.building.floorTop(this.group.position.x, this.group.position.z, this.group.position.y + 0.05) < this.group.position.y - 0.05) this.gone = true;
     this.group.visible = !this.gone;
 
     if (this.shot && ctx) {

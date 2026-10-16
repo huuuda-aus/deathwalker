@@ -110,7 +110,7 @@ export class Weapon {
     }
     fx.sparks(hit.point, 2, 2.5, [0xffd080, 0xffa040, 0xffffff]);
     if (hit.kind === 'wall') {
-      hit.building?.damage(hit.point.x, hit.point.y, WALL_RADIUS);
+      hit.building?.damage(hit.point.x, hit.point.y, hit.point.z, WALL_RADIUS);
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.6);
     } else if (hit.kind === 'ground') {
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.5);
