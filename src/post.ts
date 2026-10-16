@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { HazePass } from './haze';
 import {
   BlendFunction, BloomEffect, Effect, EffectAttribute, EffectComposer, EffectPass,
-  RenderPass, ToneMappingEffect, ToneMappingMode, VignetteEffect,
+  NoiseEffect, RenderPass, ToneMappingEffect, ToneMappingMode, VignetteEffect,
 } from 'postprocessing';
 
 const SHUTTER = 0.08;
@@ -47,15 +48,20 @@ class SpeedBlurEffect extends Effect {
   }
 }
 
-/** Bloom + speed blur + vignette + tone mapping. Toggle off for the plain renderer path. */
+
+/** Haze + bloom + speed blur + vignette + tone mapping. Toggle off for the plain renderer path. */
 export class Post {
   enabled = true;
   private composer: EffectComposer;
   private blur: SpeedBlurEffect;
+  private hazePass: HazePass;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, camDist: number) {
     this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 4 });
     this.composer.addPass(new RenderPass(scene, camera));
+    // haze first: it works on linear scene light, before exposure and blur
+    this.hazePass = new HazePass(camera);
+    this.composer.addPass(this.hazePass);
     this.blur = new SpeedBlurEffect(camDist);
     this.composer.addPass(new EffectPass(camera, this.blur));
     const bloom = new BloomEffect({
@@ -63,8 +69,22 @@ export class Post {
     });
     const vignette = new VignetteEffect({ offset: 0.3, darkness: 0.65 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
-    this.composer.addPass(new EffectPass(camera, bloom, vignette, tone));
+    // a whisper of grain acts as dither: the smooth haze gradients would otherwise band in 8 bits
+    const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
+    grain.blendMode.opacity.value = 0.06;
+    this.composer.addPass(new EffectPass(camera, bloom, vignette, tone, grain));
     this.apply();
+  }
+
+  /** Haze on/off (the rest of the post stack stays on). */
+  toggleHaze(): boolean {
+    this.hazePass.enabled = !this.hazePass.enabled;
+    return this.hazePass.enabled;
+  }
+
+  /** @param lights two muzzle lights as (x, y, z, intensity) */
+  updateHaze(time: number, windTravelled: number, lights: THREE.Vector4[]): void {
+    this.hazePass.set(time, windTravelled, lights);
   }
 
   toggle(): boolean {

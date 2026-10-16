@@ -5,6 +5,8 @@ import { Mech, setMechEnvironment, LANE } from './mech';
 import { castRay, newHit } from './targeting';
 import { World, FOG_COLOR } from './world';
 import { Sky } from './sky';
+import { Wind } from './wind';
+import { Litter } from './litter';
 import { Fx } from './fx';
 import { Soldier } from './enemies';
 import { Weapon } from './weapon';
@@ -53,6 +55,9 @@ const dust = new Dust(scene);
 const debris = new Debris(scene, dust);
 const world = new World(scene, debris, dust);
 const sky = new Sky(scene);
+const wind = new Wind();
+const litter = new Litter(scene, wind);
+const hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
 const mech = new Mech();
 debris.setColliders(mech.colliders);
 Soldier.blockers = (x, z, r, out) => debris.collectBlockers(x, z, r, out);
@@ -70,7 +75,8 @@ function syncViewport() {
 }
 syncViewport();
 addEventListener('keydown', (e) => {
-  if (e.code === 'KeyQ') qualityEl.textContent = `Q: post-fx ${post.toggle() ? 'on' : 'off'}`;
+  if (e.code === 'KeyQ') qualityEl.textContent = `Q: post-fx ${post.toggle() ? 'on' : 'off'}  |  H: haze`;
+  if (e.code === 'KeyH') post.toggleHaze();
 });
 const reticle = document.getElementById('reticle')!;
 const $ = (id: string) => document.getElementById(id)!;
@@ -256,7 +262,12 @@ function frame() {
   reticle.style.opacity = mech.canFire ? '1' : '0.35';
   reticle.style.transform = `translate(${input.mousePx.x}px, ${input.mousePx.y}px)`;
 
+  wind.update(dt);
+  litter.update(dt, camX);
   sky.update(camera, now / 1000);
+  // the muzzle fire lights the smoke around the barrels
+  hazeLights.forEach((v, i) => v.set(muzzlePos[i].x, muzzlePos[i].y, muzzlePos[i].z, weapon.firing ? 0.35 + Math.random() * 0.5 : 0));
+  post.updateHaze(now / 1000, wind.travelled, hazeLights);
   post.render(dt, camVel);
   requestAnimationFrame(frame);
 }

@@ -25,7 +25,8 @@ Needs a browser with WebGL2.
 | **W / S** or **↑ / ↓** | Walk away from / toward the camera (depth lane) |
 | **Mouse** | Aim the reticle |
 | **Hold mouse button** | Fire both guns |
-| **Q** | Toggle post-processing (bloom, motion blur, vignette) |
+| **Q** | Toggle post-processing (bloom, motion blur, vignette, haze) |
+| **H** | Toggle the volumetric haze only |
 | **R** | Restart after game over |
 
 The mech never turns around: its body always faces left. Only the cockpit and its two rigid guns rotate, and only within the forward hemisphere, so you cannot shoot behind you. The guns overheat; release to cool down, and a full overheat locks them out until they cool.
@@ -56,7 +57,10 @@ src/
   world.ts      sky, ground, parallax city, chunk streaming
   debris.ts     rubble physics (sleeping bodies, spatial hash), dust
   fx.ts         pixel sparks, blood bursts, muzzle flash
-  post.ts       post-processing: bloom, depth-aware motion blur, tone map
+  post.ts       post-processing: volumetric haze, bloom, depth-aware motion blur, tone map
+  sky.ts        night sky shader: clouds, stars, horizon glow
+  wind.ts       shared wind (gusts); drives the haze drift and the litter
+  litter.ts     scarce leaves and papers blown along by the wind
   input.ts      keyboard and mouse
 ```
 
@@ -70,7 +74,8 @@ Handy tuning knobs:
 | `src/mech.ts` | `MECH_SCALE`, gait (`STEP`, `LIFT`, `STANCE`), collider radii |
 | `src/building.ts` | `CELL` size, member hit points, `SPAN`, `BEARING_MIN` |
 | `src/debris.ts` | sleep thresholds, chunk cap, blocking sizes |
-| `src/post.ts` | exposure, bloom, motion-blur shutter |
+| `src/post.ts` | exposure, bloom, motion-blur shutter, haze density/colour/steps |
+| `src/wind.ts`, `src/litter.ts` | wind strength and gusts, amount of flying litter |
 
 ## Roadmap
 
