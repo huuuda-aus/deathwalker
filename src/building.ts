@@ -539,7 +539,7 @@ export class Building {
     // the small ones, and the big ones are not tall enough to hide a whole soldier for long.
     const piece = (lo: number, hi: number) => CELL * (lo + Math.random() * (hi - lo));
     if (byBullet) {
-      const v = (spread: number, up: number) => new THREE.Vector3((Math.random() - 0.5) * spread, up * (0.3 + Math.random()), 1 + Math.random() * 3);
+      const v = (spread: number, up: number) => new THREE.Vector3((Math.random() - 0.5) * spread * 0.8, up * 0.7 * (0.3 + Math.random()), (1 + Math.random() * 3) * 0.8);
       for (let n = 0; n < 2; n++) this.debris.spawn(pos, col, glass ? piece(0.2, 0.35) : piece(0.35, 0.65), v(3, 3), this.floorFn);
       this.debris.spawn(pos, col, piece(0.2, 0.35), v(6, 4), this.floorFn);
       this.dust.puff(pos, 1, CELL * 2.2, 1.5);
@@ -547,7 +547,8 @@ export class Building {
       // structural collapse: the layer drops from somewhere within its depth, so it can crush whatever is inside.
       // The structure topples out into the street like a falling wall: the higher the cell, the harder it is
       // thrown outward (+z), as if rotating about the base's front edge.
-      const outBase = Math.min(5, 1.0 + 0.6 * fallH);
+      // (scaled down to match the slower rubble gravity, so it still lands in the street)
+      const outBase = Math.min(5, 1.0 + 0.6 * fallH) * 0.72;
       const out = outBase * (0.7 + Math.random() * 0.6);
       this.debris.spawn(pos, col, piece(0.35, 0.8), new THREE.Vector3((Math.random() - 0.5) * 1.6, -0.5 - Math.random() * 0.5, out), this.floorFn);
       if (this.debris.count < 4000) this.debris.spawn(pos, col, piece(0.25, 0.5), new THREE.Vector3((Math.random() - 0.5) * 1.6, -0.5, out * 0.8), this.floorFn);

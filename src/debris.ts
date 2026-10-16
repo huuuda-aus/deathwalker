@@ -96,9 +96,10 @@ const BLOCK_SIZE = 0.16;
 const BLOCK_TOP = 0.25;
 
 const MAX_CHUNKS = 10000;
-const GRAVITY = 16;
+/** Rubble falls at half the normal pull, so heavy pieces drop slowly and ponderously. */
+const GRAVITY = 8;
 const GRID = 0.6;            // spatial hash cell size (> largest chunk diameter)
-const RESTITUTION = 0.25;
+const RESTITUTION = 0.15;   // heavy things barely bounce
 const SLEEP_SPEED = 0.22;    // below this (units/s) for SLEEP_TIME the chunk goes to sleep
 const SLEEP_TIME = 0.4;
 const MAX_AWAKE_TIME = 6;    // force sleep so a jittering pile can't cost CPU forever
@@ -286,7 +287,7 @@ export class Debris {
       slot, shape, inst: this.batches[shape].alloc(), dims: randomDims(),
       pos: pos.clone(), vel: vel.clone(),
       rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
-      angVel: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+      angVel: new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4), // slow tumbling
       size, r: size * 0.5, floor, asleep: false, sleepT: 0, awakeT: 0, key: 0,
     };
     this.slots[slot] = c;
@@ -437,8 +438,8 @@ export class Debris {
     if (c.pos.y - r <= surface) {
       c.pos.y = surface + r;
       const impact = -c.vel.y;
-      if (impact > 3) this.dust.puff(this.tmp.set(c.pos.x, surface + 0.1, c.pos.z), 1, c.size * 1.5, 1);
-      c.vel.y = impact > 1.5 ? impact * RESTITUTION : 0;
+      if (impact > 2.2) this.dust.puff(this.tmp.set(c.pos.x, surface + 0.1, c.pos.z), 1, c.size * 1.5, 1);
+      c.vel.y = impact > 1.1 ? impact * RESTITUTION : 0;
       const f = Math.max(0, 1 - 8 * dt); // ground friction
       c.vel.x *= f; c.vel.z *= f;
       c.angVel.multiplyScalar(Math.max(0, 1 - 6 * dt));
@@ -457,7 +458,7 @@ export class Debris {
       const vn = (c.vel.x - col.vel.x) * n.x + (c.vel.y - col.vel.y) * n.y + (c.vel.z - col.vel.z) * n.z;
       if (vn < 0) c.vel.addScaledVector(n, -(1 + 0.3) * vn);
       c.vel.x += col.vel.x * 0.15; c.vel.z += col.vel.z * 0.15; // drag along with the foot
-      c.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+      c.angVel.set((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
     }
 
     // other chunks (only resting ON a sleeper counts as support)
