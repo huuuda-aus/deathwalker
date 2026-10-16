@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Walker</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+      canvas { display: block; cursor: none; }
+      #reticle {
+        position: fixed; left: 0; top: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+        border: 2px solid #ffb347; border-radius: 50%; pointer-events: none; box-sizing: border-box;
+      }
+      #hud { position: fixed; left: 16px; top: 16px; font: 12px monospace; color: #ffb347; pointer-events: none; }
+      .bar { width: 160px; height: 10px; border: 1px solid #ffb347; margin: 2px 0 8px; }
+      .bar > div { height: 100%; width: 0; background: #ffb347; }
+      #hit { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255,0,0,0.6)); opacity: 0; pointer-events: none; }
+      #go { position: fixed; left: 40px; top: 45%; font: bold 40px monospace; color: #ffb347; display: none; pointer-events: none;
+        animation: blink 0.8s steps(2) infinite; text-shadow: 0 0 10px #ff8c00; }
+      @keyframes blink { 50% { opacity: 0.15; } }
+      #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+        font: 48px monospace; color: #ffb347; background: rgba(0,0,0,0.5); pointer-events: none; }
+      #over small { font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div id="scene" style="margin-bottom:8px"></div>
+      <div>SHIELD</div><div class="bar"><div id="shield"></div></div>
+      <div>HEAT</div><div class="bar"><div id="heat"></div></div>
+      <div id="lives"></div>
+      <div id="quality" style="margin-top:8px;opacity:.6">Q: post-fx on</div>
+    </div>
+    <div id="hit"></div>
+    <div id="go">&#9668; GO</div>
+    <div id="over">GAME OVER<br /><small>press R</small></div>
+    <div id="reticle"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
