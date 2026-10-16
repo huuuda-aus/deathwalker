@@ -42,8 +42,6 @@ const SPEC: Record<number, Spec> = {
   [T.Window]: { hp: 1, front: -0.5 * CELL,   thick: 0.25 * CELL, span: false, structural: false },
   [T.Stair]:  { hp: 3, front: -1.25 * CELL,  thick: 2.5 * CELL,  span: false, structural: true },
 };
-/** distinct front planes, nearest the camera first */
-const PLANES = [...new Set(Object.values(SPEC).map((s) => s.front))].sort((a, b) => b - a);
 
 type BayKind = 'window' | 'open' | 'blank' | 'stair';
 interface Bay { kind: BayKind; width: number; start: number; /** per storey: open firing bay (no glazing/sill) */ open: boolean[] }
@@ -334,19 +332,58 @@ export class Building {
     return 0;
   }
 
-  /** Nearest live-cell hit, testing each member's own front plane. Returns ray distance t, or Infinity. */
+  /**
+   * Nearest intact-cell hit along the ray, against every face of every member (front, sides, tops),
+   * so a slanted shot cannot slip past a pillar's side or a slab's edge. Walks the (x, y) grid cell by
+   * cell along the ray and tests the real box of each intact cell. Returns the ray distance t, or Infinity.
+   */
   raycast(ray: THREE.Ray, out: THREE.Vector3): number {
-    const dz = ray.direction.z;
-    if (dz === 0) return Infinity;
-    for (const f of PLANES) {
-      const zp = this.z0 + f;
-      const t = (zp - ray.origin.z) / dz;
-      if (t <= 0) continue;
-      const x = ray.origin.x + ray.direction.x * t;
-      const y = ray.origin.y + ray.direction.y * t;
-      if (x < this.x0 || x >= this.x0 + this.width || y < 0 || y >= this.height) continue;
-      const i = Math.floor((x - this.x0) / CELL) * this.rows + Math.floor(y / CELL);
-      if (this.hp[i] > 0 && SPEC[this.type[i]].front === f) { out.set(x, y, zp); return t; }
+    const o = ray.origin, d = ray.direction;
+    // the building's bounding box
+    const minX = this.x0, maxX = this.x0 + this.width, minY = 0, maxY = this.height;
+    const minZ = this.z0 - DEPTH, maxZ = this.z0 + 0.4 * CELL;
+    let tn = 0, tf = Infinity;
+    for (const [oo, dd, lo, hi] of [[o.x, d.x, minX, maxX], [o.y, d.y, minY, maxY], [o.z, d.z, minZ, maxZ]] as const) {
+      if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) return Infinity; continue; }
+      let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+      tn = Math.max(tn, t1); tf = Math.min(tf, t2);
+      if (tn > tf) return Infinity;
+    }
+
+    // start cell, clamped into the grid, then 2D DDA over (x, y); z is free (members differ in depth)
+    const px = o.x + d.x * tn, py = o.y + d.y * tn;
+    let c = Math.min(this.cols - 1, Math.max(0, Math.floor((px - this.x0) / CELL)));
+    let r = Math.min(this.rows - 1, Math.max(0, Math.floor(py / CELL)));
+    const stepX = d.x > 0 ? 1 : -1, stepY = d.y > 0 ? 1 : -1;
+    const nextX = (cc: number) => this.x0 + (stepX > 0 ? cc + 1 : cc) * CELL;
+    const nextY = (rr: number) => (stepY > 0 ? rr + 1 : rr) * CELL;
+    let tMaxX = Math.abs(d.x) < 1e-9 ? Infinity : (nextX(c) - o.x) / d.x;
+    let tMaxY = Math.abs(d.y) < 1e-9 ? Infinity : (nextY(r) - o.y) / d.y;
+    const tDX = Math.abs(d.x) < 1e-9 ? Infinity : CELL / Math.abs(d.x);
+    const tDY = Math.abs(d.y) < 1e-9 ? Infinity : CELL / Math.abs(d.y);
+
+    for (let guard = 0; guard < this.cols + this.rows + 6; guard++) {
+      if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) break;
+      const i = c * this.rows + r;
+      if (this.hp[i] > 0) {
+        // exact test against this member's own box
+        const spec = SPEC[this.type[i]];
+        const zf = this.z0 + spec.front, zb = zf - spec.thick;
+        const bx0 = this.x0 + c * CELL, by0 = r * CELL;
+        let a0 = 0, a1 = Infinity, miss = false;
+        for (const [oo, dd, lo, hi] of [[o.x, d.x, bx0, bx0 + CELL], [o.y, d.y, by0, by0 + CELL], [o.z, d.z, zb, zf]] as const) {
+          if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) { miss = true; break; } continue; }
+          let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd;
+          if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+          a0 = Math.max(a0, t1); a1 = Math.min(a1, t2);
+          if (a0 > a1) { miss = true; break; }
+        }
+        if (!miss) { out.set(o.x + d.x * a0, o.y + d.y * a0, o.z + d.z * a0); return a0; }
+      }
+      // advance to the next cell the ray enters
+      if (tMaxX < tMaxY) { if (tMaxX > tf) break; c += stepX; tMaxX += tDX; }
+      else { if (tMaxY > tf) break; r += stepY; tMaxY += tDY; }
     }
     return Infinity;
   }

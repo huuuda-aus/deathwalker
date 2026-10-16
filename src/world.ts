@@ -4,6 +4,7 @@ import type { Debris, Dust } from './debris';
 import { GROUND_TILE, makeGroundTextures } from './ground';
 import { Coals, FireBarrel, FireLights, type BarrelContext } from './fire';
 import type { Fx } from './fx';
+import { Puddles, type Puddle } from './water';
 
 function mulberry32(a: number) {
   return () => {
@@ -35,7 +36,7 @@ const FAR_ROWS: [z: number, scale: number, color: number, dense: boolean][] = [
 export class World {
   readonly group = new THREE.Group();
   private chunkSize = 120;
-  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[] }>();
+  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; puddles: Puddle[] }>();
   private fireLights: FireLights;
   /** hot coals from shot barrels */
   readonly coals: Coals;
@@ -73,7 +74,7 @@ export class World {
     scene.add(this.group);
   }
 
-  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[] } {
+  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; puddles: Puddle[] } {
     const rng = mulberry32(index * 7919 + 13);
     const g = new THREE.Group();
     const buildings: Building[] = [];
@@ -117,7 +118,9 @@ export class World {
       }
     };
     for (const [z, scale, color, dense] of FAR_ROWS) silhouettes(z, scale, color, dense);
-    return { group: g, buildings, props, barrels };
+    const water = Puddles.build(index, this.chunkSize);
+    g.add(water.mesh);
+    return { group: g, buildings, props, barrels, puddles: water.list };
   }
 
   /** Damage destructible buildings at a point on the gameplay plane. */
@@ -162,6 +165,21 @@ export class World {
       }
     }
     return false;
+  }
+
+  /** 0 on dry ground, up to 1 in the middle of a puddle. */
+  puddleDepth(x: number, z: number): number {
+    const chunk = this.chunks.get(Math.floor(x / this.chunkSize));
+    return chunk ? Puddles.depthAt(chunk.puddles, x, z) : 0;
+  }
+
+  /** Weather state for the puddles: how hard it is raining and the nearby fire/muzzle lights. */
+  setWeather(seconds: number, rain: number, lights: THREE.Vector4[]): void {
+    const u = Puddles.uniforms;
+    u.uTime.value = seconds % 600;
+    u.uRain.value = rain;
+    u.uLight0.value.copy(lights[0]);
+    u.uLight1.value.copy(lights[1]);
   }
 
   /** Needed for barrels' spark bursts; set once the effects exist. */

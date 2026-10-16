@@ -13,7 +13,8 @@ export class Dust {
   private material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { uScale: { value: 500 }, uColor: { value: new THREE.Color(0x6a7a88) } },
+    // dust colour, 25% darker than the original 0x6a7a88
+    uniforms: { uScale: { value: 500 }, uColor: { value: new THREE.Color(0x6a7a88).multiplyScalar(0.75) } },
     vertexShader: /* glsl */ `
       attribute float aSize; attribute float aAlpha;
       uniform float uScale; varying float vAlpha;

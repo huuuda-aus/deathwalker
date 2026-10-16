@@ -27,6 +27,9 @@ export class Weapon {
   private ray = new THREE.Ray();
   private hit = newHit();
   private cover = new THREE.Vector3();
+  private wallPt = new THREE.Vector3();
+  private seg = new THREE.Vector3();
+  private segRay = new THREE.Ray();
   private dir = new THREE.Vector3();
 
   update(
@@ -72,6 +75,22 @@ export class Weapon {
 
     const hit = castRay(this.ray, enemies, world, this.hit);
     this.sinceShot = 0;
+    // Walls are cover too, and the bullet flies from the gun, not from the camera: the sight line from the
+    // barrel to the impact point may cross a pillar or wall that the camera sees past. Whichever is
+    // nearer along that line takes the hit.
+    this.seg.subVectors(hit.point, muzzle);
+    const range = this.seg.length();
+    if (range > 0.05) {
+      this.segRay.set(muzzle, this.seg.divideScalar(range));
+      const tw = world.raycast(this.segRay, this.wallPt);
+      if (tw < range - 0.03) {
+        hit.kind = 'wall';
+        hit.point.copy(this.wallPt);
+        hit.building = world.lastBuilding ?? undefined;
+        hit.enemy = undefined;
+        hit.barrel = undefined;
+      }
+    }
     // rubble is cover: if a chunk lies on the line from the gun to the target, the bullet hits that instead
     if (debris.segmentHit(muzzle, hit.point, this.cover)) {
       fx.sparks(this.cover, 2, 2.5, [0xffd080, 0xffffff]);
