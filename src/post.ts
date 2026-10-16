@@ -16,8 +16,9 @@ uniform float uExposure;
 
 void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth, out vec4 outputColor) {
   float d = -getViewZ(depth);
-  // The camera tracks the mech, so things at the gameplay depth stay sharp; nearer/farther layers smear.
-  float len = uK * uVel * abs(1.0 / max(d, 0.5) - uInvD0);
+  // The camera tracks the mech, so things at the gameplay depth stay sharp. Only what is nearer than that
+  // smears; the background layers (farther) stay crisp.
+  float len = uK * uVel * max(0.0, 1.0 / max(d, 0.5) - uInvD0);
   len = min(len, 0.04);
   vec3 acc = vec3(0.0);
   const int N = 10;
@@ -81,6 +82,8 @@ export class Post {
     this.hazePass.enabled = !this.hazePass.enabled;
     return this.hazePass.enabled;
   }
+
+  setHazeDensityScale(k: number): void { this.hazePass.densityScale = k; }
 
   /** @param lights two muzzle lights as (x, y, z, intensity) */
   updateHaze(time: number, windTravelled: number, lights: THREE.Vector4[]): void {

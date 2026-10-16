@@ -73,6 +73,8 @@ export class Building {
   private hp: Uint8Array;
   private colors: THREE.Color[] = [];
   private ledges: Ledge[] = [];
+  /** bumped whenever cells change; lets the rain height-map know to rebuild */
+  version = 0;
   /** set once the building has collapsed: it no longer hosts enemies */
   down = false;
   /** false for background rows: they never host enemies or rubble */
@@ -233,6 +235,21 @@ export class Building {
     this.mesh.castShadow = this.mesh.receiveShadow = false;
   }
 
+  /** Height of the highest intact cell in column c (0 if the column is empty). */
+  private columnTop(c: number): number {
+    for (let r = this.rows - 1; r >= 0; r--) if (this.hp[c * this.rows + r] > 0) return (r + 1) * CELL;
+    return 0;
+  }
+
+  /** Call back with the footprint (x0, x1, z0, z1) and top height of every column: what rain lands on. */
+  forEachColumnTop(cb: (x0: number, x1: number, z0: number, z1: number, top: number) => void): void {
+    const z1 = this.z0 + 0.4 * CELL, z0 = this.z0 - DEPTH;
+    for (let c = 0; c < this.cols; c++) {
+      const top = this.columnTop(c);
+      if (top > 0) cb(this.x0 + c * CELL, this.x0 + (c + 1) * CELL, z0, z1, top);
+    }
+  }
+
   /** Pre-existing wreckage in front of the building, created when the camera gets near. */
   spawnRuinRubble(): void {
     if (this.rubbleDone) return;
@@ -279,6 +296,18 @@ export class Building {
       for (let c = l.c0; c <= l.c1; c++) if (this.hp[c * this.rows + l.r] === 0) return false;
       return true;
     });
+  }
+
+  /** Floor positions for props inside the ground-floor open bays (on the foundation slab, behind the front edge). */
+  groundBaySpots(count: number, rnd: () => number): THREE.Vector3[] {
+    const bays = this.ledges.filter((l) => l.r === 0);
+    const out: THREE.Vector3[] = [];
+    for (let tries = 0; out.length < count && bays.length > 0 && tries < 20; tries++) {
+      const l = bays[Math.floor(rnd() * bays.length)];
+      const p = new THREE.Vector3(l.x + (rnd() - 0.5) * 0.8, CELL, this.z0 - 0.7 - rnd() * 1.0);
+      if (out.every((q) => Math.hypot(q.x - p.x, q.z - p.z) > 0.5)) out.push(p);
+    }
+    return out;
   }
 
   /** Spawn data for an enemy that walks from the back of the floor to the ledge edge. */
@@ -349,6 +378,7 @@ export class Building {
       }
     }
     if (changed) {
+      this.version++;
       this.settle();
       this.mesh.instanceMatrix.needsUpdate = true;
       if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
@@ -375,6 +405,17 @@ export class Building {
       if (z <= zf + 0.02 && z >= zf - spec.thick - 0.02) return (r + 1) * CELL;
     }
     return 0;
+  }
+
+  /** Is the point inside an intact member (respecting each member's real depth)? Used for small bodies like coals. */
+  solidAt(x: number, y: number, z: number): boolean {
+    if (x < this.x0 || x >= this.x0 + this.width || y < 0 || y >= this.height) return false;
+    if (z > this.z0 + 0.4 * CELL || z < this.z0 - DEPTH) return false;
+    const i = Math.floor((x - this.x0) / CELL) * this.rows + Math.floor(y / CELL);
+    if (this.hp[i] === 0) return false;
+    const spec = SPEC[this.type[i]];
+    const zf = this.z0 + spec.front;
+    return z <= zf + 0.005 && z >= zf - spec.thick - 0.005;
   }
 
   private floorFn = (x: number, z: number, y: number): number => this.solidTop(x, z, y);

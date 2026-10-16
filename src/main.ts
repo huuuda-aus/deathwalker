@@ -7,6 +7,7 @@ import { World, FOG_COLOR } from './world';
 import { Sky } from './sky';
 import { Wind } from './wind';
 import { Litter } from './litter';
+import { Rain } from './rain';
 import { Fx } from './fx';
 import { Soldier } from './enemies';
 import { Weapon } from './weapon';
@@ -27,7 +28,7 @@ renderer.shadowMap.enabled = true;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(FOG_COLOR, 35, 140);
+scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
 const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.5, 400);
 /** Lock the horizontal view to SCREEN_W at the gameplay depth, whatever the window aspect. */
 function applyAspect() {
@@ -57,6 +58,7 @@ const world = new World(scene, debris, dust);
 const sky = new Sky(scene);
 const wind = new Wind();
 const litter = new Litter(scene, wind);
+const rain = new Rain(scene, world);
 const hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
 const mech = new Mech();
 debris.setColliders(mech.colliders);
@@ -72,6 +74,7 @@ const post = new Post(renderer, scene, camera, CAM_DIST);
 function syncViewport() {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   dust.setViewport(size.y, camera.fov);
+  rain.setResolution(size.x, size.y);
 }
 syncViewport();
 addEventListener('keydown', (e) => {
@@ -87,6 +90,8 @@ const shieldEl = $('shield'), heatEl = $('heat'), livesEl = $('lives'), hitEl = 
 
 const fx = new Fx(scene);
 fx.setPixelRatio(renderer.getPixelRatio());
+world.setFx(fx);
+world.setPixelRatio(renderer.getPixelRatio());
 fx.setSurface((x, z, y) => world.surfaceTop(x, z, y));
 const weapon = new Weapon();
 const enemies: Soldier[] = [];
@@ -257,7 +262,7 @@ function frame() {
   sun.target.position.set(camX, 0, 0);
   rim.position.set(camX + 10, 6, -40);
   rim.target.position.set(camX, 2, 0);
-  world.update(camX);
+  world.update(camX, dt);
 
   reticle.style.opacity = mech.canFire ? '1' : '0.35';
   reticle.style.transform = `translate(${input.mousePx.x}px, ${input.mousePx.y}px)`;
@@ -267,7 +272,9 @@ function frame() {
   sky.update(camera, now / 1000);
   // the muzzle fire lights the smoke around the barrels
   hazeLights.forEach((v, i) => v.set(muzzlePos[i].x, muzzlePos[i].y, muzzlePos[i].z, weapon.firing ? 0.35 + Math.random() * 0.5 : 0));
+  post.setHazeDensityScale(1 + 0.7 * rain.intensity); // a downpour thickens the air
   post.updateHaze(now / 1000, wind.travelled, hazeLights);
+  rain.update(dt, camX, mech.root.position.x, mech.root.position.z, wind.speed, hazeLights);
   post.render(dt, camVel);
   requestAnimationFrame(frame);
 }

@@ -37,6 +37,8 @@ function makeHazeNoise(size = 32): THREE.Data3DTexture {
 }
 
 
+const BASE_DENSITY = 0.04;
+
 const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -85,7 +87,9 @@ void main() {
     float dens = density(p);
     float a = exp(-dens * uDensity * ds * dl);
     // denser, higher puffs catch more of the moonlight
-    vec3 c = uColor * (0.55 + 0.9 * dens * (0.6 + 0.6 * clamp(p.y / 10.0, 0.0, 1.0)));
+    // the haze lights up less the farther away it is, so the back stays dark
+    float far = exp(-length(p - uCamPos) / 70.0);
+    vec3 c = uColor * far * (0.55 + 0.9 * dens * (0.6 + 0.6 * clamp(p.y / 10.0, 0.0, 1.0)));
     vec3 r0 = p - uLight0.xyz, r1 = p - uLight1.xyz;
     c += dens * vec3(1.0, 0.55, 0.22) * (uLight0.w / (1.0 + 1.4 * dot(r0, r0)) + uLight1.w / (1.0 + 1.4 * dot(r1, r1)));
     L += T * (1.0 - a) * c;
@@ -110,6 +114,8 @@ void main() {
  * (the smoke is low-frequency, so it upsamples cleanly) and composited at full resolution.
  */
 export class HazePass extends Pass {
+  /** multiplies the haze density (heavy rain thickens the air) */
+  densityScale = 1;
   /** haze buffer resolution relative to the screen */
   scale = 0.3;
   private rt: THREE.WebGLRenderTarget;
@@ -133,7 +139,7 @@ export class HazePass extends Pass {
         uCamPos: { value: new THREE.Vector3() }, uCamRot: { value: new THREE.Matrix3() },
         uTan: { value: new THREE.Vector2(1, 1) },
         uTime: { value: 0 }, uWind: { value: 0 },
-        uDensity: { value: 0.04 }, uMaxDist: { value: 110 },
+        uDensity: { value: BASE_DENSITY }, uMaxDist: { value: 110 },
         uColor: { value: new THREE.Color(0.02, 0.027, 0.042) },
         uLight0: { value: new THREE.Vector4() }, uLight1: { value: new THREE.Vector4() },
       },
@@ -165,6 +171,7 @@ export class HazePass extends Pass {
     u.cameraFar.value = cam.far;
     u.uTime.value = time;
     u.uWind.value = wind;
+    u.uDensity.value = BASE_DENSITY * this.densityScale;
     u.uLight0.value.copy(lights[0]);
     u.uLight1.value.copy(lights[1]);
   }

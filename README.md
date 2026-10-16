@@ -61,6 +61,10 @@ src/
   sky.ts        night sky shader: clouds, stars, horizon glow
   wind.ts       shared wind (gusts); drives the haze drift and the litter
   litter.ts     scarce leaves and papers blown along by the wind
+  fire.ts       burning oil barrels in the ground-floor bays, fire light pool, shared flame textures
+  rain.ts       GPU drizzle: wind-slanted drops and splashes that land on roofs and the mech
+  haze.ts       low-res raymarched volumetric haze pass
+  ground.ts     procedural rubble/dirt ground texture + normal map
   input.ts      keyboard and mouse
 ```
 

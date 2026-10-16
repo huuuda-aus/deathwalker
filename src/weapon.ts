@@ -78,6 +78,12 @@ export class Weapon {
       debris.kick(this.cover, this.dir.subVectors(hit.point, muzzle).normalize(), 1.5);
       return;
     }
+    if (hit.kind === 'barrel' && hit.barrel) {
+      // knocked over along the bullet's path (gun to impact), spilling hot coals
+      hit.barrel.shoot(this.dir.subVectors(hit.point, muzzle).normalize(), { coals: world.coals, fx, dust, solid: (x, y, z) => world.solidAt(x, y, z) });
+      fx.sparks(hit.point, 3, 3, [0xffd080, 0xffffff]);
+      return;
+    }
     if (hit.kind === 'enemy' && hit.enemy) {
       fx.sparks(hit.point, 2, 2.5, [0xff3020, 0xff8040]);
       hit.enemy.damage(DAMAGE, fx);

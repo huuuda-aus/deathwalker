@@ -107,7 +107,13 @@ const LETHAL_SIZE = 0.2;
 const LETHAL_SPEED = 1.2;
 
 interface Chunk {
+  /** global id (registry, pair ordering, audit, culling) */
   slot: number;
+  /** which shape batch, and the instance index within it */
+  shape: number;
+  inst: number;
+  /** non-uniform proportions (product ~ 1), so pieces come as slabs, beams, blocks and lumps */
+  dims: THREE.Vector3;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   rot: THREE.Euler;
@@ -124,11 +130,122 @@ interface Chunk {
 const cellKey = (ix: number, iy: number, iz: number): number =>
   ((ix + 4096) * 256 + (iz + 128)) * 128 + Math.max(0, Math.min(127, iy));
 
+// ---- rubble shapes ---------------------------------------------------------------------------
+
+/** deterministic per-vertex jitter so vertices shared between faces move together */
+function jitter(x: number, y: number, z: number, seed: number): number {
+  const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 19.19) * 43758.5453;
+  return h - Math.floor(h) - 0.5;
+}
+
+function jittered(g: THREE.BufferGeometry, amount: number, seed: number): THREE.BufferGeometry {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const k = 1 + amount * 2 * jitter(Math.round(x * 100) / 100, Math.round(y * 100) / 100, Math.round(z * 100) / 100, seed);
+    pos.setXYZ(i, x * k, y * (k * 0.5 + 0.5 + amount * jitter(z, x, y, seed + 3)), z * k);
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
+  return g;
+}
+
+/** a right-triangle prism: a broken slab corner */
+function wedgeGeometry(): THREE.BufferGeometry {
+  const v = [
+    // front (z +0.5), back (z -0.5)
+    [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, 0.5, 0.5],
+    [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, -0.5],
+  ];
+  const f = [[0, 1, 2], [3, 5, 4], [0, 3, 4], [0, 4, 1], [0, 2, 5], [0, 5, 3], [1, 4, 5], [1, 5, 2]];
+  const pos: number[] = [];
+  for (const tri of f) for (const i of tri) pos.push(...v[i]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+const SHAPES: THREE.BufferGeometry[] = [
+  new THREE.BoxGeometry(1, 1, 1),                                                                 // 0 box
+  wedgeGeometry(),                                                                                 // 1 wedge
+  jittered(new THREE.TetrahedronGeometry(0.75), 0.22, 1),                                          // 2 shard
+  jittered(new THREE.TetrahedronGeometry(0.75), 0.3, 2),                                           // 3 shard
+  jittered(new THREE.IcosahedronGeometry(0.58, 0), 0.2, 3),                                        // 4 lump
+  jittered(new THREE.IcosahedronGeometry(0.58, 0), 0.28, 4),                                       // 5 lump
+];
+const SHAPE_WEIGHTS = [0.3, 0.18, 0.1, 0.1, 0.16, 0.16];
+
+function pickShape(): number {
+  let r = Math.random();
+  for (let i = 0; i < SHAPE_WEIGHTS.length; i++) { r -= SHAPE_WEIGHTS[i]; if (r < 0) return i; }
+  return 0;
+}
+
+/** Proportions with a product of ~1: blocks, slabs, beams or chunky pieces, each a little different. */
+function randomDims(): THREE.Vector3 {
+  const r = Math.random();
+  const base = r < 0.35 ? [1, 1, 1] : r < 0.65 ? [1.7, 0.45, 1.4] : r < 0.85 ? [2.3, 0.6, 0.6] : [1.2, 0.8, 1.1];
+  const d = base.map((v) => v * (0.85 + Math.random() * 0.3));
+  const k = 1 / Math.cbrt(d[0] * d[1] * d[2]);
+  return new THREE.Vector3(d[0] * k, d[1] * k, d[2] * k);
+}
+
+/** One InstancedMesh per rubble shape, each with its own slot allocator. */
+class Batch {
+  readonly mesh: THREE.InstancedMesh;
+  private free: number[] = [];
+  private high = 0;
+  private dMin = Infinity;
+  private dMax = -1;
+  private colorDirty = false;
+  private zero = new THREE.Matrix4().makeScale(0, 0, 0);
+
+  constructor(scene: THREE.Scene, geometry: THREE.BufferGeometry, material: THREE.Material) {
+    this.mesh = new THREE.InstancedMesh(geometry, material, MAX_CHUNKS);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.castShadow = true;
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    scene.add(this.mesh);
+  }
+
+  alloc(): number {
+    const i = this.free.length > 0 ? this.free.pop()! : this.high++;
+    this.mesh.count = this.high;
+    return i;
+  }
+
+  release(i: number): void {
+    this.free.push(i);
+    this.mesh.setMatrixAt(i, this.zero);
+    this.mark(i);
+  }
+
+  setColor(i: number, c: THREE.Color): void { this.mesh.setColorAt(i, c); this.colorDirty = true; }
+
+  setMatrix(i: number, m: THREE.Matrix4): void { this.mesh.setMatrixAt(i, m); this.mark(i); }
+
+  private mark(i: number): void { if (i < this.dMin) this.dMin = i; if (i > this.dMax) this.dMax = i; }
+
+  /** upload only what changed */
+  flush(): void {
+    if (this.dMax >= this.dMin) {
+      const attr = this.mesh.instanceMatrix;
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(this.dMin * 16, (this.dMax - this.dMin + 1) * 16);
+      attr.needsUpdate = true;
+      this.dMin = Infinity; this.dMax = -1;
+    }
+    if (this.colorDirty && this.mesh.instanceColor) { this.mesh.instanceColor.needsUpdate = true; this.colorDirty = false; }
+  }
+}
+
 /**
- * Rubble: lightweight rigid-ish bodies (spheres standing in for cubes) in one InstancedMesh.
- * Chunks fall, bounce and settle, then sleep for free. Sleeping chunks sit in a spatial hash
- * and are woken by the mech's kinematic colliders, by hard impacts, or when the structure
- * under them is destroyed. Nothing despawns by age; only distance culling and a hard cap.
+ * Rubble: lightweight rigid-ish bodies (spheres standing in for pieces of every shape and proportion),
+ * drawn as one InstancedMesh per shape. Chunks fall, bounce and settle, then sleep for free. Sleeping chunks
+ * sit in a spatial hash and are woken by the mech's kinematic colliders, by hard impacts, or when the
+ * structure under them is destroyed. Nothing despawns by age; only distance culling and a hard cap.
  */
 export class Debris {
   private slots: (Chunk | null)[] = [];
@@ -137,13 +254,9 @@ export class Debris {
   private awake: Chunk[] = [];
   private sleepGrid = new Map<number, Chunk[]>();
   private awakeGrid = new Map<number, Chunk[]>();
-  private mesh: THREE.InstancedMesh;
+  private batches: Batch[] = [];
   private dummy = new THREE.Object3D();
-  private dMin = Infinity;
-  private dMax = -1;
-  private colorDirty = false;
   private auditIdx = 0;
-  private zero = new THREE.Matrix4().makeScale(0, 0, 0);
   private tmp = new THREE.Vector3();
   private n = new THREE.Vector3();
   private colliders: Collider[] = [];
@@ -151,16 +264,9 @@ export class Debris {
   onContact: ((pos: THREE.Vector3, size: number) => void) | null = null;
 
   constructor(scene: THREE.Scene, private dust: Dust) {
-    this.mesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ roughness: 0.9 }),
-      MAX_CHUNKS,
-    );
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.castShadow = true;
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
-    scene.add(this.mesh);
+    // flat-shaded so the broken pieces look faceted; one material for every shape
+    const material = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+    this.batches = SHAPES.map((g) => new Batch(scene, g, material));
   }
 
   get count(): number { return this.high - this.free.length; }
@@ -174,17 +280,17 @@ export class Debris {
     if (this.free.length > 0) slot = this.free.pop()!;
     else if (this.high < MAX_CHUNKS) slot = this.high++;
     else return;
+    const shape = pickShape();
     const c: Chunk = {
-      slot, pos: pos.clone(), vel: vel.clone(),
+      slot, shape, inst: this.batches[shape].alloc(), dims: randomDims(),
+      pos: pos.clone(), vel: vel.clone(),
       rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
       angVel: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
       size, r: size * 0.5, floor, asleep: false, sleepT: 0, awakeT: 0, key: 0,
     };
     this.slots[slot] = c;
     this.awake.push(c);
-    this.mesh.setColorAt(slot, color);
-    this.colorDirty = true;
-    this.mesh.count = this.high;
+    this.batches[shape].setColor(c.inst, color);
     this.write(c);
   }
 
@@ -313,14 +419,7 @@ export class Debris {
       }
     }
 
-    if (this.dMax >= this.dMin) {
-      const attr = this.mesh.instanceMatrix;
-      attr.clearUpdateRanges();
-      attr.addUpdateRange(this.dMin * 16, (this.dMax - this.dMin + 1) * 16);
-      attr.needsUpdate = true;
-      this.dMin = Infinity; this.dMax = -1;
-    }
-    if (this.colorDirty && this.mesh.instanceColor) { this.mesh.instanceColor.needsUpdate = true; this.colorDirty = false; }
+    for (const batch of this.batches) batch.flush();
   }
 
   // ---- simulation ------------------------------------------------------------------------
@@ -440,11 +539,9 @@ export class Debris {
   private write(c: Chunk): void {
     this.dummy.position.copy(c.pos);
     this.dummy.rotation.copy(c.rot);
-    this.dummy.scale.setScalar(c.size);
+    this.dummy.scale.set(c.size * c.dims.x, c.size * c.dims.y, c.size * c.dims.z);
     this.dummy.updateMatrix();
-    this.mesh.setMatrixAt(c.slot, this.dummy.matrix);
-    if (c.slot < this.dMin) this.dMin = c.slot;
-    if (c.slot > this.dMax) this.dMax = c.slot;
+    this.batches[c.shape].setMatrix(c.inst, this.dummy.matrix);
   }
 
   private gridAdd(grid: Map<number, Chunk[]>, c: Chunk): number {
@@ -459,6 +556,9 @@ export class Debris {
     this.awake[awakeIndex] = this.awake[last];
     this.awake.pop();
     c.rot.set(0, c.rot.y, 0); // lie flat
+    // resting on the ground or the structure: sit at the piece's real half-height, not its bounding sphere's
+    const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, c.pos.y - c.r + 0.02) : 0);
+    if (c.pos.y - c.r <= surface + 0.06) c.pos.y = surface + Math.min((c.size * c.dims.y) / 2, c.r + 0.04);
     c.vel.set(0, 0, 0);
     c.asleep = true;
     c.key = this.gridAdd(this.sleepGrid, c);
@@ -519,9 +619,7 @@ export class Debris {
     }
     this.slots[c.slot] = null;
     this.free.push(c.slot);
-    this.mesh.setMatrixAt(c.slot, this.zero);
-    if (c.slot < this.dMin) this.dMin = c.slot;
-    if (c.slot > this.dMax) this.dMax = c.slot;
+    this.batches[c.shape].release(c.inst);
   }
 
   private forEachNear(grid: Map<number, Chunk[]>, x: number, y: number, z: number, radius: number, fn: (c: Chunk) => void): void {

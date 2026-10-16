@@ -73,10 +73,10 @@ export class Sky {
           // --- sky gradient: deep blue overhead; the green glow sits a little above the horizon,
           // and everything below it sinks into black behind the dense skyline
           vec3 zenith = vec3(0.0006, 0.0012, 0.0045);
-          vec3 mid = vec3(0.0015, 0.0075, 0.028);
+          vec3 mid = vec3(0.001, 0.005, 0.019);
           vec3 sky = mix(mid, zenith, smoothstep(0.1, 0.8, e));
           float g = exp(-pow((e - 0.30) / 0.20, 2.0));
-          sky += uGlow * 0.6 * g * g;
+          sky += uGlow * 0.42 * g * g;
           sky += vec3(0.0, 0.015, 0.01) * exp(-max(e - 0.1, 0.0) * 4.0);
           float toBlack = smoothstep(0.02, 0.24, e);   // 0 at the horizon -> pure black
           sky *= toBlack;
@@ -101,7 +101,7 @@ export class Sky {
           vec3 cloud = vec3(0.0035, 0.0055, 0.011);                    // near-black blue-grey body
           cloud *= mix(1.0, 0.35, dense);                              // cores are darkest
           cloud += uGlow * 0.8 * low * low * (0.35 + 0.65 * (1.0 - dense)); // green light from below
-          cloud += vec3(0.075, 0.105, 0.19) * lit * (1.0 - 0.6 * dense);  // cold silver lining
+          cloud += vec3(0.05, 0.07, 0.125) * lit * (1.0 - 0.6 * dense);  // cold silver lining
 
           float alpha = cover * smoothstep(0.0, 0.06, e) * 0.97;
 

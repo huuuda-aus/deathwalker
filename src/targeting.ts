@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import type { Soldier } from './enemies';
 import type { World } from './world';
 import type { Building } from './building';
+import type { FireBarrel } from './fire';
 
-export type HitKind = 'enemy' | 'wall' | 'ground' | 'backdrop';
+export type HitKind = 'enemy' | 'wall' | 'barrel' | 'ground' | 'backdrop';
 
 export interface Hit {
   kind: HitKind;
@@ -11,6 +12,8 @@ export interface Hit {
   enemy?: Soldier;
   /** the building that was hit (kind 'wall') */
   building?: Building;
+  /** the oil barrel that was hit (kind 'barrel') */
+  barrel?: FireBarrel;
 }
 
 /** Plane behind the far parallax layers, so skyward shots still resolve to a point. */
@@ -24,6 +27,7 @@ export function castRay(ray: THREE.Ray, enemies: Soldier[], world: World, out: H
   out.kind = 'backdrop';
   out.enemy = undefined;
   out.building = undefined;
+  out.barrel = undefined;
 
   // backdrop (always a fallback)
   if (ray.direction.z < 0) {
@@ -38,6 +42,9 @@ export function castRay(ray: THREE.Ray, enemies: Soldier[], world: World, out: H
   // walls
   const wt = world.raycast(ray, tmp);
   if (wt < bestT) { bestT = wt; out.kind = 'wall'; out.point.copy(tmp); out.building = world.lastBuilding ?? undefined; }
+  // oil barrels
+  const bt = world.raycastBarrel(ray, tmp);
+  if (bt < bestT) { bestT = bt; out.kind = 'barrel'; out.point.copy(tmp); out.barrel = world.hitBarrel ?? undefined; }
   // enemies
   for (const e of enemies) {
     if (!e.alive) continue;
