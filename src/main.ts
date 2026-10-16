@@ -88,6 +88,8 @@ const reticle = document.getElementById('reticle')!;
 const $ = (id: string) => document.getElementById(id)!;
 const qualityEl = $('quality');
 const sceneEl = $('scene');
+const fpsEl = $('fps');
+let fpsFrames = 0, fpsTime = 0, fpsWorst = 0;
 const goEl = $('go');
 const shieldEl = $('shield'), heatEl = $('heat'), livesEl = $('lives'), hitEl = $('hit'), overEl = $('over');
 
@@ -156,8 +158,18 @@ addEventListener('resize', () => {
 let last = performance.now();
 function frame() {
   const now = performance.now();
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const rawMs = now - last;
+  const dt = Math.min(rawMs / 1000, 0.05);
   last = now;
+
+  // FPS readout, refreshed twice a second: average rate plus the slowest frame in that window
+  fpsFrames++; fpsTime += rawMs; fpsWorst = Math.max(fpsWorst, rawMs);
+  if (fpsTime >= 500) {
+    const fps = (fpsFrames * 1000) / fpsTime;
+    fpsEl.textContent = `${fps.toFixed(0)} FPS  ${(fpsTime / fpsFrames).toFixed(1)} ms  (worst ${fpsWorst.toFixed(0)} ms)`;
+    fpsEl.style.color = fps >= 50 ? '#7dff9a' : fps >= 30 ? '#ffb347' : '#ff5a4a';
+    fpsFrames = 0; fpsTime = 0; fpsWorst = 0;
+  }
 
   // movement: smooth accel; the mech auto-walks with the camera while it rolls into a scene
   // dense rubble around the feet slows the mech down

@@ -12,6 +12,7 @@
         border: 2px solid #ffb347; border-radius: 50%; pointer-events: none; box-sizing: border-box;
       }
       #hud { position: fixed; left: 16px; top: 16px; font: 12px monospace; color: #ffb347; pointer-events: none; }
+      #fps { position: fixed; right: 16px; top: 16px; font: 12px monospace; color: #ffb347; pointer-events: none; text-align: right; }
       .bar { width: 160px; height: 10px; border: 1px solid #ffb347; margin: 2px 0 8px; }
       .bar > div { height: 100%; width: 0; background: #ffb347; }
       #hit { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255,0,0,0.6)); opacity: 0; pointer-events: none; }
@@ -31,6 +32,7 @@
       <div id="lives"></div>
       <div id="quality" style="margin-top:8px;opacity:.6">Q: post-fx on  |  H: haze</div>
     </div>
+    <div id="fps">-- FPS</div>
     <div id="hit"></div>
     <div id="go">&#9668; GO</div>
     <div id="over">GAME OVER<br /><small>press R</small></div>
