@@ -45,6 +45,14 @@ export const SOLDIER = {
   /** ...and never nearer the mech than a distance picked between these */
   standoffMin: 6,
   standoffMax: 11,
+  /** soldiers closer than this (world units) ease apart, so a crowd does not stack on one spot */
+  personalSpace: 0.3,
+  separateSpeed: 2,
+  /** a trooper will not pick a spot nearer than this to one someone else is standing on or heading for */
+  spotGap: 0.45,
+  /** a soldier killed on an upper floor (higher than this) is flung out of the building this often, to burst on the ground */
+  highFloorY: 1,
+  plungeChance: 0.5,
 } as const;
 
 /** the mech's feet crush infantry they come down on */
@@ -55,9 +63,20 @@ export const STOMP = {
   height: 0.3,
 } as const;
 
-/** soldier fire against the mech */
+/** soldier fire against the mech: real bullets that fly, miss and can be dodged */
 export const ENEMY_FIRE = {
-  hitChance: 0.5,
+  /**
+   * world units / s. About what a cannon shell moves at: it covers a typical 12-unit shot in roughly two
+   * seconds, plenty of time for a nimble mech (4.5 units/s) to step out of the way.
+   */
+  bulletSpeed: 6,
+  /** each shot is aimed at the mech's chest as it is right then (no allowance for movement), off by up to this far... */
+  spreadBase: 0.5,
+  /** ...plus this much per unit of distance to the mech */
+  spreadPerUnit: 0.07,
+  /** vertical and depth misses are this share of the sideways one */
+  spreadVertical: 0.6,
+  spreadDepth: 0.5,
 } as const;
 
 export const WEAPON = {
@@ -88,6 +107,8 @@ export const CANNON = {
   horseBoltFactor: 1.2,
   /** soldiers aboard; they man the gun once it is deployed */
   crew: 2,
+  /** an unmanned (but intact) gun is taken over by street infantry coming within this far of it, up to a full crew */
+  recruitRange: 7,
   /** seconds between rounds with a full crew; fewer crew load proportionally slower, none cannot fire */
   fireInterval: 4,
   firstShotDelay: 1.2,

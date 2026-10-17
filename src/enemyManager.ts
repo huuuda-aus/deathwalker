@@ -4,6 +4,7 @@ import { CannonUnit } from './cannon';
 import { Horse } from './horse';
 import { TruckUnit } from './truck';
 import type { Explosions } from './explosions';
+import type { Bullets } from './bullets';
 import type { Shells } from './shells';
 import type { Dust } from './dust';
 import type { Fx } from './fx';
@@ -32,6 +33,7 @@ export interface EnemyDeps {
   shells: Shells;
   dust: Dust;
   explosions: Explosions;
+  bullets: Bullets;
 }
 
 export class EnemyManager {
@@ -97,6 +99,18 @@ export class EnemyManager {
     this.list.push(unit);
     level.spawned += 1 + troops;
     this.truckTimer = TRUCK.intervalMin + Math.random() * TRUCK.intervalExtra;
+  }
+
+  /** An unmanned gun waves in the nearest free infantryman within reach, to take over as gunner. */
+  private recruit(cannon: CannonUnit): void {
+    const p = cannon.group.position;
+    let best: Soldier | null = null, bestD: number = CANNON.recruitRange;
+    for (const e of this.list) {
+      if (!(e instanceof Soldier) || !e.free) continue;
+      const d = Math.hypot(e.x - p.x, e.group.position.z - p.z);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (best) cannon.claim(best);
   }
 
   /** Is this soldier inside one of the mech's hit spheres (a foot coming down on him, a knee, the body)? */
@@ -193,28 +207,31 @@ export class EnemyManager {
 
   /**
    * @param spawning false once the player is dead
-   * @param onPlayerHit called when a soldier's shot lands on the mech
    */
-  update(dt: number, camX: number, spawning: boolean, onPlayerHit: () => void): void {
-    const { level, fx, mech } = this.deps;
+  update(dt: number, camX: number, spawning: boolean): void {
+    const { level, fx, mech, bullets } = this.deps;
     if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); }
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];
-      e.update(dt, mech.root.position, fx, () => {
-        const hit = Math.random() < ENEMY_FIRE.hitChance;
-        shotAt.copy(chest);
-        if (!hit) {
-          shotAt.x += (Math.random() - 0.5) * 2;
-          shotAt.y += (Math.random() - 0.5) * 1.5;
-          shotAt.z += (Math.random() - 0.5) * 2;
-        }
-        fx.sparks(shotAt, 2, 2.5, hit ? [0xffa040, 0xffffff] : [0xaa8855]);
-        if (hit && spawning) onPlayerHit();
+      e.update(dt, mech.root.position, fx, (from, miss) => {
+        if (!spawning) return;
+        // aimed at where the mech's chest is right now, off by a random amount that grows with distance: a mech
+        // that keeps moving walks out of the way of the bullets
+        const spread = ENEMY_FIRE.spreadBase + ENEMY_FIRE.spreadPerUnit * from.distanceTo(chest);
+        shotAt.set(
+          chest.x + miss.x * spread,
+          chest.y + miss.y * spread * ENEMY_FIRE.spreadVertical,
+          chest.z + miss.z * spread * ENEMY_FIRE.spreadDepth,
+        );
+        bullets.fire(from, shotAt);
       });
       if (e instanceof Soldier && e.alive && this.underFoot(e)) e.splat(fx);
+      if (e instanceof CannonUnit && e.needsCrew) this.recruit(e);
       // a gun with no crew left is out of the fight: it no longer has to be destroyed to clear the scene
       if (e instanceof CannonUnit && e.alive && !e.counted && !e.retreating && !e.operational) { e.counted = true; level.addKill(); }
+      // likewise an empty truck, once its troops are out
+      if (e instanceof TruckUnit && e.alive && !e.counted && !e.retreating && e.empty) { e.counted = true; level.addKill(); }
       if (!e.alive && !e.counted) { e.counted = true; level.addKill(); }
       if ((!e.alive && e.deadTime > 8) || e.gone || (e.retreating && e.x < camX - 14)) {
         this.discard(e);

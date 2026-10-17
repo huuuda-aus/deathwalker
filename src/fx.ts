@@ -116,8 +116,8 @@ export class Fx {
     this.flashLight.intensity = 25;
   }
 
-  /** Spark burst. colors: hex values picked at random per particle. */
-  burst(at: THREE.Vector3, count: number, speed: number, colors: number[], gravity = true): void {
+  /** Spark burst. colors: hex values picked at random per particle; `size` scales the particles (1 = the usual 0.05-0.15). */
+  burst(at: THREE.Vector3, count: number, speed: number, colors: number[], gravity = true, size = 1): void {
     for (let i = 0; i < count && this.particles.length < MAX_PARTICLES; i++) {
       const a = Math.random() * Math.PI * 2;
       const up = Math.random();
@@ -126,7 +126,7 @@ export class Fx {
       this.particles.push({
         pos: at.clone(),
         vel: new THREE.Vector3(Math.cos(a) * s, up * s * 0.9 + (gravity ? 1 : 0), Math.sin(a) * s * 0.6),
-        life, maxLife: life, size: 0.05 + Math.random() * 0.1,
+        life, maxLife: life, size: (0.05 + Math.random() * 0.1) * size,
       });
       this.mesh.setColorAt(this.particles.length - 1, this.tmpColor.setHex(colors[(Math.random() * colors.length) | 0]));
     }

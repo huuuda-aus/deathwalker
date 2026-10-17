@@ -31,6 +31,8 @@ const SWIVEL_RATE = 8;
 /** crew spots in metres, carriage-local with the barrel toward +x: standing on the deck, and at the gun */
 const DECK_SLOTS = [{ x: -0.9, z: -0.35 }, { x: -0.3, z: 0.35 }];
 const POST_SLOTS = [{ x: -1.3, z: -0.9 }, { x: -1.3, z: 0.9 }];
+/** a soldier this close to his place at the gun climbs in (world units) */
+const MAN_REACH = 0.3;
 
 /** What the cannon needs from the world: shells to fire, and debris/smoke for when it blows up. */
 export interface CannonDeps {
@@ -91,6 +93,8 @@ export class CannonUnit implements Enemy {
   private readonly barrelPivot = new THREE.Group();
   private readonly barrel = new THREE.Group();
   private wreck: Wreckage | null = null;
+  /** street infantry on their way to take over an unmanned gun, each with the crew slot it was given */
+  private claims: { soldier: Soldier; slot: number }[] = [];
 
   constructor(
     x: number, z: number,
@@ -125,6 +129,51 @@ export class CannonUnit implements Enemy {
 
   /** alive and still has someone to fire it */
   get operational(): boolean { return this.alive && this.crewAboard().length > 0; }
+
+  /** Deployed and intact, with a crew slot nobody holds or is heading for. */
+  get needsCrew(): boolean {
+    return this.state === 'fire' && !this.retreating && this.crewAboard().length + this.claims.length < CANNON.crew;
+  }
+
+  /** Where this slot's gunner stands, on the ground beside the gun. */
+  private slotWorld(slot: number): { x: number; z: number } {
+    const g = this.group.position, s = POST_SLOTS[slot];
+    return { x: g.x + s.x * this.facingVis * UNIT, z: g.z + s.z * UNIT };
+  }
+
+  /** Send a soldier to take a free crew slot. Returns false if there is none. */
+  claim(soldier: Soldier): boolean {
+    if (!this.needsCrew) return false;
+    const taken = new Set(this.claims.map((c) => c.slot));
+    const slot = this.crew.findIndex((c, i) => c.state !== 'mounted' && !taken.has(i));
+    if (slot < 0) return false;
+    const at = this.slotWorld(slot);
+    soldier.rushTo(at.x, at.z);
+    this.claims.push({ soldier, slot });
+    return true;
+  }
+
+  /** Soldiers on their way: the ones that arrive man the gun; the ones that die or give up are forgotten. */
+  private stepClaims(): void {
+    for (let i = this.claims.length - 1; i >= 0; i--) {
+      const { soldier: s, slot } = this.claims[i];
+      const at = this.slotWorld(slot);
+      const d = Math.hypot(s.x - at.x, s.group.position.z - at.z);
+      if (!s.alive || this.retreating || this.state !== 'fire') {
+        if (s.alive) s.standDown();
+        this.claims.splice(i, 1);
+      } else if (d < MAN_REACH) {
+        const first = this.crewAboard().length === 0;
+        this.crew[slot] = s;          // replaces whoever died there
+        s.crewUp();
+        if (first) this.fireTimer = CANNON.firstShotDelay;   // the new gunner loads before the first round
+        this.claims.splice(i, 1);
+      } else if (s.settled) {
+        s.standDown();                // stuck or distracted: it will not get there
+        this.claims.splice(i, 1);
+      }
+    }
+  }
 
   getBox(out: THREE.Box3): THREE.Box3 {
     const p = this.group.position;
@@ -220,6 +269,7 @@ export class CannonUnit implements Enemy {
         break;
       }
       case 'fire':
+        this.stepClaims();
         this.aim(dt, target);
         break;
       case 'dead':

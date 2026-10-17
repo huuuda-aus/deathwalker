@@ -11,7 +11,9 @@ const GUN_IDLE = new THREE.MeshStandardMaterial({ color: 0x222222 });
 
 /** Soldier is 1/8 of the mech's height, +15%. Model is authored ~2 units tall. */
 export const SOLDIER_HEIGHT = ((4 * MECH_SCALE) / 8) * 1.15; // mech model is 4 units tall before scaling
-const K = SOLDIER_HEIGHT / 2;
+/** soldiers are drawn this much bigger than the reference height (the cannon, horse and truck are sized from SOLDIER_HEIGHT and stay as they were) */
+const SOLDIER_SCALE = 1.15;
+const K = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
 
 /** What a soldier needs to know about the world around it; supplied by whoever creates it. */
 export interface SoldierEnv {
@@ -21,12 +23,16 @@ export interface SoldierEnv {
   sight(a: THREE.Vector3, b: THREE.Vector3): boolean;
   /** highest solid surface under (x, z) at or below y (0 = ground), so corpses fall until something is under them */
   surface(x: number, z: number, y: number): number;
+  /** every enemy in the game, so soldiers can keep clear of each other (optional) */
+  others?(): readonly Enemy[];
 }
 
 /** height (world) the soldiers aim at on the mech */
 const CHEST_Y = 1.6;
 const SOLDIER_R = 0.127;      // body radius used for rubble avoidance
 const LOOKAHEAD = 0.45;
+/** a body that falls less than this lands without bursting (it only slid off a ledge) */
+const PLUNGE_MIN_FALL = 0.8;
 /** the blood pool left under a flattened soldier */
 const BLOOD_GEO = new THREE.CircleGeometry(0.16, 14).rotateX(-Math.PI / 2).translate(0, 0.004, 0);
 const BLOOD_MAT = new THREE.MeshBasicMaterial({ color: 0x5a0c0c, transparent: true, opacity: 0.85, depthWrite: false });
@@ -60,6 +66,9 @@ export const FLESH_IMPACT: ImpactFx = { colors: [0xff3020, 0xff8040], sparks: 2,
 /** metal: a shower of white-hot sparks and a few embers that bounce off */
 export const METAL_IMPACT: ImpactFx = { colors: [0xffe080, 0xffa030, 0xffffff], sparks: 7, embers: 2 };
 
+/** A shot being fired: where the barrel is, and a random miss in -1..1 on each axis. */
+export type ShotFn = (from: THREE.Vector3, miss: THREE.Vector3) => void;
+
 /** What the manager, the gun and the debris need from anything that fights on the enemy side. */
 export interface Enemy {
   readonly group: THREE.Object3D;
@@ -78,8 +87,8 @@ export interface Enemy {
   getBox(out: THREE.Box3): THREE.Box3;
   /** Returns true if the hit killed. */
   damage(n: number, fx: Fx): boolean;
-  /** onShoot: called when it fires at the player; hit chance resolved by caller. */
-  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: () => void): void;
+  /** onShoot: called when it fires at the player; the caller makes the bullet and aims it. */
+  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: ShotFn): void;
   /** free anything it put in the scene outside `group` */
   dispose(): void;
 }
@@ -90,8 +99,8 @@ export class Soldier implements Enemy {
   hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
   /** hitbox half extents (padded for forgiveness) */
-  readonly half = new THREE.Vector3(0.345, 0.2875, 0.345);
-  centerY = SOLDIER_HEIGHT / 2;
+  readonly half = new THREE.Vector3(0.345, 0.2875, 0.345).multiplyScalar(SOLDIER_SCALE);
+  centerY = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
   /** model scale; perched soldiers are enlarged to offset their extra distance from the camera */
   private k = K;
   private body = new THREE.Group();
@@ -109,6 +118,10 @@ export class Soldier implements Enemy {
   private deadVy = 0;
   /** killed by being stepped on: lies flat where it stood */
   private squashed = false;
+  /** thrown out of an upper floor: still falling, will burst on landing */
+  private plunging = false;
+  private plungeFrom = 0;
+  private plungeVel = new THREE.Vector3();
   /** which way we are going round an obstacle (+1/-1), 0 = none; kept for a moment to avoid dithering */
   private avoid = 0;
   private avoidT = 0;
@@ -120,6 +133,7 @@ export class Soldier implements Enemy {
   private goalT = 0;
   private goalFails = 0;
   private muzzleTmp = new THREE.Vector3();
+  private missTmp = new THREE.Vector3();
   private sightA = new THREE.Vector3();
   private sightB = new THREE.Vector3();
   private perch: Perch | null = null;
@@ -198,6 +212,35 @@ export class Soldier implements Enemy {
     this.fallStart = this.group.position.y;
   }
 
+  /** Street infantry that is not busy with anything else (walking at the mech, not perched or in the air). */
+  get free(): boolean { return this.alive && this.state === 'walk' && this.plan === 'normal' && !this.perch; }
+
+  /** Drop everything and run to this spot (a gun to man), shooting on the way; `holding` says when it has got there or given up. */
+  rushTo(x: number, z: number): void {
+    this.plan = 'scatter';
+    this.post = { x, z };
+    this.postT = 0;
+    this.holding = false;
+    this.goal = null;
+  }
+
+  /** Never mind: back to walking at the mech like any other soldier. */
+  standDown(): void {
+    if (this.state === 'mounted') return;
+    this.plan = 'normal';
+    this.post = null;
+    this.holding = false;
+  }
+
+  /** Climb aboard a gun: the gun takes over where it stands. */
+  crewUp(): void {
+    this.standDown();
+    this.mount();
+  }
+
+  /** has stopped running to its post: arrived, or timed out */
+  get settled(): boolean { return this.holding; }
+
   /** Back to being an ordinary infantryman on the ground. */
   release(): void {
     if (this.state !== 'mounted') return;
@@ -226,9 +269,15 @@ export class Soldier implements Enemy {
     this.state = 'dead';
     this.deadTime = 0;
     this.deadVy = 0;
+    this.flatten(fx);
+  }
+
+  /** Lie squashed flat in a pool of blood, with a spray of it. */
+  private flatten(fx: Fx): void {
     this.squashed = true;
     this.body.scale.y = this.k * 0.08;
     this.body.rotation.z = 0;
+    this.group.rotation.z = 0;
     this.group.add(new THREE.Mesh(BLOOD_GEO, BLOOD_MAT));
     const at = new THREE.Vector3(this.x, this.group.position.y + 0.05, this.z);
     fx.burst(at, 26, 3.5, [0x8a1010, 0xc02020, 0x601010, 0xffa040]);
@@ -242,9 +291,26 @@ export class Soldier implements Enemy {
     if (this.hp > 0) return false;
     this.state = 'dead';
     this.deadTime = 0;
+    if (this.group.position.y > SOLDIER.highFloorY && Math.random() < SOLDIER.plungeChance) {
+      this.plunge();
+      return true;
+    }
     this.deadVy = 1.0; // a little hop as it drops
     fx.burst(new THREE.Vector3(this.x, this.group.position.y + this.centerY, this.z), 12, 2.5, [0x8a1010, 0xc02020, 0xffa040]);
     return true;
+  }
+
+  /**
+   * Killed on an upper floor: no spray in the room. The body is flung out of the bay, tumbles down the front of the
+   * building and bursts on whatever it lands on.
+   */
+  private plunge(): void {
+    this.plunging = true;
+    this.plungeFrom = this.group.position.y;
+    this.deadVy = 3;
+    // far enough forward (toward the camera) to clear the ledge from wherever in the room it was standing
+    const toEdge = this.perch ? Math.max(0.3, this.perch.ledgeZ + 0.3 - this.group.position.z) : 0.3;
+    this.plungeVel.set((Math.random() - 0.5) * 1.2, 0, THREE.MathUtils.clamp(toEdge / 0.3, 1.2, 9) * (1 + Math.random() * 0.3));
   }
 
   /**
@@ -291,6 +357,13 @@ export class Soldier implements Enemy {
     return true;
   }
 
+  /** Fire one bullet, with a random miss. */
+  private shoot(fx: Fx, dir: number, onShoot: ShotFn): void {
+    const muzzle = this.muzzlePoint(dir);
+    fx.sparks(muzzle, 2, 1.5, [0xffd080]);
+    onShoot(muzzle, this.missTmp.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1));
+  }
+
   private muzzlePoint(dir: number): THREE.Vector3 {
     return this.muzzleTmp.set(this.x + dir * 0.8 * this.k, this.group.position.y + 1.2 * this.k, this.z + 0.2 * this.k);
   }
@@ -310,11 +383,55 @@ export class Soldier implements Enemy {
 
   /** A spot of its own: a little way along the street from where it landed, a good firing distance from the mech. */
   private pickScatter(target: THREE.Vector3): { x: number; z: number } {
-    const standoff = SOLDIER.standoffMin + Math.random() * (SOLDIER.standoffMax - SOLDIER.standoffMin);
-    let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
-    const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
-    if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
-    return { x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) };
+    let spot = { x: 0, z: 0 };
+    for (let tries = 0; tries < 8; tries++) {
+      const standoff = SOLDIER.standoffMin + Math.random() * (SOLDIER.standoffMax - SOLDIER.standoffMin);
+      let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
+      const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
+      if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
+      spot = { x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) };
+      if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;                  // someone else is already heading there
+    }
+    return spot;
+  }
+
+  /** Is another soldier standing at, or on his way to, this spot? */
+  private spotTaken(x: number, z: number, gap: number): boolean {
+    const others = this.env.others?.();
+    if (!others) return false;
+    for (const o of others) {
+      if (o === this || !(o instanceof Soldier) || !o.alive) continue;
+      const px = o.post ? o.post.x : o.x, pz = o.post ? o.post.z : o.group.position.z;
+      if ((px - x) ** 2 + (pz - z) ** 2 < gap * gap) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Personal space: soldiers standing on top of each other (running to the same spot, crowding a cover) ease apart.
+   * Everyone does their own share, so a pair moves away from each other equally.
+   */
+  private keepApart(dt: number): void {
+    const others = this.env.others?.();
+    if (!others) return;
+    const g = this.group.position;
+    let px = 0, pz = 0;
+    for (const o of others) {
+      if (o === this || !(o instanceof Soldier) || !o.alive || o.state === 'mounted' || o.perch) continue;
+      if (Math.abs(g.y - o.group.position.y) > 0.3) continue;                    // on another floor
+      const dx = g.x - o.x, dz = g.z - o.group.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= SOLDIER.personalSpace * SOLDIER.personalSpace) continue;
+      const d = Math.sqrt(d2);
+      const push = 1 - d / SOLDIER.personalSpace;
+      if (d > 1e-4) { px += (dx / d) * push; pz += (dz / d) * push; }
+      else { const a = Math.random() * Math.PI * 2; px += Math.cos(a) * push; pz += Math.sin(a) * push; }
+    }
+    if (px === 0 && pz === 0) return;
+    const move = SOLDIER.separateSpeed * dt;
+    g.x += px * move;
+    g.z = THREE.MathUtils.clamp(g.z + pz * move, Math.min(LANE.zMin, g.z), LANE.zMax);
+    this.pushOut(this.env.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
   }
 
   /** The spot just behind the nearest big chunk of rubble, as seen from the mech. */
@@ -328,9 +445,17 @@ export class Soldier implements Enemy {
     }
     if (best < 0) return null;
     const b = BLOCKER_BUF[best];
-    const ax = b.x - target.x, az = b.z - target.z, al = Math.hypot(ax, az) || 1;
+    // directly behind it, as seen from the mech; or, if someone is already there, round to one side or the other
+    const base = Math.atan2(b.z - target.z, b.x - target.x);
     const off = b.r + SOLDIER_R + 0.12;
-    return { x: b.x + (ax / al) * off, z: THREE.MathUtils.clamp(b.z + (az / al) * off, LANE.zMin, LANE.zMax) };
+    const swing = Math.random() < 0.5 ? 1 : -1;
+    let spot = { x: 0, z: 0 };
+    for (const turn of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5]) {
+      const a = base + turn * swing;
+      spot = { x: b.x + Math.cos(a) * off, z: THREE.MathUtils.clamp(b.z + Math.sin(a) * off, LANE.zMin, LANE.zMax) };
+      if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;
+    }
+    return spot;
   }
 
   /** Clear line of fire from standing at (x, z) to the mech's chest? (rubble is cover, for both sides) */
@@ -384,19 +509,29 @@ export class Soldier implements Enemy {
     }
   }
 
-  /** onShoot: called when the soldier fires at the player; hit chance resolved by caller. */
-  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: () => void): void {
+  /** onShoot: called for each bullet the soldier fires at the player; the caller makes the bullet and aims it. */
+  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: ShotFn): void {
     const g = this.group;
     if (this.state === 'mounted') return;
     if (this.state === 'dead') {
       this.deadTime += dt;
       const k = Math.min(1, this.deadTime / 0.35);
-      if (!this.squashed) g.rotation.z = -this.fallDir * k * 1.5;
+      if (this.plunging) {
+        g.rotation.z -= this.fallDir * 7 * dt;                // tumbling as it falls
+        g.position.x += this.plungeVel.x * dt;
+        g.position.z += this.plungeVel.z * dt;
+      } else if (!this.squashed) {
+        g.rotation.z = -this.fallDir * k * 1.5;
+      }
       // corpses obey gravity too: fall until a floor (or the ground) is under them
       const ground = Math.max(0, this.env.surface(this.x, this.z, g.position.y + 0.05));
       this.deadVy -= 16 * dt;
       g.position.y = Math.max(ground, g.position.y + this.deadVy * dt);
-      if (g.position.y <= ground) this.deadVy = 0;
+      if (g.position.y <= ground) {
+        this.deadVy = 0;
+        if (this.plunging && this.plungeFrom - ground > PLUNGE_MIN_FALL) this.flatten(fx);
+        this.plunging = false;
+      }
       return;
     }
     if (this.state === 'jump') {
@@ -433,6 +568,7 @@ export class Soldier implements Enemy {
       this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
       return;
     }
+    if (!this.perch) this.keepApart(dt);
     const dxT = target.x - this.x;
     const dzT = target.z - this.z;
     const dir = Math.sign(dxT) || 1;
@@ -502,8 +638,7 @@ export class Soldier implements Enemy {
         this.gunT -= dt;
         if (this.gunT <= 0 && dist < RUN_GUN_RANGE && this.hasLOS(target)) {
           this.gunT = 1.4 + Math.random() * 1.4;
-          fx.sparks(this.muzzlePoint(dir), 2, 1.5, [0xffd080]);
-          onShoot();
+          this.shoot(fx, dir, onShoot);
         }
       }
       if (moved) {
@@ -528,8 +663,7 @@ export class Soldier implements Enemy {
           this.timer = 0.4;
           this.losT = 0;
         } else {
-          fx.sparks(this.muzzlePoint(dir), 2, 1.5, [0xffd080]);
-          onShoot();
+          this.shoot(fx, dir, onShoot);
           this.state = 'cooldown';
           this.timer = 1.2 + Math.random() * 1.3;
         }
