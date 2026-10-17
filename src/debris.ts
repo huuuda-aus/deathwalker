@@ -294,7 +294,8 @@ export class Debris {
       const impact = -c.vel.y;
       if (impact > 2.2) this.dust.puff(this.tmp.set(c.pos.x, surface + 0.1, c.pos.z), 1, c.size * 1.5, 1);
       c.vel.y = impact > 1.1 ? impact * RESTITUTION : 0;
-      const f = Math.max(0, 1 - 8 * dt); // ground friction
+      // ground friction: heavy wrecks (rigid bodies) keep sliding noticeably further than loose rubble
+      const f = Math.max(0, 1 - (c.body ? 2.5 : 8) * dt);
       c.vel.x *= f; c.vel.z *= f;
       c.angVel.multiplyScalar(Math.max(0, 1 - 6 * dt));
       grounded = true;

@@ -127,6 +127,8 @@ export class TruckUnit implements Enemy {
   private schedule: number[] = [];
   private unloaded = 0;
   private wreck: Wreckage | null = null;
+  /** its velocity right now (world units/s): everything it throws off when destroyed carries it */
+  private readonly vel = new THREE.Vector3();
 
   /** How far a truck coming from this side travels while turning, with the nominal final heading. */
   static turnShift(fromRight: boolean): { dx: number; dz: number } {
@@ -188,6 +190,7 @@ export class TruckUnit implements Enemy {
     switch (this.state) {
       case 'drive':
         g.x += this.dirX * TRUCK.speed * dt;
+        this.vel.set(this.dirX * TRUCK.speed, 0, 0);
         this.roll(TRUCK.speed, dt);
         if (this.dirX * (g.x - this.spec.turnStartX) >= 0) { this.state = 'turn'; this.t = 0; }
         break;
@@ -199,8 +202,10 @@ export class TruckUnit implements Enemy {
         g.x = this.spec.turnStartX + a.x + (b.x - a.x) * u;
         g.z = this.spec.zDrive + a.z + (b.z - a.z) * u;
         this.group.rotation.y = a.yaw + (b.yaw - a.yaw) * u;
-        this.roll(a.speed + (b.speed - a.speed) * u, dt);
-        if (k >= 1) { this.state = 'unload'; this.clock = 0; this.planUnloading(); }
+        const speed = a.speed + (b.speed - a.speed) * u;
+        this.vel.set(Math.cos(this.group.rotation.y) * speed, 0, -Math.sin(this.group.rotation.y) * speed);
+        this.roll(speed, dt);
+        if (k >= 1) { this.state = 'unload'; this.clock = 0; this.vel.set(0, 0, 0); this.planUnloading(); }
         break;
       }
       case 'unload':
@@ -260,7 +265,7 @@ export class TruckUnit implements Enemy {
   }
 
   /** out of the back (-x, the way the truck faces away from) with a little sideways drift, or in any direction from a wreck, plus a hop */
-  private leapVelocity(rear: boolean, speed: number): THREE.Vector3 {
+  private leapVelocity(rear: boolean, speed: number, carried = false): THREE.Vector3 {
     const origin = this.body.localToWorld(scratch.set(0, 0, 0)).clone();
     const dir = rear
       ? scratch.set(-1, 0, (Math.random() - 0.5) * 0.9)
@@ -269,6 +274,7 @@ export class TruckUnit implements Enemy {
     v.y = 0;
     v.normalize().multiplyScalar(speed);
     v.y = 1.2 + Math.random();
+    if (carried) { v.x += this.vel.x; v.z += this.vel.z; }          // flung out of a moving truck
     return v;
   }
 
@@ -289,7 +295,7 @@ export class TruckUnit implements Enemy {
       const s = this.makeSoldier(false);
       s.plan = Math.random() < TRUCK.coverChance ? 'cover' : 'scatter';
       this.deps.add(s);
-      s.launch(this.leapVelocity(false, 2 + Math.random() * 2));
+      s.launch(this.leapVelocity(false, 2 + Math.random() * 2, true));
       if (Math.random() < 0.5) s.damage(99, fx);
     }
     this.unloaded = this.spec.troops;
@@ -305,14 +311,16 @@ export class TruckUnit implements Enemy {
     });
     const wreck = (this.wreck = new Wreckage(this.group.parent ?? this.group));
     const r = (a: number, b: number): number => a + Math.random() * (b - a);
+    // every piece keeps the truck's momentum, on top of the blast
+    const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x + this.vel.x, y, z + this.vel.z);
     for (const w of this.wheels) {
-      wreck.fling(w, new THREE.Vector3(r(-2, 2), r(2.5, 4), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2 });
+      wreck.fling(w, v(r(-2, 2), r(2.5, 4), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2 });
     }
-    wreck.fling(this.roof, new THREE.Vector3(r(-1.2, 1.2), r(4, 5.5), r(0, 1.5)), new THREE.Vector3(r(-2, 2), r(-1, 1), r(-2, 2)), 0.6 * UNIT, { x: 0, z: 0 });
+    wreck.fling(this.roof, v(r(-1.2, 1.2), r(4, 5.5), r(0, 1.5)), new THREE.Vector3(r(-2, 2), r(-1, 1), r(-2, 2)), 0.6 * UNIT, { x: 0, z: 0 });
     for (const d of this.doors) {
-      wreck.fling(d, new THREE.Vector3(r(-2.5, 2.5), r(3, 4.5), r(-1, 2.5)), new THREE.Vector3(r(-5, 5), r(-3, 3), r(-5, 5)), 0.03 * UNIT, { x: Math.PI / 2, y: 0, z: 0 });
+      wreck.fling(d, v(r(-2.5, 2.5), r(3, 4.5), r(-1, 2.5)), new THREE.Vector3(r(-5, 5), r(-3, 3), r(-5, 5)), 0.03 * UNIT, { x: Math.PI / 2, y: 0, z: 0 });
     }
-    wreck.fling(this.bumper, new THREE.Vector3(r(-2, 2), r(2.5, 3.5), r(0.5, 2)), new THREE.Vector3(r(-4, 4), r(-2, 2), r(-4, 4)), 0.15 * UNIT, { x: 0, z: 0 });
+    wreck.fling(this.bumper, v(r(-2, 2), r(2.5, 3.5), r(0.5, 2)), new THREE.Vector3(r(-4, 4), r(-2, 2), r(-4, 4)), 0.15 * UNIT, { x: 0, z: 0 });
     this.hulkToRubble();
   }
 
@@ -331,7 +339,7 @@ export class TruckUnit implements Enemy {
       pivot.position.set(centre.x, size / 2, centre.z);
       world.add(pivot);
       pivot.attach(section);                     // keeps where it is: the model now hangs from the ball's centre
-      debris.spawnBody(pivot, size, new THREE.Vector3((Math.random() - 0.5) * 1.2, 1 + Math.random(), (Math.random() - 0.3) * 0.8), floor);
+      debris.spawnBody(pivot, size, new THREE.Vector3((Math.random() - 0.5) * 1.2 + this.vel.x, 1 + Math.random(), (Math.random() - 0.3) * 0.8 + this.vel.z), floor);
     }
   }
 
