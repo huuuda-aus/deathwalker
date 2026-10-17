@@ -48,12 +48,16 @@ export class Weapon {
     this.cooldown -= dt;
     this.sinceShot += dt;
 
+    // the cooldown only counts down to "ready": left to run on while idle, the first press would fire every round it
+    // had "missed" in one frame (a tap after two idle seconds is forty bullets in the same spot)
     if (this.locked) {
+      this.cooldown = Math.max(0, this.cooldown);
       this.heat = Math.max(0, this.heat - LOCK_COOL_RATE * dt);
       if (this.heat <= UNLOCK_AT) this.locked = false;
       return;
     }
     if (!firing) {
+      this.cooldown = Math.max(0, this.cooldown);
       this.heat = Math.max(0, this.heat - COOL_RATE * dt);
       return;
     }
