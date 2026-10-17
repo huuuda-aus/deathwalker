@@ -1,18 +1,9 @@
 import * as THREE from 'three';
+import { mulberry32 } from './util';
 
 /** World units covered by one repeat of the ground texture. */
 export const GROUND_TILE = 10;
 const SIZE = 1024;
-
-/** Seeded RNG so the ground looks the same every run. */
-function mulberry32(a: number) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** Tileable value-noise fbm sampled on the pixel grid (lattice wraps, so the texture repeats cleanly). */
 function tileableFbm(size: number, periods: number[], rnd: () => number): Float32Array {

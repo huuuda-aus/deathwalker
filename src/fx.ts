@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PointPool } from './pointpool';
 
 const MAX_PARTICLES = 600;
 
@@ -6,16 +7,13 @@ interface Particle { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLi
 
 const MAX_SPARKS = 400;
 
+interface Spark { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; px: number; color: THREE.Color }
+
 /** Height of the highest solid surface under (x, z) at or below y; 0 = ground. */
 export type SurfaceFn = (x: number, z: number, y: number) => number;
 
 /** Tiny 1-2 px sparks for bullet impacts: one Points draw call, additive, size in screen pixels. */
 class PixelSparks {
-  private items: { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; px: number; color: THREE.Color }[] = [];
-  private geo = new THREE.BufferGeometry();
-  private posAttr = new THREE.BufferAttribute(new Float32Array(MAX_SPARKS * 3), 3);
-  private colAttr = new THREE.BufferAttribute(new Float32Array(MAX_SPARKS * 3), 3);
-  private sizeAttr = new THREE.BufferAttribute(new Float32Array(MAX_SPARKS), 1);
   private material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -34,15 +32,10 @@ class PixelSparks {
       void main() { gl_FragColor = vec4(vColor, 1.0); }`,
   });
 
+  private pool: PointPool<Spark>;
+
   constructor(scene: THREE.Scene) {
-    for (const a of [this.posAttr, this.colAttr, this.sizeAttr]) a.setUsage(THREE.DynamicDrawUsage);
-    this.geo.setAttribute('position', this.posAttr);
-    this.geo.setAttribute('aColor', this.colAttr);
-    this.geo.setAttribute('aSize', this.sizeAttr);
-    this.geo.setDrawRange(0, 0);
-    const pts = new THREE.Points(this.geo, this.material);
-    pts.frustumCulled = false;
-    scene.add(pts);
+    this.pool = new PointPool(scene, MAX_SPARKS, this.material, { position: 3, aColor: 3, aSize: 1 });
   }
 
   surface: SurfaceFn | null = null;
@@ -50,11 +43,11 @@ class PixelSparks {
   setPixelRatio(r: number): void { this.material.uniforms.uPixelRatio.value = r; }
 
   emit(at: THREE.Vector3, count: number, speed: number, colors: number[]): void {
-    for (let i = 0; i < count && this.items.length < MAX_SPARKS; i++) {
+    for (let i = 0; i < count && !this.pool.full; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.4 + Math.random() * 0.8);
       const life = 0.15 + Math.random() * 0.25;
-      this.items.push({
+      this.pool.push({
         pos: at.clone().add(new THREE.Vector3(0, 0, 0.05)), // nudge toward camera so surfaces don't clip it
         vel: new THREE.Vector3(Math.cos(a) * s, Math.random() * s * 0.8 + 0.5, (Math.random() - 0.3) * s * 0.6),
         life, maxLife: life, px: Math.random() < 0.5 ? 1 : 2,
@@ -64,24 +57,22 @@ class PixelSparks {
   }
 
   update(dt: number): void {
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const p = this.items[i];
+    const { items } = this.pool;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const p = items[i];
       p.life -= dt;
-      if (p.life <= 0) { this.items[i] = this.items[this.items.length - 1]; this.items.pop(); continue; }
+      if (p.life <= 0) { this.pool.removeAt(i); continue; }
       p.vel.y -= 12 * dt;
       const floor = this.surface ? this.surface(p.pos.x, p.pos.z, p.pos.y) : 0;
       p.pos.addScaledVector(p.vel, dt);
       if (p.pos.y < floor + 0.02) { p.pos.y = floor + 0.02; p.vel.y *= -0.3; }
     }
-    for (let i = 0; i < this.items.length; i++) {
-      const p = this.items[i];
+    this.pool.upload((p, i, a) => {
       const f = p.life / p.maxLife; // additive: fading to black = fading out
-      this.posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
-      this.colAttr.setXYZ(i, p.color.r * f, p.color.g * f, p.color.b * f);
-      this.sizeAttr.setX(i, p.px);
-    }
-    this.geo.setDrawRange(0, this.items.length);
-    this.posAttr.needsUpdate = this.colAttr.needsUpdate = this.sizeAttr.needsUpdate = true;
+      a.position.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
+      a.aColor.setXYZ(i, p.color.r * f, p.color.g * f, p.color.b * f);
+      a.aSize.setX(i, p.px);
+    });
   }
 }
 

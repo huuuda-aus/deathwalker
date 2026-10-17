@@ -1,55 +1,9 @@
 import * as THREE from 'three';
 import type { Building } from './building';
-import type { Dust } from './debris';
+import type { Dust } from './dust';
 
-/** Teardrop flame: white-hot at the barrel (right edge), orange, fading red at the tip (left). */
-export function flameTexture(): THREE.CanvasTexture {
-  const W = 256, H = 96;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(W, 0, 0, 0);
-  grad.addColorStop(0, 'rgba(255,255,235,1)');
-  grad.addColorStop(0.22, 'rgba(255,215,110,0.97)');
-  grad.addColorStop(0.55, 'rgba(255,120,25,0.65)');
-  grad.addColorStop(1, 'rgba(190,40,0,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, W, H);
-  // soft elongated mask: wide at the muzzle, tapering to the tip
-  g.globalCompositeOperation = 'destination-in';
-  g.setTransform((W * 0.98) / (H / 2), 0, 0, 1, W, H / 2);
-  const mask = g.createRadialGradient(0, 0, 0, 0, 0, H / 2);
-  mask.addColorStop(0, 'rgba(255,255,255,1)');
-  mask.addColorStop(0.5, 'rgba(255,255,255,0.75)');
-  mask.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = mask;
-  g.fillRect(-W, -H, 2 * W, 2 * H);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-export function glowTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d')!;
-  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  r.addColorStop(0, 'rgba(255,255,255,1)');
-  r.addColorStop(0.25, 'rgba(255,200,110,0.8)');
-  r.addColorStop(0.6, 'rgba(255,110,20,0.25)');
-  r.addColorStop(1, 'rgba(255,60,0,0)');
-  g.fillStyle = r;
-  g.fillRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-
-let sharedFlame: THREE.CanvasTexture | null = null;
-let sharedGlow: THREE.CanvasTexture | null = null;
-const flameTex = (): THREE.CanvasTexture => (sharedFlame ??= flameTexture());
-const glowTex = (): THREE.CanvasTexture => (sharedGlow ??= glowTexture());
+import { flameTexture, glowTexture } from './fireTextures';
+import type { Coals } from './coals';
 
 const BARREL_MAT = new THREE.MeshStandardMaterial({ color: 0x3b2a22, roughness: 0.7, metalness: 0.55 });
 const RING_MAT = new THREE.MeshStandardMaterial({ color: 0x1c1512, roughness: 0.6, metalness: 0.6 });
@@ -67,133 +21,15 @@ interface Tongue {
   h: number; hT: number; b: number; bT: number; w: number; wT: number; timer: number;
 }
 
-/** Surface height under (x, z) at or below y; 0 = ground. */
-export type SurfaceFn = (x: number, z: number, y: number) => number;
-
 const GRAVITY = 16;
-const MAX_COALS = 700;
 
-/**
- * Hot coals thrown out of a shot barrel. They are real little bodies: gravity, bounce on whatever
- * floor is under them, friction, then they lie there glowing and cool from white-yellow through
- * orange to a dull red before going out. One Points draw call, additive, HDR so the hot ones bloom.
- */
-export class Coals {
-  private items: { pos: THREE.Vector3; vel: THREE.Vector3; heat: number; tau: number; px: number; rest: boolean }[] = [];
-  private geo = new THREE.BufferGeometry();
-  private posAttr = new THREE.BufferAttribute(new Float32Array(MAX_COALS * 3), 3);
-  private heatAttr = new THREE.BufferAttribute(new Float32Array(MAX_COALS), 1);
-  private sizeAttr = new THREE.BufferAttribute(new Float32Array(MAX_COALS), 1);
-  private material = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: { uPixelRatio: { value: 1 } },
-    vertexShader: /* glsl */ `
-      attribute float aHeat; attribute float aSize;
-      uniform float uPixelRatio; varying float vHeat;
-      void main() {
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * uPixelRatio;
-        vHeat = aHeat;
-      }`,
-    fragmentShader: /* glsl */ `
-      varying float vHeat;
-      void main() {
-        float r = length(gl_PointCoord - 0.5) * 2.0;
-        if (r > 1.0) discard;
-        float core = smoothstep(1.0, 0.15, r);
-        vec3 cold = vec3(0.22, 0.025, 0.0), warm = vec3(2.2, 0.8, 0.18), hot = vec3(3.2, 2.2, 0.9);
-        vec3 c = vHeat < 0.5 ? mix(cold, warm, vHeat * 2.0) : mix(warm, hot, (vHeat - 0.5) * 2.0);
-        gl_FragColor = vec4(c, core);
-      }`,
-  });
-  surface: SurfaceFn | null = null;
-  /** is this point inside a wall, floor or pillar? */
-  solid: ((x: number, y: number, z: number) => boolean) | null = null;
-
-  constructor(scene: THREE.Scene) {
-    for (const a of [this.posAttr, this.heatAttr, this.sizeAttr]) a.setUsage(THREE.DynamicDrawUsage);
-    this.geo.setAttribute('position', this.posAttr);
-    this.geo.setAttribute('aHeat', this.heatAttr);
-    this.geo.setAttribute('aSize', this.sizeAttr);
-    this.geo.setDrawRange(0, 0);
-    const pts = new THREE.Points(this.geo, this.material);
-    pts.frustumCulled = false;
-    scene.add(pts);
-  }
-
-  setPixelRatio(r: number): void { this.material.uniforms.uPixelRatio.value = r; }
-
-  emit(at: THREE.Vector3, vel: THREE.Vector3): void {
-    if (this.items.length >= MAX_COALS) return;
-    this.items.push({
-      pos: at.clone(), vel: vel.clone(), heat: 0.85 + Math.random() * 0.15,
-      tau: 3 + Math.random() * 4, px: 2.5 + Math.random() * 2.5, rest: false,
-    });
-  }
-
-  /** A burst thrown mostly along `dir` (horizontal), with plenty going up and some sideways. */
-  burst(at: THREE.Vector3, dir: THREE.Vector3, count: number): void {
-    for (let i = 0; i < count; i++) {
-      const s = 1.2 + Math.random() * 3.6;
-      const v = new THREE.Vector3(
-        dir.x * s + (Math.random() - 0.5) * 2.4,
-        1.0 + Math.random() * 3.2,
-        dir.z * s + (Math.random() - 0.5) * 2.4,
-      );
-      this.emit(at, v);
-    }
-  }
-
-  update(dt: number): void {
-    const solid = this.solid;
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const c = this.items[i];
-      c.heat -= dt / c.tau;
-      if (c.heat <= 0.03) { this.items[i] = this.items[this.items.length - 1]; this.items.pop(); continue; }
-      if (c.rest) {
-        // lying on something: if that goes (a floor shot away), fall again
-        if (c.pos.y > 0.02 && solid && !solid(c.pos.x, c.pos.y - 0.02, c.pos.z)) c.rest = false;
-        else continue;
-      }
-      // two sub-steps; each axis is moved separately so a coal slides along a wall instead of passing through it
-      const h = dt / 2;
-      const buried = solid ? solid(c.pos.x, c.pos.y, c.pos.z) : false;   // already inside something: let it out freely
-      for (let sub = 0; sub < 2; sub++) {
-        c.vel.y -= GRAVITY * h;
-        const nx = c.pos.x + c.vel.x * h;
-        if (solid && !buried && solid(nx, c.pos.y, c.pos.z)) { c.vel.x *= -0.35; c.vel.z *= 0.85; } else c.pos.x = nx;
-        const nz = c.pos.z + c.vel.z * h;
-        if (solid && !buried && solid(c.pos.x, c.pos.y, nz)) { c.vel.z *= -0.35; c.vel.x *= 0.85; } else c.pos.z = nz;
-        const ny = c.pos.y + c.vel.y * h;
-        if (solid && !buried && solid(c.pos.x, ny, c.pos.z)) {
-          // landed on a floor top, or hit a ceiling
-          const impact = c.vel.y;
-          c.vel.y = Math.abs(impact) > 0.8 ? -impact * 0.35 : 0;
-          const f = Math.max(0, 1 - 7 * dt);
-          c.vel.x *= f; c.vel.z *= f;
-          if (impact < 0 && c.vel.lengthSq() < 0.02) { c.vel.set(0, 0, 0); c.rest = true; break; }
-        } else c.pos.y = ny;
-        if (c.pos.y <= 0.012) {
-          c.pos.y = 0.012;
-          const impact = -c.vel.y;
-          c.vel.y = impact > 0.8 ? impact * 0.35 : 0;
-          const f = Math.max(0, 1 - 7 * dt);          // sliding friction
-          c.vel.x *= f; c.vel.z *= f;
-          if (c.vel.lengthSq() < 0.02) { c.vel.set(0, 0, 0); c.rest = true; break; }
-        }
-      }
-    }
-    for (let i = 0; i < this.items.length; i++) {
-      const c = this.items[i];
-      this.posAttr.setXYZ(i, c.pos.x, c.pos.y, c.pos.z);
-      this.heatAttr.setX(i, c.heat);
-      this.sizeAttr.setX(i, c.px);
-    }
-    this.geo.setDrawRange(0, this.items.length);
-    this.posAttr.needsUpdate = this.heatAttr.needsUpdate = this.sizeAttr.needsUpdate = true;
-  }
-}
-
+// scratch objects for the barrel's per-frame pose maths (single-threaded, never held across calls)
+const scratchLocal = new THREE.Vector3();
+const scratchWorld = new THREE.Vector3();
+const scratchPivot = new THREE.Vector3();
+const scratchAxis = new THREE.Vector3();
+const scratchVel = new THREE.Vector3();
+const scratchQuat = new THREE.Quaternion();
 /** What a barrel needs from the world when it is shot. */
 export interface BarrelContext {
   coals: Coals;
@@ -269,7 +105,7 @@ export class FireBarrel {
       const group = new THREE.Group();
       group.position.set(sp.x, 0, sp.z);
       const mat = new THREE.MeshBasicMaterial({
-        map: flameTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        map: flameTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
         toneMapped: false, side: THREE.DoubleSide, color: new THREE.Color(3, 2, 1),
       });
       const meshes: THREE.Mesh[] = [];
@@ -286,7 +122,7 @@ export class FireBarrel {
       this.tongues.push({ group, mat, meshes, base: sp.h, phase: Math.random() * 6.28, h: 1, hT: 1, b: 1, bT: 1, w: 0.55, wT: 0.55, timer: Math.random() * 0.2 });
     }
     this.glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       toneMapped: false, color: new THREE.Color(2.4, 1.3, 0.5),
     }));
     this.glow.position.y = 0.1;
@@ -343,23 +179,24 @@ export class FireBarrel {
     return best;
   }
 
+  /** returns a shared scratch vector: copy it if you need it past the next call */
   private mouthWorld(): THREE.Vector3 {
-    return this.group.position.clone().add(this.mouthLocal());
+    return scratchWorld.copy(this.group.position).add(this.mouthLocal());
   }
 
   /** The mouth of the barrel relative to its base, with the tip and the slide applied. */
   private mouthLocal(): THREE.Vector3 {
-    const top = new THREE.Vector3(0, BARREL_H, 0);
+    const top = scratchLocal.set(0, BARREL_H, 0);
     if (!this.shot) return top;
     const q = this.tipQuat();
-    const pivot = this.dir.clone().multiplyScalar(BARREL_R);
-    return pivot.clone().add(top.sub(pivot).applyQuaternion(q)).add(this.slide);
+    const pivot = scratchPivot.copy(this.dir).multiplyScalar(BARREL_R);
+    return top.sub(pivot).applyQuaternion(q).add(pivot).add(this.slide);
   }
 
   private tipQuat(): THREE.Quaternion {
     // rotating "up" toward dir is a right-handed turn about (up x dir)
-    const axis = new THREE.Vector3(this.dir.z, 0, -this.dir.x);
-    return new THREE.Quaternion().setFromAxisAngle(axis, this.theta);
+    scratchAxis.set(this.dir.z, 0, -this.dir.x);
+    return scratchQuat.setFromAxisAngle(scratchAxis, this.theta);
   }
 
   /** Topple: a rod tipping about the base edge on the side it falls toward. */
@@ -372,12 +209,12 @@ export class FireBarrel {
       this.spillAcc += dt * 140 * Math.min(1, this.theta / 0.9);
       while (this.spillAcc >= 1) {
         this.spillAcc -= 1;
-        const v = new THREE.Vector3(
+        scratchVel.set(
           this.dir.x * (0.8 + Math.random() * 1.8) + (Math.random() - 0.5) * 1.2,
           0.2 + Math.random() * 1.4,
           this.dir.z * (0.8 + Math.random() * 1.8) + (Math.random() - 0.5) * 1.2,
         );
-        ctx.coals.emit(this.mouthWorld(), v);
+        ctx.coals.emit(this.mouthWorld(), scratchVel);
       }
       if (this.theta >= this.thetaMax) {
         this.theta = this.thetaMax;
@@ -393,16 +230,16 @@ export class FireBarrel {
       }
     } else if (this.slideV > 0.01) {
       // skid along the floor unless something solid is in the way
-      const ahead = this.mouthLocal().add(this.dir.clone().multiplyScalar(0.05 + this.slideV * dt)).add(this.group.position);
+      const ahead = this.mouthLocal().addScaledVector(this.dir, 0.05 + this.slideV * dt).add(this.group.position);
       if (ctx.solid(ahead.x, ahead.y, ahead.z)) this.slideV = 0;
       else this.slide.addScaledVector(this.dir, this.slideV * dt);
       this.slideV *= Math.exp(-4 * dt);
     }
     // pose the barrel: rotate about the base edge on the side it falls toward
     const q = this.tipQuat();
-    const pivot = this.dir.clone().multiplyScalar(BARREL_R);
+    const pivot = scratchPivot.copy(this.dir).multiplyScalar(BARREL_R);
     this.body.quaternion.copy(q);
-    this.body.position.copy(pivot.clone().sub(pivot.clone().applyQuaternion(q)).add(this.slide));
+    this.body.position.copy(pivot).sub(scratchLocal.copy(pivot).applyQuaternion(q)).add(this.slide);
   }
 
   update(dt: number, dust: Dust | null, ctx?: BarrelContext): void {

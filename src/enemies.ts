@@ -12,11 +12,15 @@ const GUN_IDLE = new THREE.MeshStandardMaterial({ color: 0x222222 });
 const SOLDIER_HEIGHT = ((4 * MECH_SCALE) / 8) * 1.15; // mech model is 4 units tall before scaling
 const K = SOLDIER_HEIGHT / 2;
 
-/** Looks up rubble near a point; wired up by main. */
-export type BlockerQuery = (x: number, z: number, radius: number, out: Blocker[]) => number;
-
-/** true if the segment a -> b is free of rubble; wired up by main */
-export type SightQuery = (a: THREE.Vector3, b: THREE.Vector3) => boolean;
+/** What a soldier needs to know about the world around it; supplied by whoever creates it. */
+export interface SoldierEnv {
+  /** fills `out` with rubble near a point, returns how many */
+  blockers(x: number, z: number, radius: number, out: Blocker[]): number;
+  /** true if the segment a -> b is free of rubble */
+  sight(a: THREE.Vector3, b: THREE.Vector3): boolean;
+  /** highest solid surface under (x, z) at or below y (0 = ground), so corpses fall until something is under them */
+  surface(x: number, z: number, y: number): number;
+}
 
 /** height (world) the soldiers aim at on the mech */
 const CHEST_Y = 1.6;
@@ -25,9 +29,6 @@ const LOOKAHEAD = 0.45;
 const BLOCKER_BUF: Blocker[] = Array.from({ length: 48 }, () => ({ x: 0, z: 0, r: 0 }));
 /** steering headings tried relative to the straight line to the target (degrees) */
 const TURNS = [0, 30, 60, 90, 120].map((d) => (d * Math.PI) / 180);
-
-/** highest solid surface under (x, z) at or below y (0 = ground); wired up by main */
-export type SurfaceQuery = (x: number, z: number, y: number) => number;
 
 export type SoldierState = 'enter' | 'jump' | 'walk' | 'aim' | 'cooldown' | 'dead';
 
@@ -39,13 +40,6 @@ export interface Perch {
 }
 
 export class Soldier {
-  /** rubble lookup shared by all soldiers */
-  static blockers: BlockerQuery | null = null;
-  /** line-of-fire test against rubble shared by all soldiers */
-  static sight: SightQuery | null = null;
-  /** building surfaces, so corpses fall until something is under them */
-  static surface: SurfaceQuery | null = null;
-
   readonly group = new THREE.Group();
   hp = 4;
   state: SoldierState = 'walk';
@@ -84,7 +78,7 @@ export class Soldier {
   /** set once the kill has been credited to the scene */
   counted = false;
 
-  constructor(x: number, z: number) {
+  constructor(x: number, z: number, private readonly env: SoldierEnv) {
     this.group.position.set(x, 0, z);
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.35), BODY);
     torso.position.y = 1.1;
@@ -112,10 +106,10 @@ export class Soldier {
 
   getBox(out: THREE.Box3): THREE.Box3 {
     const c = this.group.position;
-    return out.set(
-      new THREE.Vector3(c.x - this.half.x, c.y + this.centerY - this.half.y, c.z - this.half.z),
-      new THREE.Vector3(c.x + this.half.x, c.y + this.centerY + this.half.y, c.z + this.half.z),
-    );
+    const cy = c.y + this.centerY;
+    out.min.set(c.x - this.half.x, cy - this.half.y, c.z - this.half.z);
+    out.max.set(c.x + this.half.x, cy + this.half.y, c.z + this.half.z);
+    return out;
   }
 
   get alive(): boolean { return this.state !== 'dead'; }
@@ -152,7 +146,7 @@ export class Soldier {
    */
   private walkAround(dt: number, ux: number, uz: number): boolean {
     const g = this.group;
-    const nb = Soldier.blockers ? Soldier.blockers(this.x, this.z, 1.0, BLOCKER_BUF) : 0;
+    const nb = this.env.blockers(this.x, this.z, 1.0, BLOCKER_BUF);
     const clear = (px: number, pz: number): boolean => {
       for (let i = 0; i < nb; i++) {
         const b = BLOCKER_BUF[i];
@@ -189,14 +183,13 @@ export class Soldier {
 
   /** Clear line of fire from standing at (x, z) to the mech's chest? (rubble is cover, for both sides) */
   private hasLOS(target: THREE.Vector3, x = this.x, z = this.z): boolean {
-    if (!Soldier.sight) return true;
     // both ways: his gun to the mech's chest, and the mech's guns down to his torso
     // (a soldier that cannot be hit must not be able to hit back)
     const gun = this.sightA.set(x, this.group.position.y + 1.2 * this.k, z + 0.2 * this.k);
     const chest = this.sightB.set(target.x, CHEST_Y, target.z);
-    if (!Soldier.sight(gun, chest)) return false;
+    if (!this.env.sight(gun, chest)) return false;
     gun.set(x, this.group.position.y + this.centerY, z);
-    return Soldier.sight(chest, gun);
+    return this.env.sight(chest, gun);
   }
 
   /**
@@ -204,7 +197,7 @@ export class Soldier {
    * i.e. where the soldier can stand at the edge of cover and be shot at as well as shoot.
    */
   private findExposedSpot(target: THREE.Vector3): { x: number; z: number } | null {
-    const nb = Soldier.blockers ? Soldier.blockers(this.x, this.z, 2.4, BLOCKER_BUF) : 0;
+    const nb = this.env.blockers(this.x, this.z, 2.4, BLOCKER_BUF);
     const start = Math.random() * Math.PI * 2;
     for (const rad of [0.35, 0.7, 1.1, 1.6, 2.2]) {
       for (let k = 0; k < 12; k++) {
@@ -240,14 +233,14 @@ export class Soldier {
   }
 
   /** onShoot: called when the soldier fires at the player; hit chance resolved by caller. */
-  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: (from: THREE.Vector3) => void): void {
+  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: () => void): void {
     const g = this.group;
     if (this.state === 'dead') {
       this.deadTime += dt;
       const k = Math.min(1, this.deadTime / 0.35);
       g.rotation.z = -this.fallDir * k * 1.5;
       // corpses obey gravity too: fall until a floor (or the ground) is under them
-      const ground = Math.max(0, Soldier.surface ? Soldier.surface(this.x, this.z, g.position.y + 0.05) : 0);
+      const ground = Math.max(0, this.env.surface(this.x, this.z, g.position.y + 0.05));
       this.deadVy -= 16 * dt;
       g.position.y = Math.max(ground, g.position.y + this.deadVy * dt);
       if (g.position.y <= ground) this.deadVy = 0;
@@ -281,7 +274,7 @@ export class Soldier {
     if (this.retreating) {
       this.body.scale.x = -this.k;
       g.position.x -= 4 * dt;
-      if (Soldier.blockers) this.pushOut(Soldier.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
+      this.pushOut(this.env.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
       this.phase += dt * 12;
       this.legs[0].rotation.z = Math.sin(this.phase) * 0.6;
       this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
@@ -364,7 +357,7 @@ export class Soldier {
         } else {
           const muzzle = new THREE.Vector3(this.x + dir * 0.8 * this.k, g.position.y + 1.2 * this.k, this.z + 0.2 * this.k);
           fx.sparks(muzzle, 2, 1.5, [0xffd080]);
-          onShoot(muzzle);
+          onShoot();
           this.state = 'cooldown';
           this.timer = 1.2 + Math.random() * 1.3;
         }

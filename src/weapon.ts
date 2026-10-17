@@ -3,16 +3,21 @@ import type { Fx } from './fx';
 import type { Soldier } from './enemies';
 import { castRay, newHit } from './targeting';
 import type { World } from './world';
-import type { Dust, Debris } from './debris';
+import type { Debris } from './debris';
+import type { Dust } from './dust';
+import { WEAPON } from './config';
 
-const FIRE_RATE = 20;        // shots / second (machine gun)
-const HEAT_PER_SHOT = 0.02 / 6; // 5x the previous 0.02/30
-const COOL_RATE = 0.25;      // per second while idle
-const LOCK_COOL_RATE = 0.4;  // per second while locked out
-const UNLOCK_AT = 0.35;
-const DAMAGE = 1;
-const WALL_RADIUS = 0.3;
-const REF_DIST = 24; // camera distance the jitter radii were tuned at
+/** Everything a shot can hit or leave marks on. */
+export interface WeaponDeps {
+  fx: Fx;
+  world: World;
+  dust: Dust;
+  debris: Debris;
+  enemies: Soldier[];
+}
+
+const { fireRate: FIRE_RATE, heatPerShot: HEAT_PER_SHOT, coolRate: COOL_RATE, lockCoolRate: LOCK_COOL_RATE,
+  unlockAt: UNLOCK_AT, damage: DAMAGE, wallRadius: WALL_RADIUS, refDist: REF_DIST } = WEAPON;
 const JITTER = new THREE.Vector3();
 
 /** Hitscan machine gun: ray ends at the reticle (+ heat jitter); damage resolved there. */
@@ -32,17 +37,9 @@ export class Weapon {
   private segRay = new THREE.Ray();
   private dir = new THREE.Vector3();
 
-  update(
-    dt: number,
-    firing: boolean,
-    muzzles: THREE.Vector3[],
-    aim: THREE.Ray,
-    enemies: Soldier[],
-    fx: Fx,
-    world: World,
-    dust: Dust,
-    debris: Debris,
-  ): void {
+  constructor(private readonly deps: WeaponDeps) {}
+
+  update(dt: number, firing: boolean, muzzles: THREE.Vector3[], aim: THREE.Ray): void {
     this.cooldown -= dt;
     this.sinceShot += dt;
 
@@ -58,14 +55,15 @@ export class Weapon {
 
     while (this.cooldown <= 0) {
       this.cooldown += 1 / FIRE_RATE;
-      this.shoot(muzzles[this.side++ % muzzles.length], aim, enemies, fx, world, dust, debris);
+      this.shoot(muzzles[this.side++ % muzzles.length], aim);
       this.heat += HEAT_PER_SHOT;
       if (this.heat >= 1) { this.heat = 1; this.locked = true; break; }
     }
     if (this.cooldown < -0.1) this.cooldown = 0;
   }
 
-  private shoot(muzzle: THREE.Vector3, aim: THREE.Ray, enemies: Soldier[], fx: Fx, world: World, dust: Dust, debris: Debris): void {
+  private shoot(muzzle: THREE.Vector3, aim: THREE.Ray): void {
+    const { fx, world, dust, debris, enemies } = this.deps;
     // Tight stream: jitter the screen ray by a small angle that grows with heat.
     const jitter = (0.04 + this.heat * 0.14) / REF_DIST;
     const a = Math.random() * Math.PI * 2;
