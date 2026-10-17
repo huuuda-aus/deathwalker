@@ -37,6 +37,22 @@ export const SPAWN = {
 
 export const SOLDIER = {
   hp: 4,
+  walkSpeed: 1.2,
+  /** troops off a truck run: to cover, or off to a spot of their own */
+  runSpeed: 2.6,
+  /** a scattering trooper picks a spot within this far (along the street) of where it landed... */
+  scatterSpread: 4,
+  /** ...and never nearer the mech than a distance picked between these */
+  standoffMin: 6,
+  standoffMax: 11,
+} as const;
+
+/** the mech's feet crush infantry they come down on */
+export const STOMP = {
+  /** a soldier this close (horizontally) to the edge of one of the mech's hit spheres is flattened */
+  reach: 0.1,
+  /** how tall a soldier is for this, from the floor he stands on */
+  height: 0.3,
 } as const;
 
 /** soldier fire against the mech */
@@ -94,4 +110,35 @@ export const CANNON = {
   firstDelay: 12,
   intervalMin: 16,
   intervalExtra: 12,
+} as const;
+
+/**
+ * Personnel carrier: drives in from either side, swings through ~90 degrees to face the camera in the left
+ * half of the screen and unloads troops, who run to the nearest big rubble or straight at the mech.
+ */
+export const TRUCK = {
+  /** as tough as the cannon */
+  hp: CANNON.hp,
+  /** world units / s while driving in; it brakes through the turn */
+  speed: 4.5,
+  turnTime: 1.2,
+  /** it ends up facing the camera, give or take this many degrees */
+  facingJitterDeg: 10,
+  troopsMin: 8,
+  troopsMax: 12,
+  /** seconds between soldiers when unloading as a stream */
+  streamInterval: 0.4,
+  /** or in groups of this many, this far apart (seconds) */
+  groupMin: 3,
+  groupMax: 4,
+  groupGap: 1.6,
+  /** share of the troops that run for cover, the rest scatter to spots of their own; none of them charge the mech */
+  coverChance: 0.5,
+  /** the first truck arrives after this long, then every min + random * extra seconds, one unloading at a time */
+  firstDelay: 20,
+  intervalMin: 26,
+  intervalExtra: 16,
+  blastRadius: 1.5,
+  /** particle count multiplier for its explosion (a shell is 1) */
+  blastScale: 2.2,
 } as const;

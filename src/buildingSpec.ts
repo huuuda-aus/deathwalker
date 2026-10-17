@@ -33,5 +33,9 @@ export type BayKind = 'window' | 'open' | 'blank' | 'stair';
 export interface Bay { kind: BayKind; width: number; start: number; /** per storey: open firing bay (no glazing/sill) */ open: boolean[] }
 
 /** A floor opening enemies can stand in and shoot from. */
-export interface Ledge { c0: number; c1: number; r: number; x: number }
+export interface Ledge {
+  c0: number; c1: number; r: number; x: number;
+  /** when it last hosted a spawn (a running count; 0 = never), so spawns rotate through the bays */
+  taken: number;
+}
 export const STORY = 5; // rows per storey: slab, spandrel, window, window, header

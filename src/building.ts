@@ -6,6 +6,14 @@ import { CELL, DEPTH, MAXL, STORY, T, SPEC, DEEP, type Ledge } from './buildingS
 
 export { CELL, type Ledge };
 
+/** Where an enemy appears in a bay, and what it needs to walk to the ledge. */
+export interface LedgeSpawn {
+  pos: THREE.Vector3;
+  ledgeZ: number;
+  backZ: number;
+  floorTop: (x: number, z: number, yMax: number) => number;
+}
+
 /** How far a floor/wall member can reach horizontally from a pillar or support, in cells. */
 const SPAN = 5;
 const INF = 1000;
@@ -221,14 +229,27 @@ export class Building {
     return out;
   }
 
-  /** Spawn data for an enemy that walks from the back of the floor to the ledge edge. */
-  ledgeSpawn(l: Ledge): { pos: THREE.Vector3; ledgeZ: number; backZ: number; floorTop: (x: number, z: number, yMax: number) => number } {
+  /**
+   * Spawn data for an enemy that walks in from the floor of a bay to the ledge edge, or null if that floor is not
+   * whole any more: the slab must still be there under the whole path across the bay (a floor shot out at the
+   * front or the back would drop the soldier at once).
+   */
+  ledgeSpawn(l: Ledge): LedgeSpawn | null {
     const y = (l.r + 1) * CELL;
     const backZ = this.z0 - DEPTH + 0.75 * CELL;
-    const x = l.x + (Math.random() - 0.5) * 2 * CELL;
+    const ledgeZ = this.z0 - 0.5 * CELL;
+    // anywhere across the bay (clear of the pillars) and a random way in from the back
+    const halfSpan = Math.max(0, ((l.c1 - l.c0 + 1) / 2 - 0.6) * CELL);
+    const x = l.x + (Math.random() * 2 - 1) * halfSpan;
+    const startZ = backZ + Math.random() * 0.5 * (ledgeZ - backZ);
+    for (const z of [startZ, (startZ + ledgeZ) / 2, ledgeZ]) {
+      for (const px of [x, l.x - halfSpan, l.x + halfSpan]) {
+        if (this.floorTop(px, z, y + 0.05) < y - 0.01) return null;
+      }
+    }
     return {
-      pos: new THREE.Vector3(x, y, backZ),
-      ledgeZ: this.z0 - 0.5 * CELL,
+      pos: new THREE.Vector3(x, y, startZ),
+      ledgeZ,
       backZ,
       floorTop: (fx, fz, yMax) => this.floorTop(fx, fz, yMax),
     };

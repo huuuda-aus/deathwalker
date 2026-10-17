@@ -13,6 +13,7 @@ import { Fx } from './fx';
 import type { SoldierEnv } from './enemies';
 import { EnemyManager } from './enemyManager';
 import { Shells } from './shells';
+import { Explosions } from './explosions';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
 import { Debris } from './debris';
@@ -46,6 +47,7 @@ export class Game {
   private readonly input: Input;
   private readonly post: Post;
   private readonly weapon: Weapon;
+  private readonly explosions: Explosions;
   private readonly shells: Shells;
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
@@ -115,8 +117,9 @@ export class Game {
       sight: (a, b) => !debris.segmentHit(a, b, sightTmp),
       surface: (x, z, y) => world.surfaceTop(x, z, y),
     };
-    this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust });
+    this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
+    this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
 
@@ -155,6 +158,7 @@ export class Game {
   private reset(): void {
     this.enemies.reset();
     this.shells.clear();
+    this.explosions.clear();
     Object.assign(this.player, newPlayer());
     this.weapon.reset();
     this.mech.root.position.set(START_MECH_X, 0, 0);
@@ -262,6 +266,7 @@ export class Game {
     this.aimAndFire(dt, active);
     this.updateEnemies(dt, active, levelEvent);
     this.shells.update(dt);
+    this.explosions.update(dt);
 
     this.fx.update(dt);
     this.debris.update(dt);

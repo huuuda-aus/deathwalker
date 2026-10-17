@@ -107,7 +107,7 @@ export function generateLayout(x0: number, rnd: () => number): Layout {
   for (const b of bays) {
     if (b.kind !== 'open') continue;
     for (let st = 0; st < stories; st++) {
-      if (b.open[st]) ledges.push({ c0: b.start, c1: b.start + b.width - 1, r: st * STORY, x: x0 + (b.start + b.width / 2) * CELL });
+      if (b.open[st]) ledges.push({ c0: b.start, c1: b.start + b.width - 1, r: st * STORY, x: x0 + (b.start + b.width / 2) * CELL, taken: 0 });
     }
   }
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Fx } from './fx';
-import type { Enemy, ImpactFx, Soldier } from './enemies';
+import { METAL_IMPACT, type Enemy, type Soldier } from './enemies';
 import type { Horse } from './horse';
 import type { Shells } from './shells';
 import type { Debris, FloorFn } from './debris';
@@ -8,6 +8,7 @@ import type { Dust } from './dust';
 import { LANE } from './mech';
 import { CANNON } from './config';
 import { UNIT, WOOD, IRON, box } from './cannonParts';
+import { Wreckage } from './wreckage';
 
 /** horse sits this far ahead (-x) of the axle while hitched */
 const HORSE_OFFSET = 3.4;
@@ -41,19 +42,11 @@ export interface CannonDeps {
 }
 
 const WRECK_COLORS = [new THREE.Color(0xe8eaec), new THREE.Color(0xcfd4d9), new THREE.Color(0xf4f6f8)];
-/** bullets on metal: a shower of white-hot sparks and a few embers that bounce off the carriage */
-const METAL_IMPACT: ImpactFx = { colors: [0xffe080, 0xffa030, 0xffffff], sparks: 7, embers: 2 };
 const WRECK_PIECES = 16;
 /** scorched materials swapped in when the cannon is destroyed */
 const CHAR_WOOD = new THREE.MeshStandardMaterial({ color: 0x2b2622, roughness: 1 });
 const CHAR_IRON = new THREE.MeshStandardMaterial({ color: 0x1d1f21, roughness: 0.7, metalness: 0.3 });
-const WRECK_GRAVITY = 8;
-/** seconds the wreck keeps smoking */
-const SMOKE_TIME = 6;
 const WRECK_FIRE = [0xffd080, 0xff7020, 0x553311, 0x333333];
-
-/** A piece blown off the wreck: it flies, tumbles and bounces until it comes to rest in `rest` orientation. */
-interface Flung { obj: THREE.Object3D; vel: THREE.Vector3; spin: THREE.Vector3; restY: number; rest: Partial<Record<'x' | 'y' | 'z', number>>; settled: boolean }
 
 type State = 'ride' | 'deploy' | 'fire' | 'dead';
 
@@ -97,8 +90,7 @@ export class CannonUnit implements Enemy {
   private readonly pole = new THREE.Group();
   private readonly barrelPivot = new THREE.Group();
   private readonly barrel = new THREE.Group();
-  private readonly flung: Flung[] = [];
-  private smoke = 0;
+  private wreck: Wreckage | null = null;
 
   constructor(
     x: number, z: number,
@@ -174,38 +166,9 @@ export class CannonUnit implements Enemy {
     carriage.position.y = -0.1 * UNIT;
     carriage.add(box(0.5, 0.5, 0.5, CHAR_IRON, 0.1, AXLE_Y + 0.45)); // the broken mount
     const side = Math.random() < 0.5 ? -1 : 1;
-    this.fling(barrelPivot, new THREE.Vector3(side * (0.4 + 0.4 * Math.random()), 3.2, 0.3 + 0.3 * Math.random()), new THREE.Vector3(1, 0.5, side * 4), 0.24 * UNIT, { z: 0 });
-    this.fling(lost, new THREE.Vector3(-side * (0.4 + 0.4 * Math.random()), 2.8, 0.4), new THREE.Vector3(0.5, 0, -side * 5), 0.1 * UNIT, { x: Math.PI / 2 });
-  }
-
-  /** detach a part into the scene (keeping where it is) and let it fly */
-  private fling(obj: THREE.Object3D, vel: THREE.Vector3, spin: THREE.Vector3, restY: number, rest: Flung['rest']): void {
-    const scene = this.group.parent;
-    if (!scene) return;
-    scene.attach(obj);
-    this.flung.push({ obj, vel, spin, restY, rest, settled: false });
-  }
-
-  private stepFlung(dt: number): void {
-    for (const f of this.flung) {
-      if (f.settled) continue;
-      const { obj, vel, spin } = f;
-      vel.y -= WRECK_GRAVITY * dt;
-      obj.position.addScaledVector(vel, dt);
-      obj.rotation.x += spin.x * dt;
-      obj.rotation.y += spin.y * dt;
-      obj.rotation.z += spin.z * dt;
-      if (obj.position.y > f.restY) continue;
-      obj.position.y = f.restY;
-      vel.y *= -0.3;
-      vel.x *= 0.6; vel.z *= 0.6;
-      spin.multiplyScalar(0.6);
-      if (Math.abs(vel.y) < 0.4) {
-        f.settled = true;
-        if (f.rest.x !== undefined) obj.rotation.x = f.rest.x;
-        if (f.rest.z !== undefined) obj.rotation.z = f.rest.z;
-      }
-    }
+    const wreck = (this.wreck = new Wreckage(this.group.parent ?? this.group));
+    wreck.fling(barrelPivot, new THREE.Vector3(side * (0.4 + 0.4 * Math.random()), 3.2, 0.3 + 0.3 * Math.random()), new THREE.Vector3(1, 0.5, side * 4), 0.24 * UNIT, { z: 0 });
+    wreck.fling(lost, new THREE.Vector3(-side * (0.4 + 0.4 * Math.random()), 2.8, 0.4), new THREE.Vector3(0.5, 0, -side * 5), 0.1 * UNIT, { x: Math.PI / 2 });
   }
 
   /** a small blast: sparks and smoke, plus splinters and scrap that tumble, bounce and settle like real rubble */
@@ -224,9 +187,7 @@ export class CannonUnit implements Enemy {
     }
   }
 
-  dispose(): void {
-    for (const f of this.flung) f.obj.removeFromParent();
-  }
+  dispose(): void { this.wreck?.dispose(); }
 
   private crewAboard(): Soldier[] { return this.crew.filter((c) => c.state === 'mounted'); }
 
@@ -263,35 +224,27 @@ export class CannonUnit implements Enemy {
         break;
       case 'dead':
         this.deadTime += dt;
-        this.stepFlung(dt);
-        this.smoulder(dt);
+        this.wreck?.update(dt);
+        this.wreck?.smoulder(dt, this.deadTime, tmpTarget.set(this.group.position.x, 0.5 * UNIT, this.group.position.z), this.deps.dust);
         break;
     }
     if (this.horse.state === 'pulling') this.placeHorse();
     if (this.alive) this.placeCrew(this.state === 'ride' ? 0 : this.state === 'deploy' ? smooth(Math.min(1, this.t / DEPLOY_TIME)) : 1, dt);
   }
 
-  /** thin smoke rising from the wreck for a few seconds */
-  private smoulder(dt: number): void {
-    if (this.deadTime > SMOKE_TIME) return;
-    this.smoke -= dt;
-    if (this.smoke > 0) return;
-    this.smoke = 0.12;
-    const p = this.group.position;
-    this.deps.dust.puff(tmpTarget.set(p.x, 0.5 * UNIT, p.z), 1, 0.2, 0.3);
-  }
-
   /** swivel to face the mech, and once the crew are in place fire whenever a round is loaded */
   private aim(dt: number, target: THREE.Vector3): void {
+    this.recoil = Math.max(0, this.recoil - dt * 3);
+    this.barrel.position.x = -0.3 * this.recoil;
+
+    // nobody left to work it: the gun just sits there
+    const crew = this.crewAboard().length;
+    if (crew === 0) return;
+
     const g = this.group.position;
     this.facing = Math.sign(target.x - g.x) || 1;
     this.facingVis += (this.facing - this.facingVis) * Math.min(1, dt * SWIVEL_RATE);
     this.carriage.scale.x = UNIT * this.facingVis;
-    this.recoil = Math.max(0, this.recoil - dt * 3);
-    this.barrel.position.x = -0.3 * this.recoil;
-
-    const crew = this.crewAboard().length;
-    if (crew === 0) return;
     // fewer hands load more slowly
     this.fireTimer -= (dt * crew) / CANNON.crew;
     if (this.fireTimer <= 0) { this.fireTimer = CANNON.fireInterval; this.shoot(target); }
