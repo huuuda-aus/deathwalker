@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Fx } from './fx';
 import { METAL_IMPACT, type Enemy, type Soldier } from './enemies';
 import type { Horse } from './horse';
+import type { Explosions } from './explosions';
 import type { Shells } from './shells';
 import type { Debris, FloorFn } from './debris';
 import type { Dust } from './dust';
@@ -39,6 +40,7 @@ export interface CannonDeps {
   shells: Shells;
   debris: Debris;
   dust: Dust;
+  explosions: Explosions;
   /** surface height for falling wreckage */
   floor: FloorFn;
 }
@@ -224,9 +226,10 @@ export class CannonUnit implements Enemy {
 
   /** a small blast: sparks and smoke, plus splinters and scrap that tumble, bounce and settle like real rubble */
   private explode(fx: Fx): void {
-    const { debris, dust, floor } = this.deps;
+    const { debris, dust, floor, explosions } = this.deps;
     const p = this.group.position;
     const at = tmpTarget.set(p.x + 0.3 * this.facing * UNIT, BOX.cy * UNIT * 0.6, p.z);
+    explosions.detonate(at, CANNON.wreckBlastRadius, CANNON.wreckBlastScale);
     fx.burst(at, 30, 4, WRECK_FIRE);
     fx.muzzleFlash(at);
     dust.puff(at, 5, 0.5, 1.5);

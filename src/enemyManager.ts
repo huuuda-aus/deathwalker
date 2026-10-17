@@ -11,7 +11,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -41,6 +41,9 @@ export class EnemyManager {
   private spawnTimer = 1;
   private cannonTimer: number = CANNON.firstDelay;
   private truckTimer: number = TRUCK.firstDelay;
+  /** how long the scene has gone without a kill or a spawn (see failsafe) */
+  private stallT = 0;
+  private stallMark = '';
 
   constructor(private readonly deps: EnemyDeps) {
     const { debris, fx } = deps;
@@ -134,7 +137,7 @@ export class EnemyManager {
    * and the left edge. Only one at a time, and it uses a slot of the scene's spawn budget.
    */
   private spawnCannon(dt: number, camX: number): void {
-    const { scene, level, mech, shells, env, debris, dust, world } = this.deps;
+    const { scene, level, mech, shells, env, debris, dust, world, explosions } = this.deps;
     this.cannonTimer -= dt;
     // the gun and its crew all come out of the scene's spawn budget
     const cost = 1 + CANNON.crew;
@@ -151,7 +154,7 @@ export class EnemyManager {
       const stopX = camX - Math.random() * (half - 2);
       const crew = Array.from({ length: CANNON.crew }, () => new Soldier(x, z, env));
       const horse = new Horse();
-      const unit = new CannonUnit(x, z, stopX, crew, horse, { shells, debris, dust, floor: (fx, fz, fy) => world.surfaceTop(fx, fz, fy) });
+      const unit = new CannonUnit(x, z, stopX, crew, horse, { shells, debris, dust, explosions, floor: (fx, fz, fy) => world.surfaceTop(fx, fz, fy) });
       for (const e of [unit, ...crew, horse]) { scene.add(e.group); this.list.push(e); }
       level.spawned += cost;
     }
@@ -206,10 +209,34 @@ export class EnemyManager {
   }
 
   /**
+   * Failsafe for a scene that cannot be finished, e.g. stuck at 47/48 with nobody in sight: after a while without
+   * any kill or spawn, stragglers off-screen are removed, and if nobody is left and everything has been spawned,
+   * the kills that were never counted are written off.
+   */
+  private failsafe(dt: number, camX: number): void {
+    const { level, fx } = this.deps;
+    if (level.phase !== 'active' || level.kills >= level.scene.spawnBudget) { this.stallT = 0; return; }
+    const mark = `${level.index}:${level.kills}:${level.spawned}`;
+    if (mark !== this.stallMark) { this.stallMark = mark; this.stallT = 0; return; }
+    this.stallT += dt;
+    if (this.stallT < STALL.offscreenAfter) return;
+    const half = SCREEN_W / 2 + 1;
+    let left = 0;
+    for (const e of this.list) {
+      if (!e.alive || e.retreating) continue;
+      const seen = Math.abs(e.x - camX) < half;
+      if (seen && this.stallT < STALL.anyoneAfter) { left++; continue; }
+      e.damage(9999, fx);
+    }
+    if (left === 0 && this.stallT >= STALL.writeOffAfter && level.spawned >= level.scene.spawnBudget) level.writeOffKills();
+  }
+
+  /**
    * @param spawning false once the player is dead
    */
   update(dt: number, camX: number, spawning: boolean): void {
     const { level, fx, mech, bullets } = this.deps;
+    if (spawning) this.failsafe(dt, camX);
     if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); }
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {

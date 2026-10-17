@@ -81,6 +81,16 @@ export const ENEMY_FIRE = {
   spreadDepth: 0.5,
 } as const;
 
+/** failsafe against a scene that cannot be finished (a straggler that wandered off, a kill that was never counted) */
+export const STALL = {
+  /** no kill and no spawn for this long (s) and nobody in sight: anyone still alive off-screen is removed... */
+  offscreenAfter: 20,
+  /** ...and if nobody is left alive and the whole budget is spent, the missing kills are written off */
+  writeOffAfter: 22,
+  /** after this long anyone still alive is removed, seen or not */
+  anyoneAfter: 45,
+} as const;
+
 export const WEAPON = {
   /** shots / second (machine gun) */
   fireRate: 20,
@@ -123,6 +133,9 @@ export const CANNON = {
   spreadX: 2.5,
   spreadZ: 1.5,
   blastRadius: 1.1,
+  /** when the gun itself is destroyed: blast radius and particle multiplier (a shell is 1) */
+  wreckBlastRadius: 1.9,
+  wreckBlastScale: 3.5,
   /** shield lost when a shell lands within the blast radius or hits the mech */
   damage: 20,
   /** each time a cannon is due, 1..packMax of them ride in side by side, spread across the street */
@@ -161,7 +174,7 @@ export const TRUCK = {
   firstDelay: 20,
   intervalMin: 26,
   intervalExtra: 16,
-  blastRadius: 1.5,
+  blastRadius: 2.6,
   /** particle count multiplier for its explosion (a shell is 1) */
-  blastScale: 2.2,
+  blastScale: 5,
 } as const;
