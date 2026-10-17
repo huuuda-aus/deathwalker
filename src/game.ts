@@ -12,6 +12,8 @@ import { FootSplasher, SplashFx } from './water';
 import { Fx } from './fx';
 import type { SoldierEnv } from './enemies';
 import { EnemyManager } from './enemyManager';
+import { Shells } from './shells';
+import { Explosions } from './explosions';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
 import { Debris } from './debris';
@@ -45,6 +47,8 @@ export class Game {
   private readonly input: Input;
   private readonly post: Post;
   private readonly weapon: Weapon;
+  private readonly explosions: Explosions;
+  private readonly shells: Shells;
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
   private readonly player = newPlayer();
@@ -113,7 +117,9 @@ export class Game {
       sight: (a, b) => !debris.segmentHit(a, b, sightTmp),
       surface: (x, z, y) => world.surfaceTop(x, z, y),
     };
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env });
+    this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
+    this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
 
@@ -151,6 +157,8 @@ export class Game {
 
   private reset(): void {
     this.enemies.reset();
+    this.shells.clear();
+    this.explosions.clear();
     Object.assign(this.player, newPlayer());
     this.weapon.reset();
     this.mech.root.position.set(START_MECH_X, 0, 0);
@@ -237,7 +245,7 @@ export class Game {
     this.sky.update(this.camera, now / 1000);
     // the muzzle fire lights the smoke around the barrels
     hazeLights.forEach((v, i) => v.set(muzzlePos[i].x, muzzlePos[i].y, muzzlePos[i].z, weapon.firing ? 0.35 + Math.random() * 0.5 : 0));
-    post.setHazeDensityScale(1 + 0.7 * rain.intensity); // a downpour thickens the air
+    post.setHazeDensityScale(1 + 0.1 * rain.intensity); // a downpour thickens the air only a touch
     post.updateHaze(now / 1000, this.wind.travelled, hazeLights);
     world.setWeather(now / 1000, rain.intensity, hazeLights);
     this.footSplasher.update(dt, mech.colliders, (x, z) => world.puddleDepth(x, z), this.splashFx);
@@ -257,6 +265,8 @@ export class Game {
     const levelEvent = this.updateCamera(dt);
     this.aimAndFire(dt, active);
     this.updateEnemies(dt, active, levelEvent);
+    this.shells.update(dt);
+    this.explosions.update(dt);
 
     this.fx.update(dt);
     this.debris.update(dt);

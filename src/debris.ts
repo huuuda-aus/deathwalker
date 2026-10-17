@@ -42,6 +42,8 @@ interface Chunk {
   size: number;
   r: number;
   floor: FloorFn | null;
+  /** a visible model driven by this chunk's physics instead of an instanced shape (a wrecked vehicle section) */
+  body?: THREE.Object3D;
   asleep: boolean;
   sleepT: number;
   awakeT: number;
@@ -101,6 +103,28 @@ export class Debris {
     this.slots[slot] = c;
     this.awake.push(c);
     this.batches[shape].setColor(c.inst, color);
+    this.write(c);
+  }
+
+  /**
+   * Add a rigid body that is drawn by `model` (already in the scene, positioned where the body's centre is) instead of
+   * an instanced shape: it falls, is shoved by the mech and by shockwaves, counts as rubble for the mech's slowdown, as
+   * cover for soldiers and as an obstacle to bullets, and stays put for good once it settles. A sphere of diameter
+   * `size` stands in for it, and it is kept upright.
+   * @param model its origin is the body's centre; position/rotation are overwritten every step
+   */
+  spawnBody(model: THREE.Object3D, size: number, vel: THREE.Vector3, floor: FloorFn | null = null): void {
+    let slot: number;
+    if (this.free.length > 0) slot = this.free.pop()!;
+    else if (this.high < MAX_CHUNKS) slot = this.high++;
+    else return;
+    const c: Chunk = {
+      slot, shape: -1, inst: -1, dims: new THREE.Vector3(1, 1, 1),
+      pos: model.position.clone(), vel: vel.clone(), rot: model.rotation.clone(), angVel: new THREE.Vector3(),
+      size, r: size * 0.5, floor, body: model, asleep: false, sleepT: 0, awakeT: 0, key: 0,
+    };
+    this.slots[slot] = c;
+    this.awake.push(c);
     this.write(c);
   }
 
@@ -202,6 +226,27 @@ export class Debris {
     this.forEachNear(this.awakeGrid, at.x, at.y, at.z, 0.4, apply);
   }
 
+  /**
+   * Shockwave: shoves every chunk within `radius` away from `at`, hardest at the centre, with an upward lift
+   * and a random tumble. Small pieces fly farther than big slabs. Sleeping chunks are woken.
+   */
+  blast(at: THREE.Vector3, radius: number, speed: number): void {
+    const push = (c: Chunk) => {
+      const dx = c.pos.x - at.x, dy = c.pos.y - at.y, dz = c.pos.z - at.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= radius) return;
+      const k = (speed * (1 - d / radius)) / (1 + c.size * 4);
+      const inv = d > 1e-3 ? 1 / d : 0;
+      this.wake(c);
+      c.vel.x += dx * inv * k;
+      c.vel.y += dy * inv * k + k * 0.6;
+      c.vel.z += dz * inv * k;
+      c.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+    };
+    this.forEachNear(this.sleepGrid, at.x, at.y, at.z, radius, push);
+    this.forEachNear(this.awakeGrid, at.x, at.y, at.z, radius, push);
+  }
+
   /** Drop chunks that are far outside [minX, maxX] (the rails never go back). */
   cull(minX: number, maxX: number): void {
     for (const c of this.slots) if (c && (c.pos.x < minX || c.pos.x > maxX)) this.remove(c);
@@ -240,6 +285,7 @@ export class Debris {
     const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, c.pos.y - r) : 0);
     c.vel.y -= GRAVITY * dt;
     c.pos.addScaledVector(c.vel, dt);
+    if (c.body) { c.angVel.set(0, 0, 0); c.rot.x = c.rot.z = 0; }   // wrecks stay upright
     c.rot.x += c.angVel.x * dt; c.rot.y += c.angVel.y * dt; c.rot.z += c.angVel.z * dt;
     let grounded = false;
 
@@ -347,6 +393,11 @@ export class Debris {
   // ---- bookkeeping -----------------------------------------------------------------------
 
   private write(c: Chunk): void {
+    if (c.body) {
+      c.body.position.copy(c.pos);
+      c.body.rotation.copy(c.rot);
+      return;
+    }
     this.dummy.position.copy(c.pos);
     this.dummy.rotation.copy(c.rot);
     this.dummy.scale.set(c.size * c.dims.x, c.size * c.dims.y, c.size * c.dims.z);
@@ -433,7 +484,8 @@ export class Debris {
     }
     this.slots[c.slot] = null;
     this.free.push(c.slot);
-    this.batches[c.shape].release(c.inst);
+    if (c.body) c.body.removeFromParent();
+    else this.batches[c.shape].release(c.inst);
   }
 
   private forEachNear(grid: Map<number, Chunk[]>, x: number, y: number, z: number, radius: number, fn: (c: Chunk) => void): void {

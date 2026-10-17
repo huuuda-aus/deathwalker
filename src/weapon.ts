@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Fx } from './fx';
-import type { Soldier } from './enemies';
+import type { Enemy } from './enemies';
 import { castRay, newHit } from './targeting';
 import type { World } from './world';
 import type { Debris } from './debris';
@@ -13,12 +13,13 @@ export interface WeaponDeps {
   world: World;
   dust: Dust;
   debris: Debris;
-  enemies: Soldier[];
+  enemies: Enemy[];
 }
 
 const { fireRate: FIRE_RATE, heatPerShot: HEAT_PER_SHOT, coolRate: COOL_RATE, lockCoolRate: LOCK_COOL_RATE,
   unlockAt: UNLOCK_AT, damage: DAMAGE, wallRadius: WALL_RADIUS, refDist: REF_DIST } = WEAPON;
 const JITTER = new THREE.Vector3();
+const EMBER_VEL = new THREE.Vector3();
 
 /** Hitscan machine gun: ray ends at the reticle (+ heat jitter); damage resolved there. */
 export class Weapon {
@@ -102,7 +103,13 @@ export class Weapon {
       return;
     }
     if (hit.kind === 'enemy' && hit.enemy) {
-      fx.sparks(hit.point, 2, 2.5, [0xff3020, 0xff8040]);
+      const { colors, sparks, embers } = hit.enemy.impact;
+      fx.sparks(hit.point, sparks, 2.5 + 0.4 * sparks, colors);
+      for (let i = 0; i < embers; i++) {
+        // thrown back toward the viewer and up, then they fall, bounce and cool on whatever is below
+        EMBER_VEL.set((Math.random() - 0.5) * 3, 1 + Math.random() * 2.5, 0.5 + Math.random() * 2);
+        world.coals.emit(hit.point, EMBER_VEL, 0.6 + Math.random() * 0.9);
+      }
       hit.enemy.damage(DAMAGE, fx);
       return;
     }

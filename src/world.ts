@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Building, type Ledge } from './building';
+import { Building, type Ledge, type LedgeSpawn } from './building';
 import type { Debris } from './debris';
 import type { Dust } from './dust';
 import { GROUND_TILE, makeGroundTextures } from './ground';
@@ -8,6 +8,9 @@ import { FireBarrel, FireLights, type BarrelContext } from './fire';
 import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
 import { mulberry32 } from './util';
+
+/** height of a soldier's gun above the floor he stands on (world units), for line-of-fire checks from a bay */
+const SHOOTER_CHEST = 0.25;
 
 /** Distance haze: the ground and near rows fade to near-black, not green. */
 export const FOG_COLOR = 0x030d0b;
@@ -40,6 +43,8 @@ export class World {
   private groundMaps: THREE.Texture[] = [];
   /** the building hit by the last raycast() */
   lastBuilding: Building | null = null;
+  private takeSeq = 0;
+  private fireSpot = new THREE.Vector3();
 
   constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust) {
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
@@ -183,14 +188,29 @@ export class World {
   }
 
   /** Pick a random intact firing bay with centre x in [minX, maxX]. */
-  takeLedge(minX: number, maxX: number): ReturnType<Building['ledgeSpawn']> | null {
+  /**
+   * Pick a firing bay for an enemy to appear in. Only bays whose floor is intact all the way to the ledge qualify,
+   * and (if `canFire` is given) only where a soldier standing at the ledge has a line of fire to the target.
+   * Bays take turns: the one that has gone longest without a spawn goes first, so spawns spread out.
+   */
+  takeLedge(minX: number, maxX: number, canFire?: (from: THREE.Vector3) => boolean): LedgeSpawn | null {
     const candidates: { b: Building; l: Ledge }[] = [];
     for (const c of this.chunks.values()) {
       for (const b of c.buildings) for (const l of b.ledgeList(minX, maxX)) candidates.push({ b, l });
     }
-    if (candidates.length === 0) return null;
-    const pick = candidates[(Math.random() * candidates.length) | 0];
-    return pick.b.ledgeSpawn(pick.l);
+    // longest unused first, ties shuffled
+    candidates.sort((a, b) => a.l.taken - b.l.taken || Math.random() - 0.5);
+    for (const { b, l } of candidates) {
+      const spawn = b.ledgeSpawn(l);
+      if (!spawn) continue;
+      if (canFire) {
+        const front = this.fireSpot.set(spawn.pos.x, spawn.pos.y + SHOOTER_CHEST, spawn.ledgeZ);
+        if (!canFire(front)) continue;
+      }
+      l.taken = ++this.takeSeq;
+      return spawn;
+    }
+    return null;
   }
 
   /** Nearest wall hit along a ray (distance t), writing the point to out. */
