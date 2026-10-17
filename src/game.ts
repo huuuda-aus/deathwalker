@@ -29,6 +29,9 @@ import { PLAYER, CAMERA } from './config';
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
 const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10, settleMs: 15000 };
 
+/** seconds for the scene to fade in from black once it is first drawn */
+const FADE_IN = 1.8;
+
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
 
 /** Owns every system, wires them together and runs the frame loop. */
@@ -78,6 +81,8 @@ export class Game {
   private cullTimer = 0;
   private camX = this.level.camX;
   private last = performance.now();
+  /** the views start black and fade in once the first frame has rendered (the shaders compile on it) */
+  private revealed = false;
   /** adaptive resolution: the pixel ratio follows frame time, within [MIN_RATIO, ratioCap] */
   private ratioCap = Math.min(devicePixelRatio, 2);
   private perfFrames = 0;
@@ -96,6 +101,7 @@ export class Game {
     renderer.shadowMap.enabled = true;
     document.body.prepend(renderer.domElement);
     renderer.domElement.after(this.foreground.canvas);       // the frontmost layer, over the 3D view and under the HUD
+    for (const c of [renderer.domElement, this.foreground.canvas]) Object.assign(c.style, { opacity: '0', transition: `opacity ${FADE_IN}s ease-out` });
 
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
     this.applyAspect();
@@ -167,6 +173,15 @@ export class Game {
     this.mode = 'play';
     this.mech.root.visible = true;
     this.last = performance.now();
+  }
+
+  /** after the first rendered frame: let the scene fade in from black (a frame later, so the slow first frame is not part of the fade) */
+  private reveal(): void {
+    if (this.revealed) return;
+    this.revealed = true;
+    requestAnimationFrame(() => {
+      for (const c of [this.renderer.domElement, this.foreground.canvas]) c.style.opacity = '1';
+    });
   }
 
   /** the camera at the level's current view */
@@ -351,6 +366,7 @@ export class Game {
     if (this.mode === 'menu') {
       this.updateEnvironment(dt, now);
       this.post.render(dt, 0);
+      this.reveal();
       requestAnimationFrame(this.frame);
       return;
     }
@@ -379,6 +395,7 @@ export class Game {
     this.hud.update(dt, this.mech.canFire, this.reticlePx, this.lock.target !== null);
     this.updateEnvironment(dt, now);
     this.post.render(dt, this.level.camVel);
+    this.reveal();
     requestAnimationFrame(this.frame);
   };
 }
