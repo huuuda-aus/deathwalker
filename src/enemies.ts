@@ -33,6 +33,8 @@ const BLOOD_MAT = new THREE.MeshBasicMaterial({ color: 0x5a0c0c, transparent: tr
 /** how far troops looking for cover search, and the longest they will run for a post (seconds) */
 const COVER_SEARCH = 8;
 const POST_RUN_MAX = 8;
+/** the longest a soldier chases one firing spot before giving up on it (seconds) */
+const GOAL_MAX = 3;
 /** troops running and gunning only shoot at targets this close */
 const RUN_GUN_RANGE = 14;
 const BLOCKER_BUF: Blocker[] = Array.from({ length: 48 }, () => ({ x: 0, z: 0, r: 0 }));
@@ -114,6 +116,9 @@ export class Soldier implements Enemy {
   /** spot to step to when rubble blocks the line of fire */
   private goal: { x: number; z: number } | null = null;
   private losT = 0;
+  /** seconds spent walking to the current firing spot, and how many spots in a row it gave up on */
+  private goalT = 0;
+  private goalFails = 0;
   private muzzleTmp = new THREE.Vector3();
   private sightA = new THREE.Vector3();
   private sightB = new THREE.Vector3();
@@ -247,7 +252,7 @@ export class Soldier implements Enemy {
    * progressively wider turns (preferring the side we are already going round).
    * @returns false if every heading is blocked
    */
-  private walkAround(dt: number, ux: number, uz: number, speed: number = SOLDIER.walkSpeed): boolean {
+  private walkAround(dt: number, ux: number, uz: number, speed: number = SOLDIER.walkSpeed, reach = Infinity): boolean {
     const g = this.group;
     const nb = this.env.blockers(this.x, this.z, 1.0, BLOCKER_BUF);
     const clear = (px: number, pz: number): boolean => {
@@ -277,8 +282,11 @@ export class Soldier implements Enemy {
     if (!found) return false;
     if (side !== 0) { this.avoid = side; this.avoidT = 1.0; }
 
-    g.position.x += hx * speed * dt;
-    g.position.z = THREE.MathUtils.clamp(g.position.z + hz * speed * dt, Math.min(LANE.zMin, g.position.z), LANE.zMax);
+    // never step further than the spot being walked to: a long step (slow frame, run speed) would overshoot it, and
+    // the next one overshoot back, leaving the soldier shuffling to and fro around it
+    const step = Math.min(speed * dt, reach);
+    g.position.x += hx * step;
+    g.position.z = THREE.MathUtils.clamp(g.position.z + hz * step, Math.min(LANE.zMin, g.position.z), LANE.zMax);
     this.pushOut(nb);
     return true;
   }
@@ -297,7 +305,7 @@ export class Soldier implements Enemy {
     const dx = this.post.x - this.x, dz = this.post.z - this.z, d = Math.hypot(dx, dz);
     this.postT += dt;
     if (d < 0.08 || this.postT > POST_RUN_MAX) { this.holding = true; return false; }
-    return this.walkAround(dt, dx / d, dz / d, SOLDIER.runSpeed);
+    return this.walkAround(dt, dx / d, dz / d, SOLDIER.runSpeed, d);
   }
 
   /** A spot of its own: a little way along the street from where it landed, a good firing distance from the mech. */
@@ -467,16 +475,24 @@ export class Soldier implements Enemy {
         }
       } else if (this.hasLOS(target)) {
         this.goal = null;
+        this.goalFails = 0;
         this.state = 'aim';
         this.timer = 0.6;
       } else {
         // in range but rubble is in the way: step out to where there is a clear line of fire
         this.losT -= dt;
-        if (!this.goal && this.losT <= 0) { this.goal = this.findExposedSpot(target); this.losT = 0.4; }
+        if (!this.goal && this.losT <= 0) { this.goal = this.findExposedSpot(target); this.losT = 0.4; this.goalT = 0; }
         if (this.goal) {
           const gx = this.goal.x - this.x, gz = this.goal.z - this.z, gd = Math.hypot(gx, gz);
+          this.goalT += dt;
           if (gd < 0.06) this.goal = null;
-          else { moved = this.walkAround(dt, gx / gd, gz / gd, pace); if (!moved) this.goal = null; }
+          else if (this.goalT > GOAL_MAX) {
+            // not getting there: stand and wait, for longer each time it happens
+            this.goal = null;
+            this.goalFails++;
+            this.losT = 1.5 * this.goalFails * this.goalFails;
+          }
+          else { moved = this.walkAround(dt, gx / gd, gz / gd, pace, gd); if (!moved) this.goal = null; }
         } else if (dist > 3 && !this.holding) {
           moved = this.walkAround(dt, dxT / dist, dzT / dist, pace); // no spot found: close in instead
         }
