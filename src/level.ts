@@ -14,7 +14,7 @@ export const FOLLOW_OFFSET = 8;
 export interface SceneDef {
   /** 1 = locked single screen; >1 = scrolls, camera range grows by (width - 1) screens */
   widthScreens: number;
-  killTarget: number;
+  /** enemies the scene sends in; every one of them must be killed to clear it (cannons and their crew count) */
   spawnBudget: number;
 }
 
@@ -22,9 +22,9 @@ export interface SceneDef {
 const FIRST_SCENE_START = 0.5;
 
 export const LEVEL: SceneDef[] = [
-  { widthScreens: 1, killTarget: 24, spawnBudget: 32 },
-  { widthScreens: 2, killTarget: 40, spawnBudget: 52 },
-  { widthScreens: 1, killTarget: 28, spawnBudget: 38 },
+  { widthScreens: 1, spawnBudget: 48 },
+  { widthScreens: 2, spawnBudget: 80 },
+  { widthScreens: 1, spawnBudget: 58 },
 ];
 
 /** Progress (screens) at which each scene's view first locks in. Scenes are contiguous. */
@@ -89,7 +89,7 @@ export class LevelRunner {
     } else if (this.phase === 'active') {
       const { min, max } = this.range(this.index);
       this.camX += (Math.min(max, Math.max(min, follow)) - this.camX) * Math.min(1, dt * 4);
-      if (this.kills >= this.scene.killTarget) {
+      if (this.kills >= this.scene.spawnBudget) {
         this.phase = this.index === LEVEL.length - 1 ? 'complete' : 'cleared';
         event = this.phase === 'complete' ? 'complete' : 'cleared';
       }

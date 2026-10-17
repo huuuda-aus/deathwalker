@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Soldier } from './enemies';
+import type { Enemy } from './enemies';
 import type { World } from './world';
 import type { Building } from './building';
 import type { FireBarrel } from './fire';
@@ -9,7 +9,7 @@ export type HitKind = 'enemy' | 'wall' | 'barrel' | 'ground' | 'backdrop';
 export interface Hit {
   kind: HitKind;
   point: THREE.Vector3;
-  enemy?: Soldier;
+  enemy?: Enemy;
   /** the building that was hit (kind 'wall') */
   building?: Building;
   /** the oil barrel that was hit (kind 'barrel') */
@@ -22,7 +22,7 @@ const box = new THREE.Box3();
 const tmp = new THREE.Vector3();
 
 /** Hitscan against the 2.5D world: enemies, destructible walls, ground, backdrop. Nearest wins. */
-export function castRay(ray: THREE.Ray, enemies: Soldier[], world: World, out: Hit): Hit {
+export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit): Hit {
   let bestT = Infinity;
   out.kind = 'backdrop';
   out.enemy = undefined;

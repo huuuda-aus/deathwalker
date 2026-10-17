@@ -47,11 +47,12 @@ export class Coals {
 
   setPixelRatio(r: number): void { this.material.uniforms.uPixelRatio.value = r; }
 
-  emit(at: THREE.Vector3, vel: THREE.Vector3): void {
+  /** @param tau seconds the ember takes to cool (random 3-7 s when omitted) */
+  emit(at: THREE.Vector3, vel: THREE.Vector3, tau = 3 + Math.random() * 4): void {
     if (this.pool.full) return;
     this.pool.push({
       pos: at.clone(), vel: vel.clone(), heat: 0.85 + Math.random() * 0.15,
-      tau: 3 + Math.random() * 4, px: 2.5 + Math.random() * 2.5, rest: false,
+      tau, px: 2.5 + Math.random() * 2.5, rest: false,
     });
   }
 

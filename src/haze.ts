@@ -67,7 +67,9 @@ float density(vec3 p) {
   // an even haze everywhere, a bit denser in the street where it is close enough to read as clouds
   float bank = exp(-pow((p.z + 2.0) / 10.0, 2.0)) * exp(-max(p.y, 0.0) * 0.09);
   float h = 0.7 + 0.3 * exp(-max(p.y, 0.0) * 0.08) + 1.1 * bank;
-  return smoothstep(0.43, 0.70, n) * h;
+  // a steady veil everywhere with puffs a little denser than the gaps: the screen never goes clear while a
+  // cloud drifts in, and never clogs when several overlap
+  return (0.27 + 0.16 * smoothstep(0.43, 0.70, n)) * h;
 }
 
 void main() {

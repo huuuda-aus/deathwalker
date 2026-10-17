@@ -202,6 +202,27 @@ export class Debris {
     this.forEachNear(this.awakeGrid, at.x, at.y, at.z, 0.4, apply);
   }
 
+  /**
+   * Shockwave: shoves every chunk within `radius` away from `at`, hardest at the centre, with an upward lift
+   * and a random tumble. Small pieces fly farther than big slabs. Sleeping chunks are woken.
+   */
+  blast(at: THREE.Vector3, radius: number, speed: number): void {
+    const push = (c: Chunk) => {
+      const dx = c.pos.x - at.x, dy = c.pos.y - at.y, dz = c.pos.z - at.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= radius) return;
+      const k = (speed * (1 - d / radius)) / (1 + c.size * 4);
+      const inv = d > 1e-3 ? 1 / d : 0;
+      this.wake(c);
+      c.vel.x += dx * inv * k;
+      c.vel.y += dy * inv * k + k * 0.6;
+      c.vel.z += dz * inv * k;
+      c.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+    };
+    this.forEachNear(this.sleepGrid, at.x, at.y, at.z, radius, push);
+    this.forEachNear(this.awakeGrid, at.x, at.y, at.z, radius, push);
+  }
+
   /** Drop chunks that are far outside [minX, maxX] (the rails never go back). */
   cull(minX: number, maxX: number): void {
     for (const c of this.slots) if (c && (c.pos.x < minX || c.pos.x > maxX)) this.remove(c);

@@ -52,7 +52,7 @@ export class Hud {
       const k = level.killsByScene[i];
       if (i > level.index) return `SCENE ${i + 1}  --`;
       const done = i < level.index || level.phase === 'cleared' || level.phase === 'complete';
-      const tag = done ? '  CLEARED' : `  goal ${def.killTarget}`;
+      const tag = done ? '  CLEARED' : '';
       return `SCENE ${i + 1}  KILLED ${k}/${def.spawnBudget}${tag}`;
     }).join('<br>');
     if (html !== this.sceneHtml) { this.sceneHtml = html; this.scene.innerHTML = html; }

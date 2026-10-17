@@ -3,13 +3,14 @@ import type { Fx } from './fx';
 import type { Blocker } from './debris';
 import { MECH_SCALE, LANE } from './mech';
 import { CAM_DIST } from './level';
+import { SOLDIER } from './config';
 
 const BODY = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.8 });
 const SKIN = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
 const GUN_IDLE = new THREE.MeshStandardMaterial({ color: 0x222222 });
 
 /** Soldier is 1/8 of the mech's height, +15%. Model is authored ~2 units tall. */
-const SOLDIER_HEIGHT = ((4 * MECH_SCALE) / 8) * 1.15; // mech model is 4 units tall before scaling
+export const SOLDIER_HEIGHT = ((4 * MECH_SCALE) / 8) * 1.15; // mech model is 4 units tall before scaling
 const K = SOLDIER_HEIGHT / 2;
 
 /** What a soldier needs to know about the world around it; supplied by whoever creates it. */
@@ -30,7 +31,8 @@ const BLOCKER_BUF: Blocker[] = Array.from({ length: 48 }, () => ({ x: 0, z: 0, r
 /** steering headings tried relative to the straight line to the target (degrees) */
 const TURNS = [0, 30, 60, 90, 120].map((d) => (d * Math.PI) / 180);
 
-export type SoldierState = 'enter' | 'jump' | 'walk' | 'aim' | 'cooldown' | 'dead';
+/** 'mounted': riding or manning something (a cannon): no AI, the owner sets its position */
+export type SoldierState = 'enter' | 'jump' | 'walk' | 'aim' | 'cooldown' | 'dead' | 'mounted';
 
 /** Standing on a building floor: walks from the back to the ledge, then shoots from there. */
 export interface Perch {
@@ -39,9 +41,40 @@ export interface Perch {
   floorTop: (x: number, z: number, yMax: number) => number;
 }
 
-export class Soldier {
+/** What a bullet strike throws up: pixel sparks of these colours, plus glowing embers that bounce and cool. */
+export interface ImpactFx { colors: number[]; sparks: number; embers: number }
+
+/** flesh: a couple of red-orange specks */
+export const FLESH_IMPACT: ImpactFx = { colors: [0xff3020, 0xff8040], sparks: 2, embers: 0 };
+
+/** What the manager, the gun and the debris need from anything that fights on the enemy side. */
+export interface Enemy {
+  readonly group: THREE.Object3D;
+  /** how a bullet strike on it looks */
+  readonly impact: ImpactFx;
+  readonly alive: boolean;
+  readonly x: number;
+  /** seconds since it died (0 while alive) */
+  readonly deadTime: number;
+  /** set once the kill has been credited to the scene */
+  counted: boolean;
+  /** the scene is over: leave */
+  retreating: boolean;
+  /** retreat finished: safe to remove */
+  readonly gone: boolean;
+  getBox(out: THREE.Box3): THREE.Box3;
+  /** Returns true if the hit killed. */
+  damage(n: number, fx: Fx): boolean;
+  /** onShoot: called when it fires at the player; hit chance resolved by caller. */
+  update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: () => void): void;
+  /** free anything it put in the scene outside `group` */
+  dispose(): void;
+}
+
+export class Soldier implements Enemy {
   readonly group = new THREE.Group();
-  hp = 4;
+  readonly impact = FLESH_IMPACT;
+  hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
   /** hitbox half extents (padded for forgiveness) */
   readonly half = new THREE.Vector3(0.345, 0.2875, 0.345);
@@ -113,6 +146,27 @@ export class Soldier {
   }
 
   get alive(): boolean { return this.state !== 'dead'; }
+
+  dispose(): void {}
+
+  /** Hand control to an owner (a cannon): no AI until `release`. */
+  mount(): void { this.state = 'mounted'; }
+
+  /** Put a mounted soldier at a spot, facing +1 (right) or -1 (left), swaying a little as it works. */
+  station(x: number, y: number, z: number, facing: number, sway = 0): void {
+    this.group.position.set(x, y, z);
+    this.body.scale.x = facing * this.k;
+    this.body.rotation.z = sway;
+    this.fallDir = facing;
+  }
+
+  /** Back to being an ordinary infantryman on the ground. */
+  release(): void {
+    if (this.state !== 'mounted') return;
+    this.state = 'walk';
+    this.body.rotation.z = 0;
+    this.group.position.y = 0;
+  }
 
   /** Start inside a building at `from` (floor level) and head for the ledge. */
   perchAt(from: THREE.Vector3, perch: Perch): void {
@@ -235,6 +289,7 @@ export class Soldier {
   /** onShoot: called when the soldier fires at the player; hit chance resolved by caller. */
   update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: () => void): void {
     const g = this.group;
+    if (this.state === 'mounted') return;
     if (this.state === 'dead') {
       this.deadTime += dt;
       const k = Math.min(1, this.deadTime / 0.35);
