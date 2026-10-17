@@ -258,6 +258,7 @@ export class World {
     for (const c of this.chunks.values()) {
       for (const b of c.buildings) {
         if (b.hostsEnemies && Math.abs(cameraX - (b.x0 + b.width / 2)) < 45) b.spawnRuinRubble();
+        b.step(dt);                                   // anything coming down
       }
     }
     // fires: animate the ones near the camera, give the closest few real light

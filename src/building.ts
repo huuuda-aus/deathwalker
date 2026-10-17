@@ -6,6 +6,35 @@ import { CELL, DEPTH, MAXL, STORY, T, SPEC, DEEP, type Ledge } from './buildingS
 
 export { CELL, type Ledge };
 
+/** One layer of a member that is part of a collapsing block, with where it started. */
+interface BlockLayer { c: number; r: number; k: number; inst: number; base: THREE.Matrix4; pos: THREE.Vector3 }
+
+/** A rigid piece of the building that has lost its support and is coming down. */
+interface Block {
+  /** its layers, lowest row first */
+  layers: BlockLayer[];
+  t: number;
+  /** seconds it holds still (shuddering) before it moves */
+  delay: number;
+  /** how far it drops before it touches what is under it, and how long that takes */
+  D: number;
+  tA: number;
+  /** the height its bottom ends up at: the top of what it lands on */
+  py: number;
+  /** sideways drift while coming down */
+  drift: number;
+  /** columns it lands on, and the lowest row it occupies */
+  contact: number[];
+  baseRow: number;
+  puff: number;
+  /** how many layers it started with, and a running count toward the next piece breaking off */
+  total: number;
+  crumble: number;
+  /** after landing: how fast the crush climbs the block (rows/s), and how many rows it has climbed */
+  crushRate: number;
+  crushed: number;
+}
+
 /** Where an enemy appears in a bay, and what it needs to walk to the ledge. */
 export interface LedgeSpawn {
   pos: THREE.Vector3;
@@ -19,6 +48,24 @@ const SPAN = 5;
 const INF = 1000;
 /** A storey that keeps less than this share of its load-bearing cells can no longer carry what is above it. */
 const BEARING_MIN = 0.6;
+/** a collapsing block: how hard it falls (units/s^2), how long it holds before moving (s) */
+const BLOCK_G = 8;
+const COLLAPSE_DELAY = 0.35;
+/** the whole collapse (hold, fall, crush) runs at this multiple of real time */
+const COLLAPSE_SPEED = 1.5;
+/** it creeps toward the camera as it comes down: speed and furthest distance (units) */
+const FORWARD_SPEED = 0.4;
+const FORWARD_MAX = 0.6;
+/** after it lands the rows are crushed from the bottom at this many rows per second, kept between these limits */
+const CRUSH_MIN_ROWS = 6;
+const CRUSH_MAX_ROWS = 11;
+/** pieces that break loose from the bottom of a moving block, per second, until it has lost this share of itself */
+const CRUMBLE_RATE = 22;
+const CRUMBLE_MAX = 0.25;
+/** landing from a drop longer than this breaks a layer of the top of the supporting columns; a longer one, or a bigger block, two */
+const IMPACT_MIN_DROP = 0.7;
+const IMPACT_HEAVY_DROP = 2.6;
+const IMPACT_HEAVY_LAYERS = 160;
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const MAT = new THREE.MeshStandardMaterial({ roughness: 0.9 });
 /** background rows: unlit near-black cut-outs against the sky (one material per shade) */
@@ -70,6 +117,10 @@ export class Building {
   private bearingTotal: number[] = [];
   private z0: number;
   private tmpColor = new THREE.Color();
+  /** pieces of the building that are coming down right now */
+  private blocks: Block[] = [];
+  private poseM = new THREE.Matrix4();
+  private poseOut = new THREE.Matrix4();
   private mat = new THREE.Matrix4();
 
   constructor(
@@ -415,18 +466,30 @@ export class Building {
 
   private floorFn = (x: number, z: number, y: number): number => this.solidTop(x, z, y);
 
-  /**
-   * Remove one layer of a member and throw its rubble.
-   * @param fallH height of the cell above where support was lost (structural collapse only)
-   */
+  /** Take one layer of a member out of the structure (its mesh instance is left for the caller to deal with). */
+  private removeLayer(c: number, r: number, k: number): void {
+    const i = c * this.rows + r;
+    this.lhp[i * MAXL + k] = 0;
+    this.hp[i]--;
+  }
+
+  /** Remove one layer of a member and throw its rubble (a bullet's work). */
   private breakLayer(c: number, r: number, k: number, byBullet: boolean, fallH = 0): void {
+    this.removeLayer(c, r, k);
+    this.shedRubble(c, r, k, byBullet, fallH);
+  }
+
+  /**
+   * Hide a layer's instance and throw its rubble.
+   * @param fallH height of the cell above where support was lost (structural collapse only)
+   * @param at where the layer is now, and `vel` how fast it is moving (a piece of a collapsing block shattering)
+   */
+  private shedRubble(c: number, r: number, k: number, byBullet: boolean, fallH = 0, at?: THREE.Vector3, vel?: THREE.Vector3): void {
     const i = c * this.rows + r, li = i * MAXL + k;
     const t = this.type[i], spec = SPEC[t], L = this.layersOf(t), lt = spec.thick / L;
-    this.lhp[li] = 0;
-    this.hp[i]--;
     this.mesh.setMatrixAt(this.inst[li], ZERO);
     const zf = this.z0 + spec.front - k * lt;
-    const pos = new THREE.Vector3(this.x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, byBullet ? zf : zf - Math.random() * lt);
+    const pos = at ?? new THREE.Vector3(this.x0 + (c + 0.5) * CELL, (r + 0.5) * CELL, byBullet ? zf : zf - Math.random() * lt);
     this.debris.wakeNear(pos, CELL * 1.2); // rubble that was resting here
     const col = this.layerColors[li]!;
     const glass = t === T.Window;
@@ -438,6 +501,11 @@ export class Building {
       for (let n = 0; n < 2; n++) this.debris.spawn(pos, col, glass ? piece(0.2, 0.35) : piece(0.35, 0.65), v(3, 3), this.floorFn);
       this.debris.spawn(pos, col, piece(0.2, 0.35), v(6, 4), this.floorFn);
       this.dust.puff(pos, 1, CELL * 2.2, 1.5);
+    } else if (vel) {
+      // a piece of a collapsing block: it carries the block's motion at that point, plus a scatter
+      const v = (k2: number) => new THREE.Vector3(vel.x + (Math.random() - 0.5) * 1.2 * k2, vel.y + (Math.random() - 0.5) * 0.8 * k2, vel.z + Math.random() * 1.2 * k2);
+      this.debris.spawn(pos, col, piece(0.35, 0.8), v(1), this.floorFn);
+      if (this.debris.count < 4000) this.debris.spawn(pos, col, piece(0.25, 0.5), v(1.3), this.floorFn);
     } else {
       // structural collapse: the layer drops from somewhere within its depth, so it can crush whatever is inside.
       // The structure topples out into the street like a falling wall: the higher the cell, the harder it is
@@ -533,23 +601,195 @@ export class Building {
     for (let i = 0; i < this.hp.length; i++) if (this.hp[i] > 0) alive++;
     // a storey that failed, or most of the structure gone: the building is down for good
     if (this.storeyFailed || alive < this.initialAlive * 0.4) this.down = true;
-    const { rows } = this;
     if (falling.length === 0) return;
-    let baseRow = rows;
-    for (const i of falling) baseRow = Math.min(baseRow, i % rows);
-    // mark every falling layer gone first so floor lookups see the final state, then throw the rubble
-    const pending: { c: number; r: number; k: number }[] = [];
-    for (const i of falling) {
-      const c = Math.floor(i / rows), r = i % rows;
-      for (let k = 0; k < MAXL; k++) if (this.lhp[i * MAXL + k] > 0) pending.push({ c, r, k });
+    // whatever lost its support comes down in connected pieces, each a rigid block that falls (and tilts) as one
+    const fallingSet = new Set(falling);
+    const detached: { members: number[] }[] = [];
+    const seen = new Set<number>();
+    for (const start of falling) {
+      if (seen.has(start)) continue;
+      const members: number[] = [];
+      const stack = [start];
+      seen.add(start);
+      while (stack.length) {
+        const i = stack.pop()!;
+        members.push(i);
+        const c = Math.floor(i / this.rows), r = i % this.rows;
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const cc = c + dc, rr = r + dr;
+          if (cc < 0 || cc >= this.cols || rr < 0 || rr >= this.rows) continue;
+          const j = cc * this.rows + rr;
+          if (fallingSet.has(j) && !seen.has(j)) { seen.add(j); stack.push(j); }
+        }
+      }
+      detached.push({ members });
     }
-    for (const p of pending) this.lhp[(p.c * rows + p.r) * MAXL + p.k] = 0;
-    for (const p of pending) {
-      const i = p.c * rows + p.r;
-      this.lhp[i * MAXL + p.k] = 1; // breakLayer zeroes it again; keeps the lookups it makes valid
-      this.breakLayer(p.c, p.r, p.k, false, (p.r - baseRow) * CELL);
+    // take every falling layer out of the structure first, so the landing heights below see the final state
+    const pieces = detached.map(({ members }) => this.detach(members));
+    for (const p of pieces) this.launchBlock(p);
+    this.dust.puff(new THREE.Vector3(this.x0 + this.width / 2, 0.5, this.z0 + 1.0), 3, CELL * 3, 1.5);
+  }
+
+  /** Remove the members' layers from the structure, keeping their meshes to animate. */
+  private detach(members: number[]): BlockLayer[] {
+    const layers: BlockLayer[] = [];
+    for (const i of members) {
+      const c = Math.floor(i / this.rows), r = i % this.rows;
+      for (let k = 0; k < MAXL; k++) {
+        const li = i * MAXL + k;
+        if (this.lhp[li] === 0) continue;
+        const base = new THREE.Matrix4();
+        this.mesh.getMatrixAt(this.inst[li], base);
+        layers.push({ c, r, k, inst: this.inst[li], base, pos: new THREE.Vector3().setFromMatrixPosition(base) });
+        this.removeLayer(c, r, k);
+      }
     }
-    this.dust.puff(new THREE.Vector3(this.x0 + this.width / 2, 0.5, this.z0 + 1.0), 4, CELL * 3, 2.5);
+    return layers;
+  }
+
+  /**
+   * Work out how a detached block comes down. It holds a moment, shuddering, then drops straight down (and a
+   * little toward the camera) until it touches what is left standing under it: a lower floor, or the ground.
+   * Then it is crushed from the bottom up: each row breaks into rubble as the mass above comes down through it,
+   * so the lower levels go first and the upper ones follow as they arrive.
+   */
+  private launchBlock(layers: BlockLayer[]): void {
+    const { rows } = this;
+    const bottom = new Map<number, number>();             // column -> lowest row of the block in it
+    for (const l of layers) bottom.set(l.c, Math.min(bottom.get(l.c) ?? Infinity, l.r));
+    let D = Infinity;                                     // the clear drop under the block: its tightest column
+    const contact: number[] = [];
+    for (const [c, r0] of bottom) {
+      let top = 0;
+      for (let r = r0 - 1; r >= 0; r--) if (this.hp[c * rows + r] > 0) { top = (r + 1) * CELL; break; }
+      const gap = r0 * CELL - top;
+      if (gap < D - 1e-6) { D = gap; contact.length = 0; }
+      if (gap < D + CELL * 0.3) contact.push(c);
+    }
+    const baseRow = Math.min(...layers.map((l) => l.r));
+    // the bottom row of the block lands on `py`: the top of whatever is under it
+    const fall = D > 0.02 ? Math.sqrt((2 * D) / BLOCK_G) : 0;
+    this.blocks.push({
+      layers: layers.sort((p, q) => p.r - q.r), t: 0, delay: COLLAPSE_DELAY, D, tA: fall, py: baseRow * CELL - D,
+      drift: (Math.random() - 0.5) * 0.2, contact, puff: 0, baseRow, total: layers.length, crumble: 0,
+      crushRate: THREE.MathUtils.clamp((BLOCK_G * fall * 0.6) / CELL, CRUSH_MIN_ROWS, CRUSH_MAX_ROWS), crushed: 0,
+    });
+    this.version++;
+  }
+
+  /** Is anything of this building still coming down? */
+  get collapsing(): boolean { return this.blocks.length > 0; }
+
+  /** Advance the falling blocks. */
+  step(realDt: number): void {
+    if (this.blocks.length === 0) return;
+    const dt = realDt * COLLAPSE_SPEED;
+    for (let bi = this.blocks.length - 1; bi >= 0; bi--) {
+      const b = this.blocks[bi];
+      b.t += dt;
+      let tx: number;
+      let ty = 0, tz = 0, vy = 0;
+      if (b.t < b.delay) {
+        // it holds for a beat, shuddering, with dust shaken loose
+        tx = Math.sin(b.t * 95) * 0.012 * (b.t / b.delay);
+        b.puff -= dt;
+        if (b.puff <= 0) { b.puff = 0.1; this.bottomPuff(b, 1, 0.8); }
+      } else {
+        const tau = b.t - b.delay;
+        tz = Math.min(FORWARD_MAX, FORWARD_SPEED * tau);          // creeping toward the camera as it comes down
+        tx = b.drift * Math.min(tau, b.tA + 1);
+        if (tau < b.tA) {
+          ty = -0.5 * BLOCK_G * tau * tau;
+          vy = -BLOCK_G * tau;
+          b.puff -= dt;
+          if (b.puff <= 0) { b.puff = 0.07; this.bottomPuff(b, 2, 1.2); }
+        } else {
+          // it has landed: the rows are crushed from the bottom, and what is left keeps coming down
+          b.crushed = (tau - b.tA) * b.crushRate;
+          ty = -b.D - b.crushed * CELL;
+          vy = -BLOCK_G * b.tA * 0.6;
+          this.crushRows(b, tx, tz);
+        }
+      }
+      this.poseBlock(b, tx, ty, tz);
+      if (b.t >= b.delay && b.t - b.delay < b.tA) this.crumble(b, dt, vy, tz);
+      if (b.layers.length === 0) {
+        this.landed(b);
+        this.blocks.splice(bi, 1);
+      }
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Once it is moving, bits break off its underside and fall away from it. */
+  private crumble(b: Block, dt: number, vy: number, tz: number): void {
+    b.crumble += CRUMBLE_RATE * dt;
+    while (b.crumble >= 1 && b.layers.length > b.total * (1 - CRUMBLE_MAX)) {
+      b.crumble -= 1;
+      // from the lowest two rows
+      const low = b.layers.filter((l) => l.r <= b.baseRow + 1);
+      if (low.length === 0) break;
+      const l = low[Math.floor(Math.random() * low.length)];
+      const at = l.pos.clone().applyMatrix4(this.poseM);
+      this.shedRubble(l.c, l.r, l.k, false, 0, at, new THREE.Vector3(b.drift + (Math.random() - 0.5), vy * 0.4, 0.5 + tz));
+      b.layers.splice(b.layers.indexOf(l), 1);
+    }
+    if (b.crumble > 3) b.crumble = 0;
+  }
+
+  /** Break every layer the crush has reached into rubble at the foot of the block, and kick up dust for each row. */
+  private crushRows(b: Block, tx: number, tz: number): void {
+    // a row is gone once the mass above has come down through it
+    while (b.layers.length > 0 && b.layers[0].r - b.baseRow + 1 <= b.crushed) {
+      const row = b.layers[0].r;
+      let n = 0;
+      while (b.layers.length > 0 && b.layers[0].r === row) {
+        const l = b.layers.shift()!;
+        const at = new THREE.Vector3(l.pos.x + tx, b.py + 0.05 + Math.random() * CELL * 0.6, l.pos.z + tz);
+        // it bursts out at the foot of the pile: spread sideways, spilling toward the street
+        const v = new THREE.Vector3((Math.random() - 0.5) * 2.2 + b.drift, 0.2 + Math.random() * 1.0, 0.8 + Math.random() * 1.6);
+        this.shedRubble(l.c, l.r, l.k, false, 0, at, v);
+        n++;
+      }
+      if (n > 0) this.dust.puff(new THREE.Vector3(this.x0 + (b.contact[Math.floor(Math.random() * b.contact.length)] + Math.random()) * CELL, b.py + 0.2, this.z0 + 0.6 + tz), 2, CELL * 3, 2);
+    }
+  }
+
+  private bottomPuff(b: Block, n: number, spread: number): void {
+    const c = b.contact[Math.floor(Math.random() * b.contact.length)] ?? b.layers[0].c;
+    this.dust.puff(new THREE.Vector3(this.x0 + (c + Math.random()) * CELL, Math.max(0.1, b.py + 0.1), this.z0 + 0.5), n, CELL * 2.5, spread);
+  }
+
+  /** Put every remaining layer of the block where the block's motion says. */
+  private poseBlock(b: Block, tx: number, ty: number, tz: number): void {
+    const m = this.poseM.makeTranslation(tx, ty, tz);
+    for (const l of b.layers) this.mesh.setMatrixAt(l.inst, this.poseOut.multiplyMatrices(m, l.base));
+  }
+
+  /**
+   * The whole block is down. What it landed on takes the blow: a tall block that fell far breaks a layer of the top
+   * of every column that carried it, which can bring that down in turn.
+   */
+  private landed(b: Block): void {
+    if (b.D > IMPACT_MIN_DROP) {
+      const hits = b.D > IMPACT_HEAVY_DROP || b.total > IMPACT_HEAVY_LAYERS ? 2 : 1;
+      for (const c of b.contact) {
+        for (let r = b.baseRow - 1; r >= 0; r--) {
+          const i = c * this.rows + r;
+          if (this.hp[i] <= 0) continue;
+          const L = this.layersOf(this.type[i]);
+          for (let n = 0, k = 0; n < hits && k < L; k++) {
+            if (this.lhp[i * MAXL + k] === 0) continue;
+            this.breakLayer(c, r, k, false);
+            n++;
+          }
+          break;
+        }
+      }
+    }
+    this.version++;
+    this.settle();
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose(): void {
