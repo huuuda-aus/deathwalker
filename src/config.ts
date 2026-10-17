@@ -45,6 +45,11 @@ export const SOLDIER = {
   /** ...and never nearer the mech than a distance picked between these */
   standoffMin: 6,
   standoffMax: 11,
+  /** soldiers closer than this (world units) ease apart, so a crowd does not stack on one spot */
+  personalSpace: 0.3,
+  separateSpeed: 2,
+  /** a trooper will not pick a spot nearer than this to one someone else is standing on or heading for */
+  spotGap: 0.45,
   /** a soldier killed on an upper floor (higher than this) is flung out of the building this often, to burst on the ground */
   highFloorY: 1,
   plungeChance: 0.5,
@@ -102,6 +107,8 @@ export const CANNON = {
   horseBoltFactor: 1.2,
   /** soldiers aboard; they man the gun once it is deployed */
   crew: 2,
+  /** an unmanned (but intact) gun is taken over by street infantry coming within this far of it, up to a full crew */
+  recruitRange: 7,
   /** seconds between rounds with a full crew; fewer crew load proportionally slower, none cannot fire */
   fireInterval: 4,
   firstShotDelay: 1.2,

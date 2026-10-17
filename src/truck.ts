@@ -153,6 +153,8 @@ export class TruckUnit implements Enemy {
 
   get alive(): boolean { return this.state !== 'dead'; }
   get x(): number { return this.group.position.x; }
+  /** every soldier is out: just an empty truck standing there */
+  get empty(): boolean { return this.state === 'idle'; }
   /** still driving in or unloading: a second truck waits for this one */
   get busy(): boolean { return this.state === 'drive' || this.state === 'turn' || this.state === 'unload'; }
 

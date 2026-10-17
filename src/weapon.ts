@@ -19,6 +19,8 @@ export interface WeaponDeps {
 const { fireRate: FIRE_RATE, heatPerShot: HEAT_PER_SHOT, coolRate: COOL_RATE, lockCoolRate: LOCK_COOL_RATE,
   unlockAt: UNLOCK_AT, damage: DAMAGE, wallRadius: WALL_RADIUS, refDist: REF_DIST } = WEAPON;
 const JITTER = new THREE.Vector3();
+/** wet earth, dark to light */
+const MUD = [0x3a2c1e, 0x4a3a28, 0x5c4630, 0x6b5a45];
 const EMBER_VEL = new THREE.Vector3();
 
 /** Hitscan machine gun: ray ends at the reticle (+ heat jitter); damage resolved there. */
@@ -113,12 +115,17 @@ export class Weapon {
       hit.enemy.damage(DAMAGE, fx);
       return;
     }
+    if (hit.kind === 'ground') {
+      // a spray of mud that falls back and splatters, now and then a spark off a stone, and some dust
+      fx.burst(hit.point, 9, 2.8, MUD, true, 0.7);
+      if (Math.random() < 0.35) fx.sparks(hit.point, 3, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+      if (Math.random() < 0.4) dust.puff(hit.point, 1, 0.35, 0.6);
+      return;
+    }
     fx.sparks(hit.point, 2, 2.5, [0xffd080, 0xffa040, 0xffffff]);
     if (hit.kind === 'wall') {
       hit.building?.damage(hit.point.x, hit.point.y, hit.point.z, WALL_RADIUS);
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.6);
-    } else if (hit.kind === 'ground') {
-      if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.5);
     }
   }
 

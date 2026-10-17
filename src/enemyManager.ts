@@ -101,6 +101,18 @@ export class EnemyManager {
     this.truckTimer = TRUCK.intervalMin + Math.random() * TRUCK.intervalExtra;
   }
 
+  /** An unmanned gun waves in the nearest free infantryman within reach, to take over as gunner. */
+  private recruit(cannon: CannonUnit): void {
+    const p = cannon.group.position;
+    let best: Soldier | null = null, bestD: number = CANNON.recruitRange;
+    for (const e of this.list) {
+      if (!(e instanceof Soldier) || !e.free) continue;
+      const d = Math.hypot(e.x - p.x, e.group.position.z - p.z);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (best) cannon.claim(best);
+  }
+
   /** Is this soldier inside one of the mech's hit spheres (a foot coming down on him, a knee, the body)? */
   private underFoot(s: Soldier): boolean {
     const floor = s.group.position.y;
@@ -215,8 +227,11 @@ export class EnemyManager {
         bullets.fire(from, shotAt);
       });
       if (e instanceof Soldier && e.alive && this.underFoot(e)) e.splat(fx);
+      if (e instanceof CannonUnit && e.needsCrew) this.recruit(e);
       // a gun with no crew left is out of the fight: it no longer has to be destroyed to clear the scene
       if (e instanceof CannonUnit && e.alive && !e.counted && !e.retreating && !e.operational) { e.counted = true; level.addKill(); }
+      // likewise an empty truck, once its troops are out
+      if (e instanceof TruckUnit && e.alive && !e.counted && !e.retreating && e.empty) { e.counted = true; level.addKill(); }
       if (!e.alive && !e.counted) { e.counted = true; level.addKill(); }
       if ((!e.alive && e.deadTime > 8) || e.gone || (e.retreating && e.x < camX - 14)) {
         this.discard(e);

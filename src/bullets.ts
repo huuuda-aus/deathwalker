@@ -3,18 +3,31 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Collider, Debris } from './debris';
 import { ENEMY_FIRE } from './config';
+import { PointPool } from './pointpool';
 
 const MAX = 96;
 const BULLET_R = 0.03;
 /** a bullet that has not hit anything after this long is dropped */
 const LIFE = 6;
-/** the tracer: a short bright streak along the line of flight (HDR, so it blooms) */
-const GEO = new THREE.BoxGeometry(0.014, 0.014, 0.18);
-const MAT = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.6, 1.4), toneMapped: false });
+/** a bullet is a bright dot this many screen pixels across (HDR, so it blooms a little) */
+const DOT_PX = 2.5;
 const SPARKS = [0xffd080, 0xffffff];
-const Z = new THREE.Vector3(0, 0, 1);
 
 interface Bullet { pos: THREE.Vector3; vel: THREE.Vector3; age: number }
+
+const material = (): THREE.ShaderMaterial => new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  uniforms: { uPixelRatio: { value: 1 }, uSize: { value: DOT_PX } },
+  vertexShader: /* glsl */ `
+    uniform float uPixelRatio, uSize;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = uSize * uPixelRatio;
+    }`,
+  fragmentShader: /* glsl */ `
+    void main() { gl_FragColor = vec4(3.0, 2.6, 1.4, 1.0); }`,
+});
 
 export interface BulletDeps {
   scene: THREE.Scene;
@@ -30,43 +43,42 @@ const prev = new THREE.Vector3();
 const seg = new THREE.Vector3();
 const hitAt = new THREE.Vector3();
 const ray = new THREE.Ray();
-const dummy = new THREE.Object3D();
 
 /**
  * Enemy rifle bullets: straight, fast but not instant (see `ENEMY_FIRE.bulletSpeed`), stopped by the first wall,
  * rubble, the ground or the mech. A bullet that was aimed well hits unless the mech has stepped aside.
  */
 export class Bullets {
-  private live: Bullet[] = [];
-  private readonly mesh = new THREE.InstancedMesh(GEO, MAT, MAX);
+  private readonly mat = material();
+  private readonly pool: PointPool<Bullet>;
 
   constructor(private readonly deps: BulletDeps) {
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    deps.scene.add(this.mesh);
+    this.pool = new PointPool(deps.scene, MAX, this.mat, { position: 3 });
   }
+
+  setPixelRatio(r: number): void { this.mat.uniforms.uPixelRatio.value = r; }
 
   /** Send a bullet from `from` toward `aim`. */
   fire(from: THREE.Vector3, aim: THREE.Vector3): void {
-    if (this.live.length >= MAX) return;
+    if (this.pool.full) return;
     const vel = new THREE.Vector3().subVectors(aim, from).normalize().multiplyScalar(ENEMY_FIRE.bulletSpeed);
-    this.live.push({ pos: from.clone(), vel, age: 0 });
+    this.pool.push({ pos: from.clone(), vel, age: 0 });
   }
 
   update(dt: number): void {
-    for (let i = this.live.length - 1; i >= 0; i--) {
-      const b = this.live[i];
+    const { items } = this.pool;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const b = items[i];
       b.age += dt;
       prev.copy(b.pos);
       b.pos.addScaledVector(b.vel, dt);
-      if (b.age > LIFE || this.collide(prev, b.pos)) { this.live.splice(i, 1); }
+      if (b.age > LIFE || this.collide(prev, b.pos)) this.pool.removeAt(i);
     }
     this.draw();
   }
 
   clear(): void {
-    this.live.length = 0;
+    this.pool.items.length = 0;
     this.draw();
   }
 
@@ -101,15 +113,6 @@ export class Bullets {
   }
 
   private draw(): void {
-    const n = this.live.length;
-    for (let i = 0; i < n; i++) {
-      const b = this.live[i];
-      dummy.position.copy(b.pos);
-      dummy.quaternion.setFromUnitVectors(Z, seg.copy(b.vel).normalize());
-      dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, dummy.matrix);
-    }
-    this.mesh.count = n;
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.pool.upload((b, i, a) => a.position.setXYZ(i, b.pos.x, b.pos.y, b.pos.z));
   }
 }

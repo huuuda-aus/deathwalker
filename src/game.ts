@@ -122,10 +122,12 @@ export class Game {
       blockers: (x, z, r, out) => debris.collectBlockers(x, z, r, out),
       sight: (a, b) => !debris.segmentHit(a, b, sightTmp),
       surface: (x, z, y) => world.surfaceTop(x, z, y),
+      others: () => this.enemies.list,
     };
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
+    this.bullets.setPixelRatio(pixelRatio);
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });

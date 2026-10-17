@@ -11,7 +11,9 @@ const GUN_IDLE = new THREE.MeshStandardMaterial({ color: 0x222222 });
 
 /** Soldier is 1/8 of the mech's height, +15%. Model is authored ~2 units tall. */
 export const SOLDIER_HEIGHT = ((4 * MECH_SCALE) / 8) * 1.15; // mech model is 4 units tall before scaling
-const K = SOLDIER_HEIGHT / 2;
+/** soldiers are drawn this much bigger than the reference height (the cannon, horse and truck are sized from SOLDIER_HEIGHT and stay as they were) */
+const SOLDIER_SCALE = 1.15;
+const K = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
 
 /** What a soldier needs to know about the world around it; supplied by whoever creates it. */
 export interface SoldierEnv {
@@ -21,6 +23,8 @@ export interface SoldierEnv {
   sight(a: THREE.Vector3, b: THREE.Vector3): boolean;
   /** highest solid surface under (x, z) at or below y (0 = ground), so corpses fall until something is under them */
   surface(x: number, z: number, y: number): number;
+  /** every enemy in the game, so soldiers can keep clear of each other (optional) */
+  others?(): readonly Enemy[];
 }
 
 /** height (world) the soldiers aim at on the mech */
@@ -95,8 +99,8 @@ export class Soldier implements Enemy {
   hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
   /** hitbox half extents (padded for forgiveness) */
-  readonly half = new THREE.Vector3(0.345, 0.2875, 0.345);
-  centerY = SOLDIER_HEIGHT / 2;
+  readonly half = new THREE.Vector3(0.345, 0.2875, 0.345).multiplyScalar(SOLDIER_SCALE);
+  centerY = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
   /** model scale; perched soldiers are enlarged to offset their extra distance from the camera */
   private k = K;
   private body = new THREE.Group();
@@ -207,6 +211,35 @@ export class Soldier implements Enemy {
     this.vel.copy(vel);
     this.fallStart = this.group.position.y;
   }
+
+  /** Street infantry that is not busy with anything else (walking at the mech, not perched or in the air). */
+  get free(): boolean { return this.alive && this.state === 'walk' && this.plan === 'normal' && !this.perch; }
+
+  /** Drop everything and run to this spot (a gun to man), shooting on the way; `holding` says when it has got there or given up. */
+  rushTo(x: number, z: number): void {
+    this.plan = 'scatter';
+    this.post = { x, z };
+    this.postT = 0;
+    this.holding = false;
+    this.goal = null;
+  }
+
+  /** Never mind: back to walking at the mech like any other soldier. */
+  standDown(): void {
+    if (this.state === 'mounted') return;
+    this.plan = 'normal';
+    this.post = null;
+    this.holding = false;
+  }
+
+  /** Climb aboard a gun: the gun takes over where it stands. */
+  crewUp(): void {
+    this.standDown();
+    this.mount();
+  }
+
+  /** has stopped running to its post: arrived, or timed out */
+  get settled(): boolean { return this.holding; }
 
   /** Back to being an ordinary infantryman on the ground. */
   release(): void {
@@ -350,11 +383,55 @@ export class Soldier implements Enemy {
 
   /** A spot of its own: a little way along the street from where it landed, a good firing distance from the mech. */
   private pickScatter(target: THREE.Vector3): { x: number; z: number } {
-    const standoff = SOLDIER.standoffMin + Math.random() * (SOLDIER.standoffMax - SOLDIER.standoffMin);
-    let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
-    const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
-    if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
-    return { x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) };
+    let spot = { x: 0, z: 0 };
+    for (let tries = 0; tries < 8; tries++) {
+      const standoff = SOLDIER.standoffMin + Math.random() * (SOLDIER.standoffMax - SOLDIER.standoffMin);
+      let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
+      const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
+      if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
+      spot = { x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) };
+      if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;                  // someone else is already heading there
+    }
+    return spot;
+  }
+
+  /** Is another soldier standing at, or on his way to, this spot? */
+  private spotTaken(x: number, z: number, gap: number): boolean {
+    const others = this.env.others?.();
+    if (!others) return false;
+    for (const o of others) {
+      if (o === this || !(o instanceof Soldier) || !o.alive) continue;
+      const px = o.post ? o.post.x : o.x, pz = o.post ? o.post.z : o.group.position.z;
+      if ((px - x) ** 2 + (pz - z) ** 2 < gap * gap) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Personal space: soldiers standing on top of each other (running to the same spot, crowding a cover) ease apart.
+   * Everyone does their own share, so a pair moves away from each other equally.
+   */
+  private keepApart(dt: number): void {
+    const others = this.env.others?.();
+    if (!others) return;
+    const g = this.group.position;
+    let px = 0, pz = 0;
+    for (const o of others) {
+      if (o === this || !(o instanceof Soldier) || !o.alive || o.state === 'mounted' || o.perch) continue;
+      if (Math.abs(g.y - o.group.position.y) > 0.3) continue;                    // on another floor
+      const dx = g.x - o.x, dz = g.z - o.group.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= SOLDIER.personalSpace * SOLDIER.personalSpace) continue;
+      const d = Math.sqrt(d2);
+      const push = 1 - d / SOLDIER.personalSpace;
+      if (d > 1e-4) { px += (dx / d) * push; pz += (dz / d) * push; }
+      else { const a = Math.random() * Math.PI * 2; px += Math.cos(a) * push; pz += Math.sin(a) * push; }
+    }
+    if (px === 0 && pz === 0) return;
+    const move = SOLDIER.separateSpeed * dt;
+    g.x += px * move;
+    g.z = THREE.MathUtils.clamp(g.z + pz * move, Math.min(LANE.zMin, g.z), LANE.zMax);
+    this.pushOut(this.env.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
   }
 
   /** The spot just behind the nearest big chunk of rubble, as seen from the mech. */
@@ -368,9 +445,17 @@ export class Soldier implements Enemy {
     }
     if (best < 0) return null;
     const b = BLOCKER_BUF[best];
-    const ax = b.x - target.x, az = b.z - target.z, al = Math.hypot(ax, az) || 1;
+    // directly behind it, as seen from the mech; or, if someone is already there, round to one side or the other
+    const base = Math.atan2(b.z - target.z, b.x - target.x);
     const off = b.r + SOLDIER_R + 0.12;
-    return { x: b.x + (ax / al) * off, z: THREE.MathUtils.clamp(b.z + (az / al) * off, LANE.zMin, LANE.zMax) };
+    const swing = Math.random() < 0.5 ? 1 : -1;
+    let spot = { x: 0, z: 0 };
+    for (const turn of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5]) {
+      const a = base + turn * swing;
+      spot = { x: b.x + Math.cos(a) * off, z: THREE.MathUtils.clamp(b.z + Math.sin(a) * off, LANE.zMin, LANE.zMax) };
+      if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;
+    }
+    return spot;
   }
 
   /** Clear line of fire from standing at (x, z) to the mech's chest? (rubble is cover, for both sides) */
@@ -483,6 +568,7 @@ export class Soldier implements Enemy {
       this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
       return;
     }
+    if (!this.perch) this.keepApart(dt);
     const dxT = target.x - this.x;
     const dzT = target.z - this.z;
     const dir = Math.sign(dxT) || 1;
