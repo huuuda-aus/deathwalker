@@ -204,7 +204,7 @@ export const AIRCRAFT = {
   /** much tougher than a soldier, a bit under half a truck: a couple of seconds of sustained fire brings it down */
   hp: SOLDIER.hp * 8,
   /** world units / s: slow enough to track */
-  speed: 3.4,
+  speed: 3.4 * 1.25,
   /** the first one arrives after this long, then every min + random * extra seconds, one flight at a time */
   firstDelay: 22,
   intervalMin: 30,
@@ -217,10 +217,9 @@ export const AIRCRAFT = {
   minAltitude: 5,
   /** how far past the screen edge it flies before it turns round (units) */
   turnMargin: 6,
-  /** seconds between bomb runs: min + random * extra */
-  dropMin: 2.2,
-  dropExtra: 1.6,
-  /** each bomb is aimed to land this far (units) either side of where the mech is */
+  /** seconds between bombs while it is over the screen */
+  dropInterval: 1,
+  /** each bomb comes down at a depth this far (units) either side of the mech's */
   aimSpread: 1.6,
   /** shot down: the blast in the air; when it hits the ground the blast is twice as big; the wreck burns for this long (s) */
   wreckBlastRadius: 1.8,

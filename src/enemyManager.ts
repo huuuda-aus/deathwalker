@@ -201,15 +201,14 @@ export class EnemyManager {
     if (this.list.some((e) => e instanceof AircraftUnit && e.alive)) return;
     const count = Math.min(1 + Math.floor(Math.random() * AIRCRAFT.packMax), remaining);
     const half = SCREEN_W / 2;
-    const fromRight = Math.random() < 0.5;
     const top = this.viewTop - AIRCRAFT.topMargin;
     for (let n = 0; n < count; n++) {
       const y = Math.max(AIRCRAFT.minAltitude, top - n * AIRCRAFT.levelGap);
       // different heights, and also staggered in depth and along the way, so they never share a spot
       const z = -2 + n * 2.5 + Math.random();
-      const startX = camX + (fromRight ? 1 : -1) * (half + AIRCRAFT.turnMargin - n * 5);
+      const startX = camX - half - AIRCRAFT.turnMargin - n * 6;   // in from the left, one behind the other
       const unit = new AircraftUnit(
-        { fromRight, startX, y, z },
+        { startX, y, z },
         {
           add: (e) => { scene.add(e.group); this.list.push(e); },
           explosions, dust, debris, floor: (x, zz, yy) => world.surfaceTop(x, zz, yy),

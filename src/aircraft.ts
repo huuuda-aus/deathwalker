@@ -21,11 +21,11 @@ const DARK = std(0x8a939b, 0.5, { metalness: 0.4 });
 const CHAR_SKIN = std(0x1f2120, 0.9);
 
 /** hit box in metres around the middle of the plane, facing +x */
-const BOX = { hx: 5.8, hy: 1.2, hz: 1.4 };
+const BOX = { hx: 7.25, hy: 1.5, hz: 1.75 };
 /** the two big pieces of a wrecked plane: where each one's centre lies along it (metres) and how big a ball stands in for it */
-const PIECES = { front: { x: 0.9, size: 0.55 }, rear: { x: -3.7, size: 0.45 } };
+const PIECES = { front: { x: 0.9, size: 0.69 }, rear: { x: -3.7, size: 0.56 } };
 /** the body is built in Spitfire metres (9.1 m long); this scales it to the plane's size, 1.5 truck lengths */
-const SCALE = 1.26;
+const SCALE = 1.26 * 1.25;
 
 const scratch = new THREE.Vector3();
 const cyl = (r0: number, r1: number, len: number, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh => {
@@ -36,7 +36,6 @@ const cyl = (r0: number, r1: number, len: number, mat: THREE.Material, x = 0, y 
 };
 
 export interface AircraftSpec {
-  fromRight: boolean;
   /** x it starts from, off screen */
   startX: number;
   /** cruising height and depth */
@@ -85,7 +84,7 @@ export class AircraftUnit implements Enemy {
   private slideT = 0;
   private hp: number = AIRCRAFT.hp;
   private state: State = 'fly';
-  private dir: number;
+  private readonly dir = 1;
   private readonly body = new THREE.Group();
   private readonly prop = new THREE.Group();
   private readonly wing = new THREE.Group();
@@ -95,7 +94,6 @@ export class AircraftUnit implements Enemy {
   private readonly baseY: number;
   private clock = Math.random() * 10;
   private dropT = 1.5;
-  private aimOff = 0;
   private readonly vel = new THREE.Vector3();
   private wreck: Wreckage | null = null;
   private flaming: THREE.Object3D[] = [];
@@ -105,10 +103,8 @@ export class AircraftUnit implements Enemy {
   private fx: Fx | null = null;
 
   constructor(spec: AircraftSpec, private readonly deps: AircraftDeps) {
-    this.dir = spec.fromRight ? -1 : 1;
     this.baseY = spec.y;
     this.group.position.set(spec.startX, spec.y, spec.z);
-    this.group.rotation.y = this.dir > 0 ? 0 : Math.PI;
     this.build();
     this.body.scale.setScalar(UNIT * SCALE);
     this.group.add(this.body);
@@ -242,28 +238,20 @@ export class AircraftUnit implements Enemy {
       if (out > view.half + AIRCRAFT.turnMargin) this.gone = true;     // flies off the way it was going
       return;
     }
-    if (out > view.half + AIRCRAFT.turnMargin) {
-      // far off screen: turn round and come back
-      this.dir = -this.dir;
-      g.rotation.y = this.dir > 0 ? 0 : Math.PI;
-    }
+    if (out > view.half + AIRCRAFT.turnMargin) g.position.x = view.x - view.half - AIRCRAFT.turnMargin;   // gone off the right: back in from the left
     this.bombRun(dt, target, view);
   }
 
-  /** Release a bomb when it would come down about on the mech (plus a random miss): the plane's speed carries it forward. */
+  /** While over the screen it drops a bomb every second: the plane's speed carries it on, and it comes down at the mech's depth. */
   private bombRun(dt: number, target: THREE.Vector3, view: { x: number; half: number }): void {
     this.dropT -= dt;
     const g = this.group.position;
     if (this.dropT > 0 || Math.abs(g.x - view.x) > view.half) return;
+    this.dropT = AIRCRAFT.dropInterval;
     const fall = Math.sqrt((2 * Math.max(0.5, g.y - 0.4)) / BOMB.gravity);
-    const landX = g.x + this.dir * AIRCRAFT.speed * fall;
-    if (Math.abs(landX - (target.x + this.aimOff)) > 0.5) return;
-    const aimZ = THREE.MathUtils.clamp(target.z + (Math.random() - 0.5) * 2, LANE.zMin, LANE.zMax);
+    const aimZ = THREE.MathUtils.clamp(target.z + (Math.random() - 0.5) * 2 * AIRCRAFT.aimSpread, LANE.zMin, LANE.zMax);
     const from = scratch.set(g.x, g.y - 0.5 * UNIT, g.z);
-    const bomb = new Bomb(from, new THREE.Vector3(this.dir * AIRCRAFT.speed, 0, (aimZ - g.z) / fall), this.deps.bombs);
-    this.deps.add(bomb);
-    this.dropT = AIRCRAFT.dropMin + Math.random() * AIRCRAFT.dropExtra;
-    this.aimOff = (Math.random() * 2 - 1) * AIRCRAFT.aimSpread;
+    this.deps.add(new Bomb(from, new THREE.Vector3(this.dir * AIRCRAFT.speed, 0, (aimZ - g.z) / fall), this.deps.bombs));
   }
 
   /** Shot down: a fiery explosion, and it loses its power. It keeps its momentum and drops toward the ground. */
