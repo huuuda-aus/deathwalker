@@ -1,17 +1,16 @@
 import * as THREE from 'three';
-import type { Debris, Dust } from './debris';
+import type { Debris } from './debris';
+import type { Dust } from './dust';
+import { generateLayout } from './buildingLayout';
+import { CELL, DEPTH, MAXL, STORY, T, SPEC, DEEP, type Ledge } from './buildingSpec';
 
-export const CELL = 0.4;
-/** Depth (z) of floors and pillars: the building's structural body. */
-const DEPTH = 6 * CELL;
+export { CELL, type Ledge };
+
 /** How far a floor/wall member can reach horizontally from a pillar or support, in cells. */
 const SPAN = 5;
 const INF = 1000;
 /** A storey that keeps less than this share of its load-bearing cells can no longer carry what is above it. */
 const BEARING_MIN = 0.6;
-/** Most depth layers a deep member (slab, pillar, stair) is built from. */
-const MAXL = 4;
-
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const MAT = new THREE.MeshStandardMaterial({ roughness: 0.9 });
 /** background rows: unlit near-black cut-outs against the sky (one material per shade) */
@@ -23,37 +22,6 @@ const silMat = (color: number): THREE.MeshBasicMaterial => {
 };
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
-/** Structural cell kinds. */
-const T = { Empty: 0, Slab: 1, Pillar: 2, Wall: 3, Window: 4, Stair: 5 } as const;
-
-interface Spec {
-  hp: number;
-  /** front face offset from the building's front plane (z0); positive = sticks out */
-  front: number;
-  thick: number;
-  /** horizontal member: has limited span between supports */
-  span: boolean;
-  /** takes part in load paths (windows don't) */
-  structural: boolean;
-}
-
-const SPEC: Record<number, Spec> = {
-  [T.Slab]:   { hp: 4, front: 0,             thick: DEPTH,       span: true,  structural: true },
-  [T.Pillar]: { hp: 6, front: 0.25 * CELL,   thick: DEPTH,       span: false, structural: true },
-  [T.Wall]:   { hp: 3, front: -0.125 * CELL, thick: 0.75 * CELL, span: true,  structural: true },
-  [T.Window]: { hp: 1, front: -0.5 * CELL,   thick: 0.25 * CELL, span: false, structural: false },
-  [T.Stair]:  { hp: 3, front: -1.25 * CELL,  thick: 2.5 * CELL,  span: false, structural: true },
-};
-
-/** Deep members are built from layers through their depth, so a bullet chews in layer by layer. */
-const DEEP: Record<number, number> = { [T.Slab]: MAXL, [T.Pillar]: MAXL, [T.Stair]: 2 };
-
-type BayKind = 'window' | 'open' | 'blank' | 'stair';
-interface Bay { kind: BayKind; width: number; start: number; /** per storey: open firing bay (no glazing/sill) */ open: boolean[] }
-
-/** A floor opening enemies can stand in and shoot from. */
-export interface Ledge { c0: number; c1: number; r: number; x: number }
-const STORY = 5; // rows per storey: slab, spandrel, window, window, header
 
 export interface DamageResult { hit: boolean; destroyed: number }
 
@@ -105,49 +73,16 @@ export class Building {
     this.x0 = x0; this.z0 = z0;
     this.deepLayers = layered ? MAXL : 1;
 
-    // ---- layout: pillars between bays; variable height
-    const stories = [1, 2, 2, 3, 3, 4, 5][Math.floor(rnd() * 7)];
-    const nBays = 2 + Math.floor(rnd() * 3);
-    const stairBay = rnd() < 0.5 ? Math.floor(rnd() * nBays) : -1;
-    const bays: Bay[] = [];
-    for (let i = 0; i < nBays; i++) {
-      const kind: BayKind = i === stairBay ? 'stair' : rnd() < 0.5 ? 'open' : rnd() < 0.3 ? 'blank' : 'window';
-      const open = Array.from({ length: stories }, (_, st) => st === 0 || rnd() < 0.7);
-      bays.push({ kind, width: kind === 'stair' ? 2 : 3, start: 0, open });
-    }
-    // every building offers at least one firing bay
-    if (!bays.some((b) => b.kind === 'open')) {
-      const b = bays.find((x) => x.kind !== 'stair') ?? bays[0];
-      if (b.kind !== 'stair') b.kind = 'open';
-    }
-    // per column: pillar, or (bay index, local column)
-    const colInfo: { pillar: boolean; bay: number; local: number }[] = [{ pillar: true, bay: -1, local: 0 }];
-    bays.forEach((b, i) => {
-      b.start = colInfo.length;
-      for (let l = 0; l < b.width; l++) colInfo.push({ pillar: false, bay: i, local: l });
-      colInfo.push({ pillar: true, bay: -1, local: 0 });
-    });
-    this.cols = colInfo.length;
-    this.rows = stories * STORY + 1;
+    const layout = generateLayout(x0, rnd);
+    const { stories } = layout;
+    this.cols = layout.cols;
+    this.rows = layout.rows;
     this.width = this.cols * CELL;
     this.height = this.rows * CELL;
-    for (const b of bays) {
-      if (b.kind !== 'open') continue;
-      for (let st = 0; st < stories; st++) {
-        if (b.open[st]) this.ledges.push({ c0: b.start, c1: b.start + b.width - 1, r: st * STORY, x: x0 + (b.start + b.width / 2) * CELL });
-      }
-    }
-
-    this.type = new Uint8Array(this.cols * this.rows);
+    this.ledges = layout.ledges;
+    this.type = layout.type;
+    this.ruinCount = layout.ruinCount;
     this.hp = new Uint8Array(this.cols * this.rows);
-    for (let c = 0; c < this.cols; c++) {
-      for (let r = 0; r < this.rows; r++) {
-        this.type[c * this.rows + r] = this.cellType(colInfo[c], bays, r);
-      }
-    }
-
-    // ---- ruin: missing roof, fallen upper pillars, holes in floors, shell damage, broken glazing
-    this.ruin(colInfo, stories, rnd);
     for (let i = 0; i < this.type.length; i++) this.hp[i] = this.type[i] === T.Empty ? 0 : this.layersOf(this.type[i]);
     // whatever lost its load path in the ruin pass has fallen already: remove it silently
     for (const i of this.unsupported(false)) { this.type[i] = T.Empty; this.hp[i] = 0; this.ruinCount++; }
@@ -216,55 +151,6 @@ export class Building {
     return this.layersOf(t) > 1 ? Math.max(1, Math.ceil(spec.hp / 2)) : spec.hp;
   }
 
-  /** Knock the building about so it reads as a ruin, not a clean block. Edits `type` in place. */
-  private ruin(colInfo: { pillar: boolean }[], stories: number, rnd: () => number): void {
-    const { cols, rows, type } = this;
-    const kill = (c: number, r: number): void => {
-      if (c < 0 || c >= cols || r < 1 || r >= rows) return; // the foundation row stays
-      const i = c * rows + r;
-      if (type[i] !== T.Empty) { type[i] = T.Empty; this.ruinCount++; }
-    };
-    const level = 0.4 + rnd() * 0.6; // how wrecked this one is
-
-    // broken glazing and missing wall panels
-    for (let c = 0; c < cols; c++) {
-      for (let r = 1; r < rows; r++) {
-        const t = type[c * rows + r];
-        if (t === T.Window && rnd() < 0.1 + 0.35 * level) kill(c, r);
-        else if (t === T.Wall && r >= STORY && rnd() < 0.15 * level) kill(c, r);
-      }
-    }
-    // roof: gone, or partly gone
-    const roofGone = rnd() < 0.55;
-    for (let c = 0; c < cols; c++) if (roofGone ? rnd() < 0.85 : rnd() < 0.3 * level) kill(c, rows - 1);
-    // ragged top storey
-    const top0 = (stories - 1) * STORY + 1;
-    for (let c = 0; c < cols; c++) {
-      if (rnd() >= 0.7 * level) continue;
-      const cut = top0 + Math.floor(rnd() * STORY);
-      for (let r = cut + 1; r < rows; r++) kill(c, r);
-    }
-    // upper-level pillars that have fallen
-    for (let c = 0; c < cols; c++) {
-      if (!colInfo[c].pillar) continue;
-      for (let st = 1; st < stories; st++) {
-        if (rnd() < 0.2 * level) for (let k = 1; k < STORY; k++) kill(c, st * STORY + k);
-      }
-    }
-    // holes in the floors above ground level
-    for (let st = 1; st <= stories; st++) {
-      if (rnd() >= 0.45 * level) continue;
-      const start = Math.floor(rnd() * cols), len = 2 + Math.floor(rnd() * 4);
-      for (let c = start; c < start + len; c++) kill(c, st * STORY);
-    }
-    // shell damage: bites out of the facade above the ground floor
-    const bites = Math.floor(rnd() * (1 + 3 * level));
-    for (let b = 0; b < bites; b++) {
-      const cx = Math.floor(rnd() * cols), cy = STORY + Math.floor(rnd() * Math.max(1, rows - STORY)), rad = 1 + Math.floor(rnd() * 2);
-      for (let c = cx - rad; c <= cx + rad; c++) for (let r = cy - rad; r <= cy + rad; r++) if ((c - cx) ** 2 + (r - cy) ** 2 <= rad * rad + 1) kill(c, r);
-    }
-  }
-
   /** Turn this building into a flat black cut-out of the same ruined shape (far rows). */
   asSilhouette(color: number): void {
     this.hostsEnemies = false;
@@ -298,18 +184,6 @@ export class Building {
       const pos = new THREE.Vector3(this.x0 + Math.random() * this.width, 0.4 + Math.random() * 0.6, this.z0 - DEPTH * 0.2 + Math.random() * 3.2);
       this.debris.spawn(pos, col, size, new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, Math.random() * 0.6), this.floorFn);
     }
-  }
-
-  private cellType(col: { pillar: boolean; bay: number; local: number }, bays: Bay[], r: number): number {
-    if (r % STORY === 0) return T.Slab; // foundation, floors, roof
-    if (col.pillar) return T.Pillar;
-    const bay = bays[col.bay];
-    const kind = bay.kind;
-    const k = r % STORY; // 1 spandrel, 2-3 glazing, 4 header
-    if (kind === 'open' && bay.open[Math.floor(r / STORY)]) return k === 4 ? T.Wall : T.Empty; // firing bay: ledge + lintel
-    if (kind === 'blank') return T.Wall;
-    if (kind === 'stair') return (col.local === 0) === (k % 2 === 1) ? T.Stair : T.Empty; // zig-zag flights
-    return k === 1 || k === 4 ? T.Wall : T.Window;
   }
 
   private cellColor(t: number, concrete: THREE.Color, rnd: () => number): THREE.Color {

@@ -1,19 +1,13 @@
 import * as THREE from 'three';
 import { Building, type Ledge } from './building';
-import type { Debris, Dust } from './debris';
+import type { Debris } from './debris';
+import type { Dust } from './dust';
 import { GROUND_TILE, makeGroundTextures } from './ground';
-import { Coals, FireBarrel, FireLights, type BarrelContext } from './fire';
+import { Coals } from './coals';
+import { FireBarrel, FireLights, type BarrelContext } from './fire';
 import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
-
-function mulberry32(a: number) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from './util';
 
 /** Distance haze: the ground and near rows fade to near-black, not green. */
 export const FOG_COLOR = 0x030d0b;

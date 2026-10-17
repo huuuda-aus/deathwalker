@@ -1,88 +1,7 @@
 import * as THREE from 'three';
-
-const MAX_DUST = 300;
-
-/** Soft smoke/dust puffs: one Points draw call with per-particle size and alpha. */
-export class Dust {
-  private max = MAX_DUST;
-  private items: { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; size0: number; size1: number }[] = [];
-  private geo = new THREE.BufferGeometry();
-  private posAttr = new THREE.BufferAttribute(new Float32Array(MAX_DUST * 3), 3);
-  private sizeAttr = new THREE.BufferAttribute(new Float32Array(MAX_DUST), 1);
-  private alphaAttr = new THREE.BufferAttribute(new Float32Array(MAX_DUST), 1);
-  private material = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    // dust colour, 25% darker than the original 0x6a7a88
-    uniforms: { uScale: { value: 500 }, uColor: { value: new THREE.Color(0x6a7a88).multiplyScalar(0.75) } },
-    vertexShader: /* glsl */ `
-      attribute float aSize; attribute float aAlpha;
-      uniform float uScale; varying float vAlpha;
-      void main() {
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = aSize * uScale / -mv.z;
-        vAlpha = aAlpha;
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uColor; varying float vAlpha;
-      void main() {
-        float d = length(gl_PointCoord - 0.5) * 2.0;
-        float a = smoothstep(1.0, 0.1, d) * vAlpha;
-        if (a < 0.01) discard;
-        gl_FragColor = vec4(uColor, a);
-      }`,
-  });
-  private points: THREE.Points;
-
-  constructor(scene: THREE.Scene) {
-    this.posAttr.setUsage(THREE.DynamicDrawUsage);
-    this.sizeAttr.setUsage(THREE.DynamicDrawUsage);
-    this.alphaAttr.setUsage(THREE.DynamicDrawUsage);
-    this.geo.setAttribute('position', this.posAttr);
-    this.geo.setAttribute('aSize', this.sizeAttr);
-    this.geo.setAttribute('aAlpha', this.alphaAttr);
-    this.geo.setDrawRange(0, 0);
-    this.points = new THREE.Points(this.geo, this.material);
-    this.points.frustumCulled = false;
-    scene.add(this.points);
-  }
-
-  /** @param viewportHeightPx drawing-buffer height, @param fovDeg vertical fov */
-  setViewport(viewportHeightPx: number, fovDeg: number): void {
-    this.material.uniforms.uScale.value = viewportHeightPx / (2 * Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2));
-  }
-
-  puff(at: THREE.Vector3, count: number, size: number, spread = 1.5): void {
-    for (let i = 0; i < count && this.items.length < this.max; i++) {
-      const life = 0.8 + Math.random() * 1.2;
-      this.items.push({
-        pos: at.clone().add(new THREE.Vector3((Math.random() - 0.5) * size, (Math.random() - 0.5) * size, (Math.random() - 0.5) * size)),
-        vel: new THREE.Vector3((Math.random() - 0.5) * spread, Math.random() * spread * 0.8, Math.random() * spread * 0.5),
-        life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()),
-      });
-    }
-  }
-
-  update(dt: number): void {
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const p = this.items[i];
-      p.life -= dt;
-      if (p.life <= 0) { this.items[i] = this.items[this.items.length - 1]; this.items.pop(); continue; }
-      p.vel.multiplyScalar(Math.max(0, 1 - 1.8 * dt));
-      p.pos.addScaledVector(p.vel, dt);
-    }
-    for (let i = 0; i < this.items.length; i++) {
-      const p = this.items[i];
-      const k = 1 - p.life / p.maxLife;
-      this.posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
-      this.sizeAttr.setX(i, p.size0 + (p.size1 - p.size0) * k);
-      this.alphaAttr.setX(i, 0.55 * (1 - k) * Math.min(1, k * 8));
-    }
-    this.geo.setDrawRange(0, this.items.length);
-    this.posAttr.needsUpdate = this.sizeAttr.needsUpdate = this.alphaAttr.needsUpdate = true;
-  }
-}
+import { swapRemove } from './util';
+import type { Dust } from './dust';
+import { Batch, SHAPES, pickShape, randomDims } from './rubble';
 
 /** Surface height under a point; used so chunks land on whatever is still standing. */
 export type FloorFn = (x: number, z: number, yBelow: number) => number;
@@ -132,117 +51,6 @@ interface Chunk {
 const cellKey = (ix: number, iy: number, iz: number): number =>
   ((ix + 4096) * 256 + (iz + 128)) * 128 + Math.max(0, Math.min(127, iy));
 
-// ---- rubble shapes ---------------------------------------------------------------------------
-
-/** deterministic per-vertex jitter so vertices shared between faces move together */
-function jitter(x: number, y: number, z: number, seed: number): number {
-  const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 19.19) * 43758.5453;
-  return h - Math.floor(h) - 0.5;
-}
-
-function jittered(g: THREE.BufferGeometry, amount: number, seed: number): THREE.BufferGeometry {
-  const pos = g.getAttribute('position') as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const k = 1 + amount * 2 * jitter(Math.round(x * 100) / 100, Math.round(y * 100) / 100, Math.round(z * 100) / 100, seed);
-    pos.setXYZ(i, x * k, y * (k * 0.5 + 0.5 + amount * jitter(z, x, y, seed + 3)), z * k);
-  }
-  pos.needsUpdate = true;
-  g.computeVertexNormals();
-  return g;
-}
-
-/** a right-triangle prism: a broken slab corner */
-function wedgeGeometry(): THREE.BufferGeometry {
-  const v = [
-    // front (z +0.5), back (z -0.5)
-    [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, 0.5, 0.5],
-    [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, -0.5],
-  ];
-  const f = [[0, 1, 2], [3, 5, 4], [0, 3, 4], [0, 4, 1], [0, 2, 5], [0, 5, 3], [1, 4, 5], [1, 5, 2]];
-  const pos: number[] = [];
-  for (const tri of f) for (const i of tri) pos.push(...v[i]);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-const SHAPES: THREE.BufferGeometry[] = [
-  new THREE.BoxGeometry(1, 1, 1),                                                                 // 0 box
-  wedgeGeometry(),                                                                                 // 1 wedge
-  jittered(new THREE.TetrahedronGeometry(0.75), 0.22, 1),                                          // 2 shard
-  jittered(new THREE.TetrahedronGeometry(0.75), 0.3, 2),                                           // 3 shard
-  jittered(new THREE.IcosahedronGeometry(0.58, 0), 0.2, 3),                                        // 4 lump
-  jittered(new THREE.IcosahedronGeometry(0.58, 0), 0.28, 4),                                       // 5 lump
-];
-const SHAPE_WEIGHTS = [0.3, 0.18, 0.1, 0.1, 0.16, 0.16];
-
-function pickShape(): number {
-  let r = Math.random();
-  for (let i = 0; i < SHAPE_WEIGHTS.length; i++) { r -= SHAPE_WEIGHTS[i]; if (r < 0) return i; }
-  return 0;
-}
-
-/** Proportions with a product of ~1: blocks, slabs, beams or chunky pieces, each a little different. */
-function randomDims(): THREE.Vector3 {
-  const r = Math.random();
-  const base = r < 0.35 ? [1, 1, 1] : r < 0.65 ? [1.7, 0.45, 1.4] : r < 0.85 ? [2.3, 0.6, 0.6] : [1.2, 0.8, 1.1];
-  const d = base.map((v) => v * (0.85 + Math.random() * 0.3));
-  const k = 1 / Math.cbrt(d[0] * d[1] * d[2]);
-  return new THREE.Vector3(d[0] * k, d[1] * k, d[2] * k);
-}
-
-/** One InstancedMesh per rubble shape, each with its own slot allocator. */
-class Batch {
-  readonly mesh: THREE.InstancedMesh;
-  private free: number[] = [];
-  private high = 0;
-  private dMin = Infinity;
-  private dMax = -1;
-  private colorDirty = false;
-  private zero = new THREE.Matrix4().makeScale(0, 0, 0);
-
-  constructor(scene: THREE.Scene, geometry: THREE.BufferGeometry, material: THREE.Material) {
-    this.mesh = new THREE.InstancedMesh(geometry, material, MAX_CHUNKS);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.castShadow = true;
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
-    scene.add(this.mesh);
-  }
-
-  alloc(): number {
-    const i = this.free.length > 0 ? this.free.pop()! : this.high++;
-    this.mesh.count = this.high;
-    return i;
-  }
-
-  release(i: number): void {
-    this.free.push(i);
-    this.mesh.setMatrixAt(i, this.zero);
-    this.mark(i);
-  }
-
-  setColor(i: number, c: THREE.Color): void { this.mesh.setColorAt(i, c); this.colorDirty = true; }
-
-  setMatrix(i: number, m: THREE.Matrix4): void { this.mesh.setMatrixAt(i, m); this.mark(i); }
-
-  private mark(i: number): void { if (i < this.dMin) this.dMin = i; if (i > this.dMax) this.dMax = i; }
-
-  /** upload only what changed */
-  flush(): void {
-    if (this.dMax >= this.dMin) {
-      const attr = this.mesh.instanceMatrix;
-      attr.clearUpdateRanges();
-      attr.addUpdateRange(this.dMin * 16, (this.dMax - this.dMin + 1) * 16);
-      attr.needsUpdate = true;
-      this.dMin = Infinity; this.dMax = -1;
-    }
-    if (this.colorDirty && this.mesh.instanceColor) { this.mesh.instanceColor.needsUpdate = true; this.colorDirty = false; }
-  }
-}
-
 /**
  * Rubble: lightweight rigid-ish bodies (spheres standing in for pieces of every shape and proportion),
  * drawn as one InstancedMesh per shape. Chunks fall, bounce and settle, then sleep for free. Sleeping chunks
@@ -268,7 +76,7 @@ export class Debris {
   constructor(scene: THREE.Scene, private dust: Dust) {
     // flat-shaded so the broken pieces look faceted; one material for every shape
     const material = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
-    this.batches = SHAPES.map((g) => new Batch(scene, g, material));
+    this.batches = SHAPES.map((g) => new Batch(scene, g, material, MAX_CHUNKS));
   }
 
   get count(): number { return this.high - this.free.length; }
@@ -554,9 +362,7 @@ export class Debris {
   }
 
   private sleep(c: Chunk, awakeIndex: number): void {
-    const last = this.awake.length - 1;
-    this.awake[awakeIndex] = this.awake[last];
-    this.awake.pop();
+    swapRemove(this.awake, awakeIndex);
     c.rot.set(0, c.rot.y, 0); // lie flat
     // resting on the ground or the structure: sit at the piece's real half-height, not its bounding sphere's
     const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, c.pos.y - c.r + 0.02) : 0);
@@ -567,10 +373,16 @@ export class Debris {
     this.write(c);
   }
 
+  private unbucket(b: Chunk[], c: Chunk): void {
+    const i = b.indexOf(c);
+    if (i >= 0) swapRemove(b, i);
+    if (b.length === 0) this.sleepGrid.delete(c.key);
+  }
+
   private wake(c: Chunk): void {
     if (!c.asleep) return;
     const b = this.sleepGrid.get(c.key);
-    if (b) { const i = b.indexOf(c); if (i >= 0) { b[i] = b[b.length - 1]; b.pop(); } if (b.length === 0) this.sleepGrid.delete(c.key); }
+    if (b) this.unbucket(b, c);
     c.asleep = false;
     c.sleepT = 0;
     c.awakeT = 0;
@@ -614,10 +426,10 @@ export class Debris {
   private remove(c: Chunk): void {
     if (c.asleep) {
       const b = this.sleepGrid.get(c.key);
-      if (b) { const i = b.indexOf(c); if (i >= 0) { b[i] = b[b.length - 1]; b.pop(); } if (b.length === 0) this.sleepGrid.delete(c.key); }
+      if (b) this.unbucket(b, c);
     } else {
       const i = this.awake.indexOf(c);
-      if (i >= 0) { this.awake[i] = this.awake[this.awake.length - 1]; this.awake.pop(); }
+      if (i >= 0) swapRemove(this.awake, i);
     }
     this.slots[c.slot] = null;
     this.free.push(c.slot);

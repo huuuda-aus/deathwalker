@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Collider } from './debris';
-import { flameTexture, glowTexture } from './fire';
+import { flameTexture, glowTexture } from './fireTextures';
 
 const METAL = new THREE.MeshStandardMaterial({ color: 0x9ea3ac, roughness: 0.3, metalness: 0.7 });
 const DARK = new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.45, metalness: 0.5 });

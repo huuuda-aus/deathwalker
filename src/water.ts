@@ -1,13 +1,6 @@
 import * as THREE from 'three';
-
-function mulberry32(a: number) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from './util';
+import { PointPool } from './pointpool';
 
 export interface Puddle { x: number; z: number; rx: number; rz: number; rot: number }
 
@@ -157,16 +150,14 @@ export class Puddles {
 // ---- splashes -------------------------------------------------------------------------------
 
 const MAX_DROPS = 500;
+
+interface Drop { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; px: number }
 const MAX_RINGS = 80;
 const G = 16;
 
 /** Water thrown up by feet: droplets with real gravity, plus expanding rings on the surface. */
 export class SplashFx {
-  private drops: { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; px: number }[] = [];
-  private dropGeo = new THREE.BufferGeometry();
-  private dropPos = new THREE.BufferAttribute(new Float32Array(MAX_DROPS * 3), 3);
-  private dropCol = new THREE.BufferAttribute(new Float32Array(MAX_DROPS * 3), 3);
-  private dropSize = new THREE.BufferAttribute(new Float32Array(MAX_DROPS), 1);
+  private drops: PointPool<Drop>;
   private dropMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     uniforms: { uPixelRatio: { value: 1 } },
@@ -183,14 +174,7 @@ export class SplashFx {
   private ringMesh: THREE.Mesh;
 
   constructor(scene: THREE.Scene) {
-    for (const a of [this.dropPos, this.dropCol, this.dropSize]) a.setUsage(THREE.DynamicDrawUsage);
-    this.dropGeo.setAttribute('position', this.dropPos);
-    this.dropGeo.setAttribute('aColor', this.dropCol);
-    this.dropGeo.setAttribute('aSize', this.dropSize);
-    this.dropGeo.setDrawRange(0, 0);
-    const pts = new THREE.Points(this.dropGeo, this.dropMat);
-    pts.frustumCulled = false;
-    scene.add(pts);
+    this.drops = new PointPool(scene, MAX_DROPS, this.dropMat, { position: 3, aColor: 3, aSize: 1 });
 
     const g = new THREE.InstancedBufferGeometry();
     const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -225,7 +209,7 @@ export class SplashFx {
   setPixelRatio(r: number): void { this.dropMat.uniforms.uPixelRatio.value = r; }
 
   droplet(at: THREE.Vector3, vel: THREE.Vector3): void {
-    if (this.drops.length >= MAX_DROPS) return;
+    if (this.drops.full) return;
     const life = 0.7 + Math.random() * 0.8;
     this.drops.push({ pos: at.clone(), vel: vel.clone(), life, maxLife: life, px: 2 + Math.random() * 2.2 });
   }
@@ -275,26 +259,22 @@ export class SplashFx {
   }
 
   update(dt: number): void {
-    for (let i = this.drops.length - 1; i >= 0; i--) {
-      const d = this.drops[i];
+    for (let i = this.drops.items.length - 1; i >= 0; i--) {
+      const d = this.drops.items[i];
       d.life -= dt;
       d.vel.y -= G * dt;
       d.pos.addScaledVector(d.vel, dt);
       if (d.life <= 0 || d.pos.y < 0.01) {
         if (d.pos.y < 0.01 && Math.random() < 0.18) this.ring(d.pos.x, d.pos.z, 0.1 + Math.random() * 0.1);
-        this.drops[i] = this.drops[this.drops.length - 1];
-        this.drops.pop();
+        this.drops.removeAt(i);
       }
     }
-    for (let i = 0; i < this.drops.length; i++) {
-      const d = this.drops[i];
+    this.drops.upload((d, i, a) => {
       const f = Math.min(1, d.life / d.maxLife * 2);
-      this.dropPos.setXYZ(i, d.pos.x, d.pos.y, d.pos.z);
-      this.dropCol.setXYZ(i, 0.55 * f, 0.78 * f, 1.1 * f);
-      this.dropSize.setX(i, d.px);
-    }
-    this.dropGeo.setDrawRange(0, this.drops.length);
-    this.dropPos.needsUpdate = this.dropCol.needsUpdate = this.dropSize.needsUpdate = true;
+      a.position.setXYZ(i, d.pos.x, d.pos.y, d.pos.z);
+      a.aColor.setXYZ(i, 0.55 * f, 0.78 * f, 1.1 * f);
+      a.aSize.setX(i, d.px);
+    });
 
     for (let i = this.rings.length - 1; i >= 0; i--) {
       this.rings[i].age += dt / this.rings[i].life;
