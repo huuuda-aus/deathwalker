@@ -26,15 +26,8 @@ export const CAMERA = {
 } as const;
 
 export const SPAWN = {
-  /** enemies alive at once */
-  maxAlive: 12,
-  waveMin: 3,
-  waveExtra: 4,
-  /** chance a soldier comes out of a building instead of walking in from off-screen */
+  /** chance a soldier comes out of a building instead of walking in from off-screen (how much infantry, and when, is in the level file) */
   ledgeChance: 0.65,
-  /** seconds between waves: min + random * extra */
-  intervalMin: 3,
-  intervalExtra: 2.5,
 } as const;
 
 export const SOLDIER = {
@@ -151,14 +144,10 @@ export const CANNON = {
   wreckBlastScale: 3.5,
   /** shield lost when a shell lands within the blast radius or hits the mech */
   damage: 20,
-  /** each time a cannon is due, 1..packMax of them ride in side by side, spread across the street */
+  /** most guns that ride in together (side by side, spread across the street) */
   packMax: 3,
   /** a pack's units arrive this far apart in x so they do not move in lockstep */
   packStagger: 3,
-  /** a cannon crew rides in at most this often, and never while another is still manned */
-  firstDelay: 12,
-  intervalMin: 16,
-  intervalExtra: 12,
 } as const;
 
 /**
@@ -173,8 +162,6 @@ export const TRUCK = {
   turnTime: 1.2,
   /** it ends up facing the camera, give or take this many degrees */
   facingJitterDeg: 10,
-  troopsMin: 8,
-  troopsMax: 12,
   /** seconds between soldiers when unloading as a stream */
   streamInterval: 0.4,
   /** or in groups of this many, this far apart (seconds) */
@@ -183,10 +170,6 @@ export const TRUCK = {
   groupGap: 1.6,
   /** share of the troops that run for cover, the rest scatter to spots of their own; none of them charge the mech */
   coverChance: 0.5,
-  /** the first truck arrives after this long, then every min + random * extra seconds, one unloading at a time */
-  firstDelay: 20,
-  intervalMin: 26,
-  intervalExtra: 16,
   blastRadius: 2.6,
   /** particle count multiplier for its explosion (a shell is 1) */
   blastScale: 5,
@@ -205,11 +188,7 @@ export const AIRCRAFT = {
   hp: SOLDIER.hp * 8,
   /** world units / s: slow enough to track */
   speed: 3.4 * 1.25,
-  /** the first one arrives after this long, then every min + random * extra seconds, one flight at a time */
-  firstDelay: 22,
-  intervalMin: 30,
-  intervalExtra: 20,
-  /** each time one is due, 1..packMax fly in together, at different heights */
+  /** most planes that fly in together, at different heights */
   packMax: 2,
   /** the highest one flies this far below the top of the screen; each further one this much lower again (units) */
   topMargin: 1.3,
