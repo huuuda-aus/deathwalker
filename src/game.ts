@@ -14,6 +14,7 @@ import type { SoldierEnv } from './enemies';
 import { EnemyManager } from './enemyManager';
 import { Shells } from './shells';
 import { Explosions } from './explosions';
+import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
@@ -50,6 +51,7 @@ export class Game {
   private readonly weapon: Weapon;
   private readonly explosions: Explosions;
   private readonly shells: Shells;
+  private readonly bullets: Bullets;
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
   private readonly player = newPlayer();
@@ -123,7 +125,8 @@ export class Game {
     };
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions });
+    this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
 
@@ -163,6 +166,7 @@ export class Game {
     this.enemies.reset();
     this.lock.release();
     this.shells.clear();
+    this.bullets.clear();
     this.explosions.clear();
     Object.assign(this.player, newPlayer());
     this.weapon.reset();
@@ -239,7 +243,7 @@ export class Game {
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
     if (levelEvent === 'cleared' || levelEvent === 'complete') this.enemies.retreatAll();
     if (levelEvent === 'arrived') this.enemies.purgeRetreating();
-    this.enemies.update(dt, this.camX, active, () => this.hurtPlayer(PLAYER.hitDamage));
+    this.enemies.update(dt, this.camX, active);
   }
 
   /** lights, weather, atmosphere and everything that is just scenery */
@@ -277,6 +281,7 @@ export class Game {
     this.aimAndFire(dt, active);
     this.updateEnemies(dt, active, levelEvent);
     this.shells.update(dt);
+    this.bullets.update(dt);
     this.explosions.update(dt);
 
     this.fx.update(dt);
