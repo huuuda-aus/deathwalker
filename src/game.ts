@@ -16,6 +16,8 @@ import { Shells } from './shells';
 import { Explosions } from './explosions';
 import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
+import { Menu } from './menu';
+import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
 import { Debris } from './debris';
@@ -62,6 +64,7 @@ export class Game {
   private readonly mouseNdc = new THREE.Vector2();
   private readonly aimHit = newHit();
   private readonly lock = new TargetLock();
+  private readonly foreground = new Foreground();
 
   private vx = 0;
   private vz = 0;
@@ -72,6 +75,8 @@ export class Game {
   private cullTimer = 0;
   private camX = this.level.camX;
   private last = performance.now();
+  /** 'menu': the main menu over the quiet skyline of the first scene; 'play': the game */
+  private mode: 'menu' | 'play' = 'menu';
   /** where the reticle is drawn (CSS pixels): the mouse, or the locked target */
   private reticlePx: { x: number; y: number } = { x: 0, y: 0 };
 
@@ -81,6 +86,7 @@ export class Game {
     renderer.setSize(innerWidth, innerHeight);
     renderer.shadowMap.enabled = true;
     document.body.prepend(renderer.domElement);
+    renderer.domElement.after(this.foreground.canvas);       // the frontmost layer, over the 3D view and under the HUD
     const pixelRatio = renderer.getPixelRatio();
 
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
@@ -123,6 +129,11 @@ export class Game {
       sight: (a, b) => !debris.segmentHit(a, b, sightTmp),
       surface: (x, z, y) => world.surfaceTop(x, z, y),
       others: () => this.enemies.list,
+      arena: (z) => {
+        // what is on screen at this depth (it narrows toward the back), less a margin
+        const half = ((CAM_DIST - z) / CAM_DIST) * (SCREEN_W / 2) * CAMERA.mechMargin - CAMERA.arenaPad;
+        return { min: this.camX - half, max: this.camX + half };
+      },
     };
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
@@ -132,6 +143,10 @@ export class Game {
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
 
+    // the menu shows the first scene's skyline and weather, without the mech or any fighting
+    this.mech.root.visible = false;
+    this.placeCamera();
+    new Menu(() => this.startPlaying());
     this.syncViewport();
     addEventListener('resize', () => this.onResize());
     addEventListener('keydown', (e) => {
@@ -142,6 +157,20 @@ export class Game {
   }
 
   start(): void { this.frame(); }
+
+  private startPlaying(): void {
+    this.mode = 'play';
+    this.mech.root.visible = true;
+    this.last = performance.now();
+  }
+
+  /** the camera at the level's current view */
+  private placeCamera(): void {
+    const { camera } = this;
+    camera.position.set(this.camX, CAMERA.height, CAM_DIST);
+    camera.lookAt(this.camX, CAMERA.height - 0.5, 0);
+    camera.updateMatrixWorld();
+  }
 
   /** Lock the horizontal view to SCREEN_W at the gameplay depth, whatever the window aspect. */
   private applyAspect(): void {
@@ -161,6 +190,7 @@ export class Game {
     this.renderer.setSize(innerWidth, innerHeight);
     this.applyAspect();
     this.post.setSize(innerWidth, innerHeight);
+    this.foreground.resize();
     this.syncViewport();
   }
 
@@ -211,14 +241,12 @@ export class Game {
 
   /** rails camera, then keep the mech on screen (visible half-width shrinks toward the camera) */
   private updateCamera(dt: number): LevelEvent {
-    const { level, camera, mech } = this;
+    const { level, mech } = this;
     const levelEvent = level.update(dt, mech.root.position.x);
     this.camX = level.camX;
     const halfVis = ((CAM_DIST - mech.root.position.z) / CAM_DIST) * (SCREEN_W / 2) * CAMERA.mechMargin;
     mech.root.position.x = THREE.MathUtils.clamp(mech.root.position.x, this.camX - halfVis, this.camX + halfVis);
-    camera.position.set(this.camX, CAMERA.height, CAM_DIST);
-    camera.lookAt(this.camX, CAMERA.height - 0.5, 0);
-    camera.updateMatrixWorld();
+    this.placeCamera();
     return levelEvent;
   }
 
@@ -275,6 +303,13 @@ export class Game {
     const rawMs = now - this.last;
     const dt = Math.min(rawMs / 1000, 0.05);
     this.last = now;
+    this.foreground.update(this.camX);
+    if (this.mode === 'menu') {
+      this.updateEnvironment(dt, now);
+      this.post.render(dt, 0);
+      requestAnimationFrame(this.frame);
+      return;
+    }
     this.hud.updateFps(rawMs);
 
     const active = !this.player.over;

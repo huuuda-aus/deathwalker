@@ -17,6 +17,10 @@ npm run preview   # serve the production build
 
 Needs a browser with WebGL2.
 
+## Main menu
+
+The game opens on a main menu over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. **Start game** begins the level; **Enter level code**, **Hall of fame** and **Credits** are placeholders for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
+
 ## Controls
 
 | Input | Action |

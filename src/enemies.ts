@@ -25,6 +25,8 @@ export interface SoldierEnv {
   surface(x: number, z: number, y: number): number;
   /** every enemy in the game, so soldiers can keep clear of each other (optional) */
   others?(): readonly Enemy[];
+  /** the stretch of the street (x) that is on screen at depth z, inset a little: soldiers have to fight inside it (optional) */
+  arena?(z: number): { min: number; max: number };
 }
 
 /** height (world) the soldiers aim at on the mech */
@@ -39,6 +41,8 @@ const BLOOD_MAT = new THREE.MeshBasicMaterial({ color: 0x5a0c0c, transparent: tr
 /** how far troops looking for cover search, and the longest they will run for a post (seconds) */
 const COVER_SEARCH = 8;
 const POST_RUN_MAX = 8;
+/** a soldier hurrying back on screen heads for a point this far inside the edge, so it does not hover on it */
+const ARENA_ENTRY = 0.6;
 /** the longest a soldier chases one firing spot before giving up on it (seconds) */
 const GOAL_MAX = 3;
 /** troops running and gunning only shoot at targets this close */
@@ -132,6 +136,8 @@ export class Soldier implements Enemy {
   /** seconds spent walking to the current firing spot, and how many spots in a row it gave up on */
   private goalT = 0;
   private goalFails = 0;
+  /** how long it has been unable to make headway getting back on screen */
+  private offscreenT = 0;
   private muzzleTmp = new THREE.Vector3();
   private missTmp = new THREE.Vector3();
   private sightA = new THREE.Vector3();
@@ -389,10 +395,36 @@ export class Soldier implements Enemy {
       let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
       const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
       if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
-      spot = { x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) };
+      spot = this.onScreenSpot({ x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) });
       if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;                  // someone else is already heading there
     }
     return spot;
+  }
+
+  /** Is this soldier within the area the player can see and shoot at? (always, if the game does not say) */
+  private onScreen(): boolean {
+    const a = this.env.arena?.(this.group.position.z);
+    return !a || (this.x >= a.min && this.x <= a.max);
+  }
+
+  /**
+   * Off screen: run for the nearest part of the street that is on it, and fire at nothing until there. A soldier
+   * that cannot get through (boxed in by rubble out there) is moved to the edge after a moment; nobody sees it.
+   */
+  private hurryIn(dt: number): boolean {
+    const a = this.env.arena!(this.group.position.z);
+    const tx = THREE.MathUtils.clamp(this.x, a.min + ARENA_ENTRY, a.max - ARENA_ENTRY);
+    const dx = tx - this.x;
+    const moved = this.walkAround(dt, Math.sign(dx) || 1, 0, SOLDIER.runSpeed, Math.abs(dx));
+    this.offscreenT = moved ? 0 : this.offscreenT + dt;
+    if (this.offscreenT > 2) { this.group.position.x = tx; this.offscreenT = 0; }
+    return moved;
+  }
+
+  /** a spot on the street that is on screen (nudged inward if it is not) */
+  private onScreenSpot(spot: { x: number; z: number }): { x: number; z: number } {
+    const a = this.env.arena?.(spot.z);
+    return a ? { x: THREE.MathUtils.clamp(spot.x, a.min + ARENA_ENTRY, a.max - ARENA_ENTRY), z: spot.z } : spot;
   }
 
   /** Is another soldier standing at, or on his way to, this spot? */
@@ -441,6 +473,8 @@ export class Soldier implements Enemy {
     for (let i = 0; i < n; i++) {
       const b = BLOCKER_BUF[i];
       const d = (b.x - this.x) ** 2 + (b.z - this.z) ** 2;
+      const a = this.env.arena?.(b.z);
+      if (a && (b.x < a.min + ARENA_ENTRY || b.x > a.max - ARENA_ENTRY)) continue;      // rubble out of sight is no use
       if (d < bestD) { bestD = d; best = i; }
     }
     if (best < 0) return null;
@@ -568,6 +602,8 @@ export class Soldier implements Enemy {
       this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
       return;
     }
+    // nobody fires from out of sight: whoever has drifted off screen goes back to hurrying in
+    if (!this.perch && !this.retreating && (this.state === 'aim' || this.state === 'cooldown') && !this.onScreen()) this.state = 'walk';
     if (!this.perch) this.keepApart(dt);
     const dxT = target.x - this.x;
     const dzT = target.z - this.z;
@@ -597,7 +633,9 @@ export class Soldier implements Enemy {
     } else if (this.state === 'walk') {
       let moved = false;
       const pace = this.plan === 'normal' ? SOLDIER.walkSpeed : SOLDIER.runSpeed;
-      if (this.plan !== 'normal' && !this.holding) {
+      if (!this.perch && !this.retreating && !this.onScreen()) {
+        moved = this.hurryIn(dt);
+      } else if (this.plan !== 'normal' && !this.holding) {
         moved = this.runToPost(dt, target);
       } else if (dist > this.stopDist && !this.holding) {
         this.goal = null;
