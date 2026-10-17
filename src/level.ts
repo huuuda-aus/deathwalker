@@ -1,3 +1,5 @@
+import { LEVEL, type SceneDef } from './levelData';
+
 /** Camera distance from the gameplay plane (z = 0). */
 export const CAM_DIST = 24;
 /** World units across one "screen" at the gameplay depth (horizontal view is locked to this). */
@@ -9,23 +11,14 @@ export const FOLLOW_OFFSET = 8;
 
 /**
  * Level positions are in "screens" of progress measured leftward from the level start
- * (the right edge of the first view). A view spans [p, p + 1] screens.
+ * (the right edge of the first view). A view spans [p, p + 1] screens. The scenes themselves (what each one sends
+ * in, and when) are data: see levels/level1.json and levelData.ts.
  */
-export interface SceneDef {
-  /** 1 = locked single screen; >1 = scrolls, camera range grows by (width - 1) screens */
-  widthScreens: number;
-  /** enemies the scene sends in; every one of them must be killed to clear it (cannons and their crew count) */
-  spawnBudget: number;
-}
 
 /** The first scene begins this far into the first screen. */
 const FIRST_SCENE_START = 0.5;
 
-export const LEVEL: SceneDef[] = [
-  { widthScreens: 1, spawnBudget: 48 },
-  { widthScreens: 2, spawnBudget: 80 },
-  { widthScreens: 1, spawnBudget: 58 },
-];
+export { LEVEL, type SceneDef, type SpawnEvent } from './levelData';
 
 /** Progress (screens) at which each scene's view first locks in. Scenes are contiguous. */
 const SCENE_START: number[] = LEVEL.reduce<number[]>(
@@ -55,7 +48,11 @@ export class LevelRunner {
   phase: Phase = 'entering';
   /** kills per scene index, kept for the whole run */
   killsByScene: number[] = LEVEL.map(() => 0);
+  /** everything sent in so far this scene (all kinds), and how many street infantry of it */
   spawned = 0;
+  infantrySpawned = 0;
+  /** which of the scene's events have gone (by index into `scene.events`) */
+  readonly fired = new Set<number>();
   camX = START_CAM_X;
   /** signed camera velocity (negative = advancing left) */
   camVel = 0;
@@ -66,10 +63,15 @@ export class LevelRunner {
   writeOffKills(): void { this.killsByScene[this.index] = this.scene.spawnBudget; }
   get scene(): SceneDef { return LEVEL[this.index]; }
   get count(): number { return LEVEL.length; }
-  get canSpawn(): boolean { return this.phase === 'active' && this.spawned < this.scene.spawnBudget; }
+  get canSpawn(): boolean { return this.phase === 'active'; }
+  /** how much of this scene's infantry has been sent in, 0..1 (1 if it sends none): what the scene's events are timed by */
+  get progress(): number { const n = this.scene.infantry.count; return n === 0 ? 1 : this.infantrySpawned / n; }
+
+  /** a scene begins: nothing has been sent in yet */
+  private beginScene(): void { this.spawned = 0; this.infantrySpawned = 0; this.fired.clear(); }
 
   reset(): void {
-    this.index = 0; this.phase = 'entering'; this.killsByScene.fill(0); this.spawned = 0;
+    this.index = 0; this.phase = 'entering'; this.killsByScene.fill(0); this.beginScene();
     this.camX = START_CAM_X; this.camVel = 0;
   }
 
@@ -103,7 +105,7 @@ export class LevelRunner {
       if (this.camX - nextMax < 0.05) {
         this.camX = nextMax;
         this.index++;
-        this.spawned = 0;
+        this.beginScene();
         this.phase = 'active';
         event = 'arrived';
       }

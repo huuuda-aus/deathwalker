@@ -13,7 +13,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL, BLAST, AIRCRAFT } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -43,9 +43,6 @@ export interface EnemyDeps {
 export class EnemyManager {
   readonly list: Enemy[] = [];
   private spawnTimer = 1;
-  private cannonTimer: number = CANNON.firstDelay;
-  private truckTimer: number = TRUCK.firstDelay;
-  private aircraftTimer: number = AIRCRAFT.firstDelay;
   /** where the screen is, for the planes: camera x, and the height of the top of the view at the gameplay depth */
   private camX = 0;
   viewTop = 9;
@@ -103,17 +100,13 @@ export class EnemyManager {
   }
 
   /**
-   * Now and then a personnel carrier arrives from either side, turns to face the camera in the left half of the
-   * screen and unloads 8-12 soldiers. The truck and its troops all come out of the scene's spawn budget; one
+   * A personnel carrier arrives from either side, turns to face the camera in the left half of the
+   * screen and unloads its troops (as many as the scene's data says); one
    * truck at a time.
    */
-  private spawnTruck(dt: number, camX: number): void {
+  private spawnTruck(troops: number, camX: number): boolean {
     const { scene, level, mech, env, dust, explosions, debris, world } = this.deps;
-    this.truckTimer -= dt;
-    const remaining = level.scene.spawnBudget - level.spawned;
-    if (this.truckTimer > 0 || !level.canSpawn || remaining < 1 + TRUCK.troopsMin) return;
-    if (this.list.some((e) => e instanceof TruckUnit && e.busy)) return;
-    const troops = Math.min(TRUCK.troopsMin + Math.floor(Math.random() * (TRUCK.troopsMax - TRUCK.troopsMin + 1)), remaining - 1);
+    if (this.list.some((e) => e instanceof TruckUnit && e.busy)) return false;
     const fromRight = Math.random() < 0.5;
     const half = SCREEN_W / 2;
     const { dx, dz } = TruckUnit.turnShift(fromRight);
@@ -129,7 +122,7 @@ export class EnemyManager {
     scene.add(unit.group);
     this.list.push(unit);
     level.spawned += 1 + troops;
-    this.truckTimer = TRUCK.intervalMin + Math.random() * TRUCK.intervalExtra;
+    return true;
   }
 
   /** An unmanned gun waves in the nearest free infantryman within reach, to take over as gunner. */
@@ -161,19 +154,14 @@ export class EnemyManager {
   }
 
   /**
-   * Now and then a horse-drawn cannon gallops in from behind the mech and stops somewhere between mid-screen
-   * and the left edge. Only one at a time, and it uses a slot of the scene's spawn budget.
+   * A horse-drawn cannon (or a few side by side) gallops in from behind the mech and stops somewhere between mid-screen
+   * and the left edge. Only one manned group at a time.
    */
-  private spawnCannon(dt: number, camX: number): void {
+  private spawnCannon(count: number, camX: number): boolean {
     const { scene, level, mech, shells, env, debris, dust, world, explosions } = this.deps;
-    this.cannonTimer -= dt;
     // the gun and its crew all come out of the scene's spawn budget
     const cost = 1 + CANNON.crew;
-    if (this.cannonTimer > 0 || !level.canSpawn || level.scene.spawnBudget - level.spawned < cost) return;
-    if (this.list.some((e) => e instanceof CannonUnit && e.operational)) return;
-    // roll 1..packMax, but no more than the budget can pay for
-    const roll = 1 + Math.floor(Math.random() * CANNON.packMax);
-    const count = Math.min(roll, Math.floor((level.scene.spawnBudget - level.spawned) / cost));
+    if (this.list.some((e) => e instanceof CannonUnit && e.operational)) return false;
     const half = SCREEN_W / 2;
     const lanes = this.packLanes(count, mech.root.position.z);
     for (let n = 0; n < count; n++) {
@@ -186,20 +174,16 @@ export class EnemyManager {
       for (const e of [unit, ...crew, horse]) { scene.add(e.group); this.list.push(e); }
       level.spawned += cost;
     }
-    this.cannonTimer = CANNON.intervalMin + Math.random() * CANNON.intervalExtra;
+    return true;
   }
 
   /**
-   * Now and then one or two bombers fly in over the top of the screen, each at its own height so they never meet.
-   * They patrol back and forth until shot down, and each uses a slot of the scene's spawn budget. One flight at a time.
+   * A flight of bombers flies in over the top of the screen from the left, each at its own height so they never meet.
+   * They keep coming, left to right, until shot down. One flight at a time.
    */
-  private spawnAircraft(dt: number, camX: number): void {
+  private spawnAircraft(count: number, camX: number): boolean {
     const { scene, level, mech, explosions, dust, debris, world } = this.deps;
-    this.aircraftTimer -= dt;
-    const remaining = level.scene.spawnBudget - level.spawned;
-    if (this.aircraftTimer > 0 || !level.canSpawn || remaining < 1) return;
-    if (this.list.some((e) => e instanceof AircraftUnit && e.alive)) return;
-    const count = Math.min(1 + Math.floor(Math.random() * AIRCRAFT.packMax), remaining);
+    if (this.list.some((e) => e instanceof AircraftUnit && e.alive)) return false;
     const half = SCREEN_W / 2;
     const top = this.viewTop - AIRCRAFT.topMargin;
     for (let n = 0; n < count; n++) {
@@ -220,7 +204,7 @@ export class EnemyManager {
       this.list.push(unit);
       level.spawned++;
     }
-    this.aircraftTimer = AIRCRAFT.intervalMin + Math.random() * AIRCRAFT.intervalExtra;
+    return true;
   }
 
   /**
@@ -244,7 +228,9 @@ export class EnemyManager {
     this.spawnTimer -= dt;
     let alive = 0;
     for (const e of this.list) if (e.alive && !(e instanceof Bomb)) alive++;
-    if (this.spawnTimer > 0 || !level.canSpawn || alive >= SPAWN.maxAlive) return;
+    const inf = level.scene.infantry;
+    const left = inf.count - level.infantrySpawned;
+    if (this.spawnTimer > 0 || !level.canSpawn || left <= 0 || alive >= inf.maxAlive) return;
     const half = SCREEN_W / 2;
     // a bay only qualifies if a soldier standing in it could actually hit the mech: no wall or rubble in the way
     const canFire = (from: THREE.Vector3): boolean => {
@@ -253,7 +239,7 @@ export class EnemyManager {
       sightRay.direction.subVectors(target, from).divideScalar(len);
       return world.raycast(sightRay, sightHit) >= len - 0.05 && env.sight(from, target);
     };
-    const wave = Math.min(SPAWN.waveMin + Math.floor(Math.random() * SPAWN.waveExtra), SPAWN.maxAlive - alive, level.scene.spawnBudget - level.spawned);
+    const wave = Math.min(inf.waveMin + Math.floor(Math.random() * inf.waveExtra), inf.maxAlive - alive, left);
     for (let w = 0; w < wave; w++) {
       const bay = Math.random() < SPAWN.ledgeChance ? world.takeLedge(camX - half * 0.85, mechX - 5, canFire) : null;
       let s: Soldier;
@@ -266,8 +252,25 @@ export class EnemyManager {
       scene.add(s.group);
       this.list.push(s);
       level.spawned++;
+      level.infantrySpawned++;
     }
-    this.spawnTimer = SPAWN.intervalMin + Math.random() * SPAWN.intervalExtra;
+    this.spawnTimer = inf.intervalMin + Math.random() * inf.intervalExtra;
+  }
+
+  /**
+   * The scene's vehicles arrive on cue: each event goes once the scene has sent in enough of its infantry (its `at`),
+   * or as soon after that as it can (one flight, one truck unloading, one manned gun at a time).
+   */
+  private runEvents(camX: number): void {
+    const { level } = this.deps;
+    if (!level.canSpawn) return;
+    level.scene.events.forEach((ev, i) => {
+      if (level.fired.has(i) || level.progress < ev.at) return;
+      const sent = ev.type === 'cannon' ? this.spawnCannon(ev.count, camX)
+        : ev.type === 'truck' ? this.spawnTruck(ev.troops, camX)
+        : this.spawnAircraft(ev.count, camX);
+      if (sent) level.fired.add(i);
+    });
   }
 
   /**
@@ -302,7 +305,7 @@ export class EnemyManager {
     this.clock += dt;
     if (spawning) this.failsafe(dt, camX);
     this.camX = camX;
-    if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); this.spawnAircraft(dt, camX); }
+    if (spawning) { this.spawn(dt, camX); this.runEvents(camX); }
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];

@@ -1,0 +1,65 @@
+{
+  "name": "Level 1",
+  "notes": [
+    "Each scene must be cleared by killing everything it sends in: its infantry, plus every vehicle and everyone riding in one.",
+    "infantry.count: street infantry sent in over the scene, in waves of waveMin..waveMin+waveExtra-1, every intervalMin..intervalMin+intervalExtra seconds, never more than maxAlive enemies alive at once.",
+    "events: vehicles that arrive at set points in the scene. 'at' is how much of the scene's infantry has been sent in by then (0 = at the start, 1 = after the last of them); an event that has to wait (one flight / one truck / one gun at a time) goes as soon as it can.",
+    "event types: 'cannon' (count guns, each with a crew of 2), 'truck' (troops soldiers aboard), 'aircraft' (count planes, each at its own height).",
+    "kills needed to clear a scene = infantry.count + 3 per cannon + (1 + troops) per truck + 1 per plane.",
+    "widthScreens: how wide the scene is, in screens (the camera scrolls through scenes wider than 1).",
+    "boss: reserved for later (null = none)."
+  ],
+  "scenes": [
+    {
+      "name": "Outskirts",
+      "widthScreens": 1,
+      "infantry": { "count": 36, "waveMin": 3, "waveExtra": 3, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
+      "events": [
+        { "type": "cannon", "at": 0.85, "count": 1 }
+      ],
+      "boss": null
+    },
+    {
+      "name": "Supply road",
+      "widthScreens": 2,
+      "infantry": { "count": 40, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
+      "events": [
+        { "type": "truck", "at": 0.15, "troops": 10 },
+        { "type": "truck", "at": 0.5, "troops": 10 },
+        { "type": "truck", "at": 0.8, "troops": 9 }
+      ],
+      "boss": null
+    },
+    {
+      "name": "Crossroads",
+      "widthScreens": 1,
+      "infantry": { "count": 34, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
+      "events": [
+        { "type": "cannon", "at": 0.2, "count": 1 },
+        { "type": "truck", "at": 0.45, "troops": 10 },
+        { "type": "cannon", "at": 0.7, "count": 2 }
+      ],
+      "boss": null
+    },
+    {
+      "name": "Air raid",
+      "widthScreens": 2,
+      "infantry": { "count": 40, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
+      "events": [
+        { "type": "aircraft", "at": 0.05, "count": 2 },
+        { "type": "cannon", "at": 0.3, "count": 2 },
+        { "type": "truck", "at": 0.5, "troops": 10 },
+        { "type": "aircraft", "at": 0.65, "count": 2 },
+        { "type": "truck", "at": 0.85, "troops": 10 }
+      ],
+      "boss": null
+    },
+    {
+      "name": "The last stand",
+      "widthScreens": 2,
+      "infantry": { "count": 130, "waveMin": 4, "waveExtra": 5, "intervalMin": 2, "intervalExtra": 2, "maxAlive": 18 },
+      "events": [],
+      "boss": null
+    }
+  ]
+}
