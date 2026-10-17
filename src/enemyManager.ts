@@ -3,6 +3,8 @@ import { Soldier, type Enemy, type SoldierEnv } from './enemies';
 import { CannonUnit } from './cannon';
 import { Horse } from './horse';
 import { TruckUnit } from './truck';
+import { AircraftUnit } from './aircraft';
+import { Bomb } from './bomb';
 import type { Explosions } from './explosions';
 import type { Bullets } from './bullets';
 import type { Shells } from './shells';
@@ -11,7 +13,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL, BLAST } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL, BLAST, AIRCRAFT } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -34,6 +36,8 @@ export interface EnemyDeps {
   dust: Dust;
   explosions: Explosions;
   bullets: Bullets;
+  /** shield damage to the player (a bomb going off beside the mech) */
+  onPlayerHit: (damage: number) => void;
 }
 
 export class EnemyManager {
@@ -41,6 +45,10 @@ export class EnemyManager {
   private spawnTimer = 1;
   private cannonTimer: number = CANNON.firstDelay;
   private truckTimer: number = TRUCK.firstDelay;
+  private aircraftTimer: number = AIRCRAFT.firstDelay;
+  /** where the screen is, for the planes: camera x, and the height of the top of the view at the gameplay depth */
+  private camX = 0;
+  viewTop = 9;
   /** how long the scene has gone without a kill or a spawn (see failsafe) */
   private stallT = 0;
   private stallMark = '';
@@ -182,6 +190,41 @@ export class EnemyManager {
   }
 
   /**
+   * Now and then one or two bombers fly in over the top of the screen, each at its own height so they never meet.
+   * They patrol back and forth until shot down, and each uses a slot of the scene's spawn budget. One flight at a time.
+   */
+  private spawnAircraft(dt: number, camX: number): void {
+    const { scene, level, mech, explosions, dust, debris, world } = this.deps;
+    this.aircraftTimer -= dt;
+    const remaining = level.scene.spawnBudget - level.spawned;
+    if (this.aircraftTimer > 0 || !level.canSpawn || remaining < 1) return;
+    if (this.list.some((e) => e instanceof AircraftUnit && e.alive)) return;
+    const count = Math.min(1 + Math.floor(Math.random() * AIRCRAFT.packMax), remaining);
+    const half = SCREEN_W / 2;
+    const fromRight = Math.random() < 0.5;
+    const top = this.viewTop - AIRCRAFT.topMargin;
+    for (let n = 0; n < count; n++) {
+      const y = Math.max(AIRCRAFT.minAltitude, top - n * AIRCRAFT.levelGap);
+      // different heights, and also staggered in depth and along the way, so they never share a spot
+      const z = -2 + n * 2.5 + Math.random();
+      const startX = camX + (fromRight ? 1 : -1) * (half + AIRCRAFT.turnMargin - n * 5);
+      const unit = new AircraftUnit(
+        { fromRight, startX, y, z },
+        {
+          add: (e) => { scene.add(e.group); this.list.push(e); },
+          explosions, dust, debris, floor: (x, zz, yy) => world.surfaceTop(x, zz, yy),
+          bombs: { world, explosions, colliders: mech.colliders, onPlayerHit: this.deps.onPlayerHit },
+          view: () => ({ x: this.camX, half }),
+        },
+      );
+      scene.add(unit.group);
+      this.list.push(unit);
+      level.spawned++;
+    }
+    this.aircraftTimer = AIRCRAFT.intervalMin + Math.random() * AIRCRAFT.intervalExtra;
+  }
+
+  /**
    * `count` lane depths, one per equal band of the street so neighbours are always well apart (a pack of
    * three keeps at least ~1.6 units between lines). A lone cannon may pick anywhere, but steers clear of the
    * mech's lane so it does not ride straight through it.
@@ -201,7 +244,7 @@ export class EnemyManager {
     const mechX = mech.root.position.x;
     this.spawnTimer -= dt;
     let alive = 0;
-    for (const e of this.list) if (e.alive) alive++;
+    for (const e of this.list) if (e.alive && !(e instanceof Bomb)) alive++;
     if (this.spawnTimer > 0 || !level.canSpawn || alive >= SPAWN.maxAlive) return;
     const half = SCREEN_W / 2;
     // a bay only qualifies if a soldier standing in it could actually hit the mech: no wall or rubble in the way
@@ -244,6 +287,7 @@ export class EnemyManager {
     let left = 0;
     for (const e of this.list) {
       if (!e.alive || e.retreating) continue;
+      if (e instanceof AircraftUnit || e instanceof Bomb) { left++; continue; }   // they patrol in and out of view
       const seen = Math.abs(e.x - camX) < half;
       if (seen && this.stallT < STALL.anyoneAfter) { left++; continue; }
       e.damage(9999, fx);
@@ -258,7 +302,8 @@ export class EnemyManager {
     const { level, fx, mech, bullets } = this.deps;
     this.clock += dt;
     if (spawning) this.failsafe(dt, camX);
-    if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); }
+    this.camX = camX;
+    if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); this.spawnAircraft(dt, camX); }
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];

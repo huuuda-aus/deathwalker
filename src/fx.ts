@@ -100,6 +100,8 @@ export class Fx {
   }
 
   private surface: SurfaceFn | null = null;
+  /** wind speed toward -x (units/s), set by the game each frame (fires lean with it) */
+  windSpeed = 0;
 
   /** Let particles land on building floors, not just the ground. */
   setSurface(fn: SurfaceFn): void { this.surface = fn; this.sparkSystem.surface = fn; }

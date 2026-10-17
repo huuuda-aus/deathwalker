@@ -195,3 +195,48 @@ export const TRUCK = {
   launchExtra: 1,
   flameTime: 2.6,
 } as const;
+
+/**
+ * Enemy bomber: a slow, white WW2-style aeroplane that patrols the top of the screen, back and forth, dropping
+ * bombs on the mech until it is shot down. Two at once fly at different heights.
+ */
+export const AIRCRAFT = {
+  /** much tougher than a soldier, a bit under half a truck: a couple of seconds of sustained fire brings it down */
+  hp: SOLDIER.hp * 8,
+  /** world units / s: slow enough to track */
+  speed: 3.4,
+  /** the first one arrives after this long, then every min + random * extra seconds, one flight at a time */
+  firstDelay: 22,
+  intervalMin: 30,
+  intervalExtra: 20,
+  /** each time one is due, 1..packMax fly in together, at different heights */
+  packMax: 2,
+  /** the highest one flies this far below the top of the screen; each further one this much lower again (units) */
+  topMargin: 1.3,
+  levelGap: 1.5,
+  minAltitude: 5,
+  /** how far past the screen edge it flies before it turns round (units) */
+  turnMargin: 6,
+  /** seconds between bomb runs: min + random * extra */
+  dropMin: 2.2,
+  dropExtra: 1.6,
+  /** each bomb is aimed to land this far (units) either side of where the mech is */
+  aimSpread: 1.6,
+  /** shot down: the blast in the air; when it hits the ground the blast is twice as big; the wreck burns for this long (s) */
+  wreckBlastRadius: 1.8,
+  wreckBlastScale: 3,
+  crashBlastRadius: 3.6,
+  crashBlastScale: 6,
+  /** how hard the crash blast shoves rubble about, as a share of what a blast that size would (the fireball is unchanged) */
+  crashShock: 0.5,
+  flameTime: 26,
+} as const;
+
+/** A bomb: about the size of a soldier, falls with the plane's speed and explodes on the first thing it meets (or when shot). */
+export const BOMB = {
+  gravity: 5,
+  blastRadius: 1.5,
+  blastScale: 2,
+  /** shield lost when it lands within the blast radius or hits the mech */
+  damage: 20,
+} as const;
