@@ -14,6 +14,7 @@ import type { SoldierEnv } from './enemies';
 import { EnemyManager } from './enemyManager';
 import { Shells } from './shells';
 import { Explosions } from './explosions';
+import { TargetLock } from './targetLock';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
 import { Debris } from './debris';
@@ -58,6 +59,7 @@ export class Game {
   private readonly raycaster = new THREE.Raycaster();
   private readonly mouseNdc = new THREE.Vector2();
   private readonly aimHit = newHit();
+  private readonly lock = new TargetLock();
 
   private vx = 0;
   private vz = 0;
@@ -68,6 +70,8 @@ export class Game {
   private cullTimer = 0;
   private camX = this.level.camX;
   private last = performance.now();
+  /** where the reticle is drawn (CSS pixels): the mouse, or the locked target */
+  private reticlePx: { x: number; y: number } = { x: 0, y: 0 };
 
   constructor() {
     const { renderer, scene, camera, sun, rim } = this;
@@ -157,6 +161,7 @@ export class Game {
 
   private reset(): void {
     this.enemies.reset();
+    this.lock.release();
     this.shells.clear();
     this.explosions.clear();
     Object.assign(this.player, newPlayer());
@@ -214,7 +219,13 @@ export class Game {
   /** mouse ray -> nearest thing in the world (enemy / wall / ground / backdrop), then aim and shoot */
   private aimAndFire(dt: number, active: boolean): void {
     const { input, mech, raycaster, muzzlePos } = this;
-    this.mouseNdc.set(input.mouse.x, input.mouse.y);
+    // holding the lock button grabs the enemy under the reticle; the reticle rides on that enemy's middle until it
+    // dies or the button is let go
+    if (input.takeLockPress()) this.lock.acquire(this.enemies.list, this.camera, input.mousePx, this.aimHit);
+    if (!input.lockHeld) this.lock.release();
+    const locked = this.lock.update(this.enemies.list, this.camera);
+    this.mouseNdc.set(locked ? locked.x : input.mouse.x, locked ? locked.y : input.mouse.y);
+    this.reticlePx = locked ? this.lock.reticlePx : input.mousePx;
     raycaster.setFromCamera(this.mouseNdc, this.camera);
     castRay(raycaster.ray, this.enemies.list, this.world, this.aimHit);
     mech.firing = this.weapon.firing;
@@ -278,7 +289,7 @@ export class Game {
     }
     this.dust.update(dt);
 
-    this.hud.update(dt, this.mech.canFire, this.input.mousePx);
+    this.hud.update(dt, this.mech.canFire, this.reticlePx, this.lock.target !== null);
     this.updateEnvironment(dt, now);
     this.post.render(dt, this.level.camVel);
     requestAnimationFrame(this.frame);

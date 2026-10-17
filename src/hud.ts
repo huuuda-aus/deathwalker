@@ -45,7 +45,7 @@ export class Hud {
     this.fpsFrames = 0; this.fpsTime = 0; this.fpsWorst = 0;
   }
 
-  update(dt: number, canFire: boolean, mousePx: { x: number; y: number }): void {
+  update(dt: number, canFire: boolean, reticle: { x: number; y: number }, locked: boolean): void {
     const { player, level, weapon } = this.deps;
     this.go.style.display = level.phase === 'cleared' ? 'block' : 'none';
     const html = LEVEL.map((def, i) => {
@@ -65,6 +65,7 @@ export class Hud {
     this.hit.style.opacity = String(player.hitFlash);
 
     this.reticle.style.opacity = canFire ? '1' : '0.35';
-    this.reticle.style.transform = `translate(${mousePx.x}px, ${mousePx.y}px)`;
+    this.reticle.style.transform = `translate(${reticle.x}px, ${reticle.y}px)`;
+    this.reticle.classList.toggle('locked', locked);
   }
 }

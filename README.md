@@ -24,7 +24,8 @@ Needs a browser with WebGL2.
 | **A / D** or **← / →** | Walk left / right along the street |
 | **W / S** or **↑ / ↓** | Walk away from / toward the camera (depth lane) |
 | **Mouse** | Aim the reticle |
-| **Hold mouse button** | Fire both guns |
+| **Hold left mouse button** | Fire both guns |
+| **Hold right mouse button** | Lock on: the reticle sticks to the middle of the enemy under it (or nearest to it) for as long as you hold the button, or until it dies. Hold both buttons to keep the lock and fire |
 | **Q** | Toggle post-processing (bloom, motion blur, vignette, haze) |
 | **H** | Toggle the volumetric haze only |
 | **R** | Restart after game over |
