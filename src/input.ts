@@ -5,20 +5,40 @@ export class Input {
   /** Mouse position in CSS pixels. */
   readonly mousePx = { x: 0, y: 0 };
   fire = false;
+  /** the lock button is down right now */
+  lockHeld = false;
+  private lockPressed = false;
 
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => this.keys.add(e.code));
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => { this.keys.clear(); this.fire = false; });
+    window.addEventListener('blur', () => { this.keys.clear(); this.fire = false; this.lockHeld = false; });
+    // Both buttons can be held together. The browser only sends pointerdown/up for the first press and last release;
+    // pressing or releasing a second button arrives as a pointermove, so the button state is read from `buttons`.
+    const buttons = (e: PointerEvent): void => {
+      const lock = (e.buttons & 2) !== 0;
+      if (lock && !this.lockHeld) this.lockPressed = true;
+      this.lockHeld = lock;
+      this.fire = (e.buttons & 1) !== 0;
+    };
+    target.addEventListener('pointerdown', buttons);
+    window.addEventListener('pointerup', buttons);
+    window.addEventListener('pointercancel', buttons);
     target.addEventListener('pointermove', (e) => {
+      buttons(e);
       this.mousePx.x = e.clientX;
       this.mousePx.y = e.clientY;
       this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
       this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     });
-    target.addEventListener('pointerdown', () => { this.fire = true; });
-    window.addEventListener('pointerup', () => { this.fire = false; });
     target.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** Was the lock button pressed down since the last call? */
+  takeLockPress(): boolean {
+    const p = this.lockPressed;
+    this.lockPressed = false;
+    return p;
   }
 
   /** Depth walk: -1 = up on screen (away from camera), +1 = down (toward camera) */
