@@ -3,7 +3,7 @@ import type { Fx } from './fx';
 import type { Blocker } from './debris';
 import { MECH_SCALE, LANE } from './mech';
 import { CAM_DIST } from './level';
-import { SOLDIER } from './config';
+import { WEAPON, SOLDIER } from './config';
 
 const BODY = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.8 });
 const SKIN = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
@@ -89,8 +89,8 @@ export interface Enemy {
   /** retreat finished: safe to remove */
   readonly gone: boolean;
   getBox(out: THREE.Box3): THREE.Box3;
-  /** Returns true if the hit killed. */
-  damage(n: number, fx: Fx): boolean;
+  /** Returns true if the hit killed. `push`: the velocity a bullet gives something it kills (along its path). */
+  damage(n: number, fx: Fx, push?: THREE.Vector3): boolean;
   /** onShoot: called when it fires at the player; the caller makes the bullet and aims it. */
   update(dt: number, target: THREE.Vector3, fx: Fx, onShoot: ShotFn): void;
   /** free anything it put in the scene outside `group` */
@@ -111,7 +111,12 @@ export class Soldier implements Enemy {
   private timer = 0;
   private stopDist = 6 + Math.random() * 4;
   private phase = Math.random() * 6;
+  /** 0 = standing, 1 = down on one knee behind cover */
+  private kneel = 0;
+  private readonly stand = { centerY: (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE, halfY: 0.2875 * SOLDIER_SCALE };
   private legs: THREE.Mesh[] = [];
+  /** shown only while a soldier is plunging from a building, flailing */
+  private arms: THREE.Mesh[] = [];
   private gun: THREE.Mesh;
   private gunMat = GUN_IDLE.clone();
   private fallDir = 1;
@@ -126,6 +131,8 @@ export class Soldier implements Enemy {
   private plunging = false;
   private plungeFrom = 0;
   private plungeVel = new THREE.Vector3();
+  /** the bullet's push on a soldier it killed: slides him along until it dies away */
+  private fling = new THREE.Vector3();
   /** which way we are going round an obstacle (+1/-1), 0 = none; kept for a moment to avoid dithering */
   private avoid = 0;
   private avoidT = 0;
@@ -179,7 +186,15 @@ export class Soldier implements Enemy {
       this.legs.push(leg);
       this.body.add(leg);
     }
-    for (const m of [torso, head, helmet, this.gun, ...this.legs]) m.castShadow = true;
+    for (const z of [-0.3, 0.3]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.6, 0.14), BODY);
+      arm.geometry.translate(0, -0.3, 0);
+      arm.position.set(0, 1.4, z);
+      arm.visible = false;
+      this.arms.push(arm);
+      this.body.add(arm);
+    }
+    for (const m of [torso, head, helmet, this.gun, ...this.legs, ...this.arms]) m.castShadow = true;
     this.body.add(torso, head, helmet, this.gun);
     this.body.scale.setScalar(this.k);
     this.group.add(this.body);
@@ -275,7 +290,37 @@ export class Soldier implements Enemy {
     this.state = 'dead';
     this.deadTime = 0;
     this.deadVy = 0;
+    this.resetPose();
     this.flatten(fx);
+  }
+
+  /**
+   * Plunging from a building: it tips over to go head first (turning about its middle, so the head leads), arms and
+   * legs flailing wildly, with a little wobble as it falls.
+   */
+  private flail(): void {
+    const t = this.deadTime;
+    const a = Math.min(1, t / 0.45);
+    const th = -this.fallDir * Math.PI * a * a * (3 - 2 * a) + Math.sin(t * 9 + this.phase) * 0.12;
+    const cy = this.centerY;
+    this.body.rotation.z = th;
+    this.body.position.set(cy * Math.sin(th), cy - cy * Math.cos(th), 0);
+    const w = t * 17 + this.phase;
+    this.arms[0].rotation.z = 2.6 + Math.sin(w) * 0.9;
+    this.arms[1].rotation.z = -2.6 + Math.sin(w + 2.1) * 0.9;
+    this.arms[0].rotation.x = Math.sin(w * 0.7) * 0.7;
+    this.arms[1].rotation.x = Math.cos(w * 0.8) * 0.7;
+    this.legs[0].rotation.z = Math.sin(w * 0.8) * 0.9;
+    this.legs[1].rotation.z = -Math.sin(w * 0.8 + 1) * 0.9;
+  }
+
+  /** The fall is over: back to ordinary body geometry, lying where it landed (or about to be flattened). */
+  private landFlailing(): void {
+    this.body.position.set(0, 0, 0);
+    this.body.rotation.z = 0;
+    this.group.rotation.z = -this.fallDir * 1.5;
+    for (const a of this.arms) a.visible = false;
+    for (const l of this.legs) l.rotation.set(0, 0, 0);
   }
 
   /** Lie squashed flat in a pool of blood, with a spray of it. */
@@ -291,17 +336,23 @@ export class Soldier implements Enemy {
   }
 
   /** Returns true if the hit killed. */
-  damage(n: number, fx: Fx): boolean {
+  damage(n: number, fx: Fx, push?: THREE.Vector3): boolean {
     if (!this.alive) return false;
     this.hp -= n;
     if (this.hp > 0) return false;
     this.state = 'dead';
     this.deadTime = 0;
+    this.resetPose();
+    if (push) {
+      // the bullet's momentum carries him along its path, and he falls the way he is thrown
+      this.fling.copy(push).multiplyScalar(WEAPON.pushShare.soldier);
+      if (Math.abs(push.x) > 0.5) this.fallDir = Math.sign(push.x);
+    }
     if (this.group.position.y > SOLDIER.highFloorY && Math.random() < SOLDIER.plungeChance) {
       this.plunge();
       return true;
     }
-    this.deadVy = 1.0; // a little hop as it drops
+    this.deadVy = 1.0 + this.fling.y * 0.5; // a little hop as it drops, more if it is shot upward
     fx.burst(new THREE.Vector3(this.x, this.group.position.y + this.centerY, this.z), 12, 2.5, [0x8a1010, 0xc02020, 0xffa040]);
     return true;
   }
@@ -312,11 +363,48 @@ export class Soldier implements Enemy {
    */
   private plunge(): void {
     this.plunging = true;
+    for (const a of this.arms) a.visible = true;
     this.plungeFrom = this.group.position.y;
-    this.deadVy = 3;
+    this.deadVy = 3 + this.fling.y * 0.5;
     // far enough forward (toward the camera) to clear the ledge from wherever in the room it was standing
     const toEdge = this.perch ? Math.max(0.3, this.perch.ledgeZ + 0.3 - this.group.position.z) : 0.3;
-    this.plungeVel.set((Math.random() - 0.5) * 1.2, 0, THREE.MathUtils.clamp(toEdge / 0.3, 1.2, 9) * (1 + Math.random() * 0.3));
+    this.plungeVel.set((Math.random() - 0.5) * 1.2 + this.fling.x * 0.4, 0, THREE.MathUtils.clamp(toEdge / 0.3, 1.2, 9) * (1 + Math.random() * 0.3));
+  }
+
+  /** Running: long strides, a lean into the run and a bounce, at `rate` rad/s of stride cycle; it stands up if it was kneeling. */
+  private runCycle(dt: number, rate: number, dir: number): void {
+    this.phase += dt * rate;
+    const s = Math.sin(this.phase);
+    this.legs[0].rotation.z = s * 1.0;
+    this.legs[1].rotation.z = -s * 1.0;
+    this.body.rotation.z = -dir * 0.22;
+    this.body.position.y = Math.abs(Math.cos(this.phase)) * 0.07 * this.k;
+    this.setKneel(0);
+  }
+
+  /** Standing still: upright, or, holding a spot behind cover, down on one knee (smaller target, gun lower). */
+  private standPose(dt: number): void {
+    const goal = this.plan === 'cover' && this.holding && !this.perch ? 1 : 0;
+    this.setKneel(this.kneel + (goal - this.kneel) * Math.min(1, dt * 8));
+    this.legs[0].rotation.z = 1.2 * this.kneel;               // front leg bent forward
+    this.legs[1].rotation.z = -1.5 * this.kneel;              // rear knee on the ground
+    this.body.rotation.z = 0;
+    this.body.position.y = -0.45 * this.k * this.kneel;
+  }
+
+  private setKneel(k: number): void {
+    this.kneel = k;
+    const shrink = 1 - 0.28 * k;
+    this.centerY = this.stand.centerY * shrink;
+    this.half.y = this.stand.halfY * shrink;
+  }
+
+  /** Back to a plain upright body (before a death pose takes over). */
+  private resetPose(): void {
+    this.setKneel(0);
+    this.body.rotation.z = 0;
+    this.body.position.y = 0;
+    for (const l of this.legs) l.rotation.z = 0;
   }
 
   /**
@@ -371,7 +459,7 @@ export class Soldier implements Enemy {
   }
 
   private muzzlePoint(dir: number): THREE.Vector3 {
-    return this.muzzleTmp.set(this.x + dir * 0.8 * this.k, this.group.position.y + 1.2 * this.k, this.z + 0.2 * this.k);
+    return this.muzzleTmp.set(this.x + dir * 0.8 * this.k, this.group.position.y + (1.2 - 0.45 * this.kneel) * this.k, this.z + 0.2 * this.k);
   }
 
   /** 'cover' / 'scatter' plans: run to the chosen post; once there (or out of time) hold it and fight from it. */
@@ -496,7 +584,7 @@ export class Soldier implements Enemy {
   private hasLOS(target: THREE.Vector3, x = this.x, z = this.z): boolean {
     // both ways: his gun to the mech's chest, and the mech's guns down to his torso
     // (a soldier that cannot be hit must not be able to hit back)
-    const gun = this.sightA.set(x, this.group.position.y + 1.2 * this.k, z + 0.2 * this.k);
+    const gun = this.sightA.set(x, this.group.position.y + (1.2 - 0.45 * this.kneel) * this.k, z + 0.2 * this.k);
     const chest = this.sightB.set(target.x, CHEST_Y, target.z);
     if (!this.env.sight(gun, chest)) return false;
     gun.set(x, this.group.position.y + this.centerY, z);
@@ -551,11 +639,14 @@ export class Soldier implements Enemy {
       this.deadTime += dt;
       const k = Math.min(1, this.deadTime / 0.35);
       if (this.plunging) {
-        g.rotation.z -= this.fallDir * 7 * dt;                // tumbling as it falls
+        this.flail();
         g.position.x += this.plungeVel.x * dt;
         g.position.z += this.plungeVel.z * dt;
       } else if (!this.squashed) {
         g.rotation.z = -this.fallDir * k * 1.5;
+        g.position.x += this.fling.x * dt;
+        g.position.z += this.fling.z * dt;
+        this.fling.multiplyScalar(Math.exp(-(g.position.y > 0.05 ? 0.4 : 5) * dt));   // little drag in the air, a lot on the ground
       }
       // corpses obey gravity too: fall until a floor (or the ground) is under them
       const ground = Math.max(0, this.env.surface(this.x, this.z, g.position.y + 0.05));
@@ -563,7 +654,10 @@ export class Soldier implements Enemy {
       g.position.y = Math.max(ground, g.position.y + this.deadVy * dt);
       if (g.position.y <= ground) {
         this.deadVy = 0;
-        if (this.plunging && this.plungeFrom - ground > PLUNGE_MIN_FALL) this.flatten(fx);
+        if (this.plunging) {
+          this.landFlailing();
+          if (this.plungeFrom - ground > PLUNGE_MIN_FALL) this.flatten(fx);
+        }
         this.plunging = false;
       }
       return;
@@ -586,10 +680,8 @@ export class Soldier implements Enemy {
     if (this.retreating && this.perch) {
       // perched soldiers step back into the building and disappear
       this.body.scale.x = this.k;
-      g.position.z -= 1.5 * dt;
-      this.phase += dt * 9;
-      this.legs[0].rotation.z = Math.sin(this.phase) * 0.6;
-      this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
+      g.position.z -= 2.4 * dt;
+      this.runCycle(dt, 14, -1);
       if (g.position.z <= this.perch.backZ) this.gone = true;
       return;
     }
@@ -597,9 +689,7 @@ export class Soldier implements Enemy {
       this.body.scale.x = -this.k;
       g.position.x -= 4 * dt;
       this.pushOut(this.env.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
-      this.phase += dt * 12;
-      this.legs[0].rotation.z = Math.sin(this.phase) * 0.6;
-      this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
+      this.runCycle(dt, 16, -1);
       return;
     }
     // nobody fires from out of sight: whoever has drifted off screen goes back to hurrying in
@@ -621,10 +711,8 @@ export class Soldier implements Enemy {
     }
 
     if (this.state === 'enter' && this.perch) {
-      g.position.z += 1.0 * dt;
-      this.phase += dt * 9;
-      this.legs[0].rotation.z = Math.sin(this.phase) * 0.6;
-      this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
+      g.position.z += 2.0 * dt;
+      this.runCycle(dt, 14, dir);
       if (g.position.z >= this.perch.ledgeZ) {
         g.position.z = this.perch.ledgeZ;
         this.state = 'aim';
@@ -679,15 +767,10 @@ export class Soldier implements Enemy {
           this.shoot(fx, dir, onShoot);
         }
       }
-      if (moved) {
-        this.phase += dt * (this.plan === 'normal' ? 9 : 16);
-        this.legs[0].rotation.z = Math.sin(this.phase) * 0.6;
-        this.legs[1].rotation.z = -Math.sin(this.phase) * 0.6;
-      } else {
-        this.legs.forEach((l) => (l.rotation.z = 0));
-      }
+      if (moved) this.runCycle(dt, pace * 6.2, dir);
+      else this.standPose(dt);
     } else if (this.state === 'aim') {
-      this.legs.forEach((l) => (l.rotation.z = 0));
+      this.standPose(dt);
       this.timer -= dt;
       const blink = Math.floor(this.timer * 20) % 2 === 0;
       this.gunMat.color.setHex(blink ? 0xff5030 : 0x222222);
@@ -707,6 +790,7 @@ export class Soldier implements Enemy {
         }
       }
     } else {
+      this.standPose(dt);
       this.timer -= dt;
       if (this.timer <= 0) {
         // perched soldiers keep shooting from the ledge instead of walking

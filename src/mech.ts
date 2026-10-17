@@ -264,11 +264,14 @@ export class Mech {
    * @param aim 3D world point the guns should point at
    */
   update(dt: number, vx: number, vz: number, aim: THREE.Vector3): void {
-    // The lower half turns to face the way it is walking (any direction), so the legs always step forward and the
-    // feet never slide sideways; the gait advances with the ground covered. Standing still, it swings back to face left.
+    // The lower half turns toward the player's depth axis when walking toward or away from the camera (the mech's
+    // left/right), but never to face backward: walking backward keeps the base facing forward and the gait runs in
+    // reverse, so the reverse knees always point the right way. Standing still, it swings back to face left.
     const speed = Math.hypot(vx, vz);
-    this.turnBody(dt, speed > TURN_MIN_SPEED ? Math.atan2(vz, -vx) : null);
-    this.cycle += (speed / MECH_SCALE * dt) / STRIDE;
+    this.turnBody(dt, speed > TURN_MIN_SPEED ? Math.atan2(vz, Math.abs(vx)) : null);
+    // moving against the way the base faces: play the stride backward so the feet still plant
+    const along = -vx * Math.cos(this.bodyYaw) + vz * Math.sin(this.bodyYaw);
+    this.cycle += ((along < 0 ? -speed : speed) / MECH_SCALE * dt) / STRIDE;
     const amp = Math.min(1, speed / MECH_SCALE / 1.5);
 
     const bob = Math.abs(Math.sin(this.cycle * Math.PI * 2)) * 0.06 * amp;

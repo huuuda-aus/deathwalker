@@ -62,6 +62,8 @@ export class LevelRunner {
 
   get kills(): number { return this.killsByScene[this.index]; }
   addKill(): void { this.killsByScene[this.index]++; }
+  /** failsafe: whatever is still missing from the kill goal is written off */
+  writeOffKills(): void { this.killsByScene[this.index] = this.scene.spawnBudget; }
   get scene(): SceneDef { return LEVEL[this.index]; }
   get count(): number { return LEVEL.length; }
   get canSpawn(): boolean { return this.phase === 'active' && this.spawned < this.scene.spawnBudget; }

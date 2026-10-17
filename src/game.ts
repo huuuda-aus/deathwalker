@@ -286,6 +286,7 @@ export class Game {
     world.update(camX, dt);
 
     this.wind.update(dt);
+    this.dust.windSpeed = this.wind.speed;
     this.litter.update(dt, camX);
     this.sky.update(this.camera, now / 1000);
     // the muzzle fire lights the smoke around the barrels

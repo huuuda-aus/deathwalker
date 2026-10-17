@@ -147,6 +147,18 @@ export class Debris {
     return sum;
   }
 
+  /** Top of the highest settled rubble chunk within `radius` of (x, z) whose centre is below `maxY` (0 if none). */
+  heightAt(x: number, z: number, radius: number, maxY: number): number {
+    let top = 0;
+    const visit = (c: Chunk) => {
+      if (c.pos.y > maxY || Math.abs(c.pos.x - x) > radius + c.r || Math.abs(c.pos.z - z) > radius + c.r) return;
+      top = Math.max(top, c.pos.y + c.r);
+    };
+    // only rubble that has settled holds anything up; pieces still flying do not
+    this.forEachNearBox(this.sleepGrid, x - radius, 0, z - radius, x + radius, maxY, z + radius, visit);
+    return top;
+  }
+
   /**
    * Collect chunks near (x, z) that block ground units into `out` (entries are reused).
    * @returns how many were written (capped at out.length)

@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import type { Fx } from './fx';
 import { METAL_IMPACT, type Enemy, type Soldier } from './enemies';
 import type { Horse } from './horse';
+import type { Explosions } from './explosions';
 import type { Shells } from './shells';
 import type { Debris, FloorFn } from './debris';
 import type { Dust } from './dust';
 import { LANE } from './mech';
-import { CANNON } from './config';
+import { CANNON, WEAPON } from './config';
 import { UNIT, WOOD, IRON, box } from './cannonParts';
 import { Wreckage } from './wreckage';
 
@@ -26,8 +27,10 @@ const DEPLOY_TIME = 0.9;
 const DEPLOY_GLIDE = (CANNON.rideSpeed * DEPLOY_TIME) / 3;
 /** hit box (metres, relative to the axle, barrel toward +x): the carriage and barrel only */
 const BOX = { cx: 0.75, hx: 1.65, cy: 1.6, hy: 1.6, hz: 0.9 };
-/** how fast the gun swings round to face the mech (1/s) */
-const SWIVEL_RATE = 8;
+/** the barrel at rest, how fast it elevates (rad/s), and how long before the round it starts laying on its target (s) */
+const REST_PITCH = 0.12;
+const ELEVATE_RATE = 0.9;
+const LAY_TIME = 1.4;
 /** crew spots in metres, carriage-local with the barrel toward +x: standing on the deck, and at the gun */
 const DECK_SLOTS = [{ x: -0.9, z: -0.35 }, { x: -0.3, z: 0.35 }];
 const POST_SLOTS = [{ x: -1.3, z: -0.9 }, { x: -1.3, z: 0.9 }];
@@ -39,6 +42,7 @@ export interface CannonDeps {
   shells: Shells;
   debris: Debris;
   dust: Dust;
+  explosions: Explosions;
   /** surface height for falling wreckage */
   floor: FloorFn;
 }
@@ -83,9 +87,12 @@ export class CannonUnit implements Enemy {
   private t = 0;
   private fireTimer: number = CANNON.firstShotDelay;
   private recoil = 0;
-  /** which way the gun wants to point (+1 right, -1 left), and how far round the visible swivel has got */
-  private facing = 1;
-  private facingVis = 1;
+  /** the gun always points to the right (+1) and never turns */
+  private readonly facing = 1;
+  private readonly yaw = 0;
+  /** barrel elevation now, and the round being laid on (flight time and landing point) once the barrel starts to rise */
+  private pitch = REST_PITCH;
+  private laid: { flight: number; aim: THREE.Vector3; pitch: number } | null = null;
   private work = Math.random() * 6;
   private readonly carriage = new THREE.Group();
   private readonly wheels = [makeWheel(-0.65), makeWheel(0.65)];
@@ -137,10 +144,16 @@ export class CannonUnit implements Enemy {
     return this.state === 'fire' && !this.retreating && this.crewAboard().length + this.claims.length < CANNON.crew;
   }
 
+  /** carriage-local (x toward the barrel, z across) in metres to world x, z, given the gun's turn */
+  private local(lx: number, lz: number, gx: number, gz: number): { x: number; z: number } {
+    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+    return { x: gx + (lx * c + lz * sn) * UNIT, z: gz + (-lx * sn + lz * c) * UNIT };
+  }
+
   /** Where this slot's gunner stands, on the ground beside the gun. */
   private slotWorld(slot: number): { x: number; z: number } {
     const g = this.group.position, s = POST_SLOTS[slot];
-    return { x: g.x + s.x * this.facingVis * UNIT, z: g.z + s.z * UNIT };
+    return this.local(s.x, s.z, g.x, g.z);
   }
 
   /** Send a soldier to take a free crew slot. Returns false if there is none. */
@@ -179,16 +192,17 @@ export class CannonUnit implements Enemy {
 
   getBox(out: THREE.Box3): THREE.Box3 {
     const p = this.group.position;
-    const cx = p.x + BOX.cx * this.facingVis * UNIT;
+    const cx = p.x + BOX.cx * Math.cos(this.yaw) * UNIT;
     out.min.set(cx - BOX.hx * UNIT, (BOX.cy - BOX.hy) * UNIT, p.z - BOX.hz * UNIT);
     out.max.set(cx + BOX.hx * UNIT, (BOX.cy + BOX.hy) * UNIT, p.z + BOX.hz * UNIT);
     return out;
   }
 
-  damage(n: number, fx: Fx): boolean {
+  damage(n: number, fx: Fx, push?: THREE.Vector3): boolean {
     if (!this.alive) return false;
     this.hp -= n;
     if (this.hp > 0) return false;
+    if (push) this.vx += push.x * WEAPON.pushShare.vehicle;     // the pieces carry a little of the bullet's push
     this.state = 'dead';
     this.deadTime = 0;
     this.releaseCrew();
@@ -224,9 +238,10 @@ export class CannonUnit implements Enemy {
 
   /** a small blast: sparks and smoke, plus splinters and scrap that tumble, bounce and settle like real rubble */
   private explode(fx: Fx): void {
-    const { debris, dust, floor } = this.deps;
+    const { debris, dust, floor, explosions } = this.deps;
     const p = this.group.position;
     const at = tmpTarget.set(p.x + 0.3 * this.facing * UNIT, BOX.cy * UNIT * 0.6, p.z);
+    explosions.wreckBlast(at, CANNON.wreckBlastRadius, CANNON.wreckBlastScale);
     fx.burst(at, 30, 4, WRECK_FIRE);
     fx.muzzleFlash(at);
     dust.puff(at, 5, 0.5, 1.5);
@@ -286,7 +301,9 @@ export class CannonUnit implements Enemy {
     if (this.alive) this.placeCrew(this.state === 'ride' ? 0 : this.state === 'deploy' ? smooth(Math.min(1, this.t / DEPLOY_TIME)) : 1, dt);
   }
 
-  /** swivel to face the mech, and once the crew are in place fire whenever a round is loaded */
+  /**
+   * Lay the barrel on the next round smoothly while it loads, and fire once it is on target.
+   */
   private aim(dt: number, target: THREE.Vector3): void {
     this.recoil = Math.max(0, this.recoil - dt * 3);
     this.barrel.position.x = -0.3 * this.recoil;
@@ -295,28 +312,37 @@ export class CannonUnit implements Enemy {
     const crew = this.crewAboard().length;
     if (crew === 0) return;
 
-    const g = this.group.position;
-    this.facing = Math.sign(target.x - g.x) || 1;
-    this.facingVis += (this.facing - this.facingVis) * Math.min(1, dt * SWIVEL_RATE);
-    this.carriage.scale.x = UNIT * this.facingVis;
+    // the gun always points to the right, whatever the mech does
     // fewer hands load more slowly
     this.fireTimer -= (dt * crew) / CANNON.crew;
-    if (this.fireTimer <= 0) { this.fireTimer = CANNON.fireInterval; this.shoot(target); }
+    // shortly before the round is ready, pick where it will land and bring the barrel up to the angle for it
+    if (!this.laid && this.fireTimer <= LAY_TIME) this.laid = this.lay(target);
+    const goalPitch = this.laid ? this.laid.pitch : REST_PITCH;
+    this.pitch += THREE.MathUtils.clamp(goalPitch - this.pitch, -ELEVATE_RATE * dt, ELEVATE_RATE * dt);
+    this.barrelPivot.rotation.z = this.pitch;
+    if (this.fireTimer <= 0) {
+      if (this.laid && Math.abs(this.pitch - this.laid.pitch) < 0.03) this.shoot(this.laid);
+      else this.fireTimer = 0;                                 // not on target yet: it fires the moment it is
+    }
   }
 
-  /** Lob a shell roughly at where the mech is now: no lead, plus a random miss. */
-  private shoot(mech: THREE.Vector3): void {
+  /** Work out a round that lands roughly where the mech is now: no lead, plus a random miss. */
+  private lay(mech: THREE.Vector3): { flight: number; aim: THREE.Vector3; pitch: number } {
     const flight = CANNON.flightMin + Math.random() * (CANNON.flightMax - CANNON.flightMin);
     const z = THREE.MathUtils.clamp(mech.z + (Math.random() - 0.5) * 2 * CANNON.spreadZ, LANE.zMin, LANE.zMax);
-    tmpTarget.set(mech.x + (Math.random() - 0.5) * 2 * CANNON.spreadX, 0.3, z);
-
-    // raise the barrel to the launch angle, then fire from its mouth
+    const aim = new THREE.Vector3(mech.x + (Math.random() - 0.5) * 2 * CANNON.spreadX, 0.3, z);
     const g = this.group.position;
-    const dx = tmpTarget.x - g.x, dz = tmpTarget.z - g.z;
     const rise = 0.5 * CANNON.shellGravity * flight;
-    this.barrelPivot.rotation.z = Math.atan2(rise, Math.hypot(dx, dz) / flight);
+    return { flight, aim, pitch: Math.atan2(rise, Math.hypot(aim.x - g.x, aim.z - g.z) / flight) };
+  }
+
+  /** Fire the laid round from the barrel's mouth. */
+  private shoot(round: { flight: number; aim: THREE.Vector3 }): void {
+    this.fireTimer = CANNON.fireInterval;
+    this.laid = null;
+    this.group.updateMatrixWorld(true);
     this.barrelPivot.localToWorld(tmpMuzzle.set(BARREL_LEN, 0, 0));
-    this.deps.shells.launch(tmpMuzzle, tmpTarget, flight);
+    this.deps.shells.launch(tmpMuzzle, round.aim, round.flight);
     this.recoil = 1;
   }
 
@@ -331,7 +357,6 @@ export class CannonUnit implements Enemy {
   /** crew position between the deck (0) and the gun (1); they face the way of travel until deployed, then the mech */
   private placeCrew(k: number, dt = 0): void {
     const g = this.group.position;
-    const f = k >= 1 ? this.facingVis : 1;
     this.work += dt * 4;
     this.crew.forEach((c, i) => {
       if (c.state !== 'mounted') return;
@@ -340,7 +365,8 @@ export class CannonUnit implements Enemy {
       const y = DECK_Y * (1 - k) * UNIT;
       const facing = k >= 1 ? (this.facing || 1) : -1;
       const sway = k >= 1 ? Math.sin(this.work + i * 2) * 0.08 : 0;
-      c.station(g.x + lx * f * UNIT, y, g.z + lz * UNIT, facing, sway);
+      const at = this.local(lx, lz, g.x, g.z);
+      c.station(at.x, y, at.z, facing, sway);
     });
   }
 }
