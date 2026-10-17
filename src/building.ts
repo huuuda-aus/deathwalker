@@ -40,12 +40,23 @@ interface Block {
   total: number;
 }
 
+/** A collapsing piece of a building that something is standing on: where it is now, and whether it has crumbled. */
+export interface Carrier {
+  readonly tx: number;
+  readonly ty: number;
+  readonly tz: number;
+  /** has the body landed and fallen apart up to height `y` (where that spot started, before it came down)? */
+  crumbledTo(y: number): boolean;
+}
+
 /** Where an enemy appears in a bay, and what it needs to walk to the ledge. */
 export interface LedgeSpawn {
   pos: THREE.Vector3;
   ledgeZ: number;
   backZ: number;
   floorTop: (x: number, z: number, yMax: number) => number;
+  /** the falling block that took this floor, if it came down with one (not just a hole shot in it) */
+  carrierAt: (x: number, y: number) => Carrier | null;
 }
 
 /** How far a floor/wall member can reach horizontally from a pillar or support, in cells. */
@@ -339,7 +350,23 @@ export class Building {
       ledgeZ,
       backZ,
       floorTop: (fx, fz, yMax) => this.floorTop(fx, fz, yMax),
+      carrierAt: (fx, fy) => this.carrierAt(fx, fy),
     };
+  }
+
+  /** The falling block whose floor slab was under (x, y) a moment ago (y = the floor's top), or null if there is none. */
+  carrierAt(x: number, y: number): Carrier | null {
+    const c = Math.floor((x - this.x0) / CELL), r = Math.round(y / CELL) - 1;
+    for (const b of this.blocks) {
+      if (b.hitT >= 0 || !b.layers.some((l) => l.c === c && l.r === r)) continue;
+      return {
+        get tx() { return b.tx; },
+        get ty() { return b.ty; },
+        get tz() { return b.tz; },
+        crumbledTo: (h) => b.hitT >= 0 && b.baseRow * CELL + b.hitT * BREAK_SPEED >= h,
+      };
+    }
+    return null;
   }
 
   /** Which layer of member i contains depth z (or -1), given its box. */

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Fx } from './fx';
 import type { Blocker } from './debris';
+import type { Carrier } from './building';
 import { MECH_SCALE, LANE } from './mech';
 import { CAM_DIST } from './level';
 import { WEAPON, SOLDIER } from './config';
@@ -33,6 +34,8 @@ export interface SoldierEnv {
 const CHEST_Y = 1.6;
 const SOLDIER_R = 0.127;      // body radius used for rubble avoidance
 const LOOKAHEAD = 0.45;
+/** a soldier riding a collapse is buried after this long even if the block never settles (seconds) */
+const RIDE_MAX = 8;
 /** a body that falls less than this lands without bursting (it only slid off a ledge) */
 const PLUNGE_MIN_FALL = 0.8;
 /** the blood pool left under a flattened soldier */
@@ -52,13 +55,15 @@ const BLOCKER_BUF: Blocker[] = Array.from({ length: 48 }, () => ({ x: 0, z: 0, r
 const TURNS = [0, 30, 60, 90, 120].map((d) => (d * Math.PI) / 180);
 
 /** 'mounted': riding or manning something (a cannon): no AI, the owner sets its position */
-export type SoldierState = 'enter' | 'jump' | 'walk' | 'aim' | 'cooldown' | 'dead' | 'mounted';
+export type SoldierState = 'enter' | 'jump' | 'ride' | 'walk' | 'aim' | 'cooldown' | 'dead' | 'mounted';
 
 /** Standing on a building floor: walks from the back to the ledge, then shoots from there. */
 export interface Perch {
   ledgeZ: number;
   backZ: number;
   floorTop: (x: number, z: number, yMax: number) => number;
+  /** the collapsing block that took the floor from under (x, y), if the floor came down with one */
+  carrierAt: (x: number, y: number) => Carrier | null;
 }
 
 /** What a bullet strike throws up: pixel sparks of these colours, plus glowing embers that bounce and cool. */
@@ -128,6 +133,11 @@ export class Soldier implements Enemy {
   /** killed by being stepped on: lies flat where it stood */
   private squashed = false;
   /** thrown out of an upper floor: still falling, will burst on landing */
+  /** riding a collapsing floor down: the block, where he stood and where the block was when it took him, and for how long */
+  private ride: Carrier | null = null;
+  private rideT = 0;
+  private rideBase = new THREE.Vector3();
+  private rideFrom = new THREE.Vector3();
   private plunging = false;
   private plungeFrom = 0;
   private plungeVel = new THREE.Vector3();
@@ -662,6 +672,15 @@ export class Soldier implements Enemy {
       }
       return;
     }
+    if (this.state === 'ride') {
+      // the floor is coming down with the building: he rides it, alive, until it crumbles into rubble and buries him
+      const c = this.ride!;
+      this.rideT += dt;
+      g.position.set(this.rideBase.x + c.tx - this.rideFrom.x, this.rideBase.y + c.ty - this.rideFrom.y, this.rideBase.z + c.tz - this.rideFrom.z);
+      this.body.rotation.z = Math.sin(this.rideT * 22 + this.phase) * 0.09;
+      if (c.crumbledTo(this.rideBase.y) || this.rideT > RIDE_MAX) { this.ride = null; this.splat(fx); }
+      return;
+    }
     if (this.state === 'jump') {
       // fell through a broken floor: drop until something solid is under us
       this.vel.y -= 16 * dt;
@@ -704,6 +723,16 @@ export class Soldier implements Enemy {
 
     // a perched soldier whose floor was shot away falls
     if (this.perch && this.perch.floorTop(this.x, this.z, g.position.y + 0.05) < g.position.y - 0.03) {
+      const carrier = this.perch.carrierAt(this.x, g.position.y);
+      if (carrier) {
+        this.state = 'ride';
+        this.ride = carrier;
+        this.rideT = 0;
+        this.rideBase.copy(g.position);
+        this.rideFrom.set(carrier.tx, carrier.ty, carrier.tz);
+        this.resetPose();
+        return;
+      }
       this.state = 'jump';
       this.vel.set(0, 0, 0);
       this.fallStart = g.position.y;
