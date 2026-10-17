@@ -33,6 +33,7 @@ const FAR_ROWS: [z: number, scale: number, color: number, dense: boolean][] = [
 export class World {
   readonly group = new THREE.Group();
   private chunkSize = 120;
+  private centerChunk = NaN;
   private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; puddles: Puddle[] }>();
   private fireLights: FireLights;
   /** hot coals from shot barrels */
@@ -231,10 +232,10 @@ export class World {
     return { coals: this.coals, fx: this.fx ?? { sparks: () => {} }, dust: this.dust, solid: (x, y, z) => this.solidAt(x, y, z) };
   }
 
-  update(cameraX: number, dt = 1 / 60): void {
-    const center = Math.floor(cameraX / this.chunkSize);
-    const wanted = new Set([center - 1, center, center + 1]);
-    for (const i of wanted) {
+  /** build the chunks around `center` and drop the ones that fell out of range */
+  private syncChunks(center: number): void {
+    const inRange = (i: number) => i >= center - 1 && i <= center + 1;
+    for (let i = center - 1; i <= center + 1; i++) {
       if (!this.chunks.has(i)) {
         const c = this.buildChunk(i);
         this.chunks.set(i, c);
@@ -242,7 +243,7 @@ export class World {
       }
     }
     for (const [i, c] of this.chunks) {
-      if (!wanted.has(i)) {
+      if (!inRange(i)) {
         this.group.remove(c.group);
         c.buildings.forEach((b) => b.dispose());
         c.props.forEach((b) => b.dispose());
@@ -253,6 +254,14 @@ export class World {
         });
         this.chunks.delete(i);
       }
+    }
+  }
+
+  update(cameraX: number, dt = 1 / 60): void {
+    const center = Math.floor(cameraX / this.chunkSize);
+    if (center !== this.centerChunk) {
+      this.centerChunk = center;
+      this.syncChunks(center);
     }
     // pre-existing wreckage appears once the camera is close enough for it to settle in time
     for (const c of this.chunks.values()) {
@@ -274,6 +283,6 @@ export class World {
     this.coals.update(dt);
     // the ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world
     for (const t of this.groundMaps) t.offset.x = cameraX / GROUND_TILE;
-    this.group.children.forEach((o) => { if (o instanceof THREE.Mesh) o.position.x = cameraX; });
+    for (const o of this.group.children) if (o instanceof THREE.Mesh) o.position.x = cameraX;
   }
 }

@@ -26,11 +26,14 @@ import { Post } from './post';
 import { CAM_DIST, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
 import { PLAYER, CAMERA } from './config';
 
+/** adaptive resolution tuning (ms are per-frame averages over one second) */
+const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10, settleMs: 15000 };
+
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
 
 /** Owns every system, wires them together and runs the frame loop. */
 export class Game {
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: true });
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: false }) // the composer's own MSAA does the smoothing;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.5, 400);
   private readonly level = new LevelRunner();
@@ -75,6 +78,12 @@ export class Game {
   private cullTimer = 0;
   private camX = this.level.camX;
   private last = performance.now();
+  /** adaptive resolution: the pixel ratio follows frame time, within [MIN_RATIO, ratioCap] */
+  private ratioCap = Math.min(devicePixelRatio, 2);
+  private perfFrames = 0;
+  private perfMs = 0;
+  private goodSeconds = 0;
+  private lastRaise = -Infinity;
   /** 'menu': the main menu over the quiet skyline of the first scene; 'play': the game */
   private mode: 'menu' | 'play' = 'menu';
   /** where the reticle is drawn (CSS pixels): the mouse, or the locked target */
@@ -82,12 +91,11 @@ export class Game {
 
   constructor() {
     const { renderer, scene, camera, sun, rim } = this;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setPixelRatio(this.ratioCap);
     renderer.setSize(innerWidth, innerHeight);
     renderer.shadowMap.enabled = true;
     document.body.prepend(renderer.domElement);
     renderer.domElement.after(this.foreground.canvas);       // the frontmost layer, over the 3D view and under the HUD
-    const pixelRatio = renderer.getPixelRatio();
 
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
     this.applyAspect();
@@ -117,11 +125,8 @@ export class Game {
 
     const { world, debris, dust } = this;
     this.fx = new Fx(scene);
-    this.fx.setPixelRatio(pixelRatio);
     this.fx.setSurface((x, z, y) => world.surfaceTop(x, z, y));
     world.setFx(this.fx);
-    world.setPixelRatio(pixelRatio);
-    this.splashFx.setPixelRatio(pixelRatio);
 
     const sightTmp = new THREE.Vector3();
     const env: SoldierEnv = {
@@ -138,7 +143,6 @@ export class Game {
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
-    this.bullets.setPixelRatio(pixelRatio);
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
@@ -147,7 +151,7 @@ export class Game {
     this.mech.root.visible = false;
     this.placeCamera();
     new Menu(() => this.startPlaying());
-    this.syncViewport();
+    this.applyPixelRatio(this.ratioCap);
     addEventListener('resize', () => this.onResize());
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyQ') this.hud.setQuality(this.post.toggle());
@@ -178,6 +182,42 @@ export class Game {
     camera.aspect = innerWidth / innerHeight;
     camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(SCREEN_W / 2 / CAM_DIST / camera.aspect));
     camera.updateProjectionMatrix();
+  }
+
+  /** resolution-dependent sizes follow the renderer's pixel ratio */
+  private applyPixelRatio(ratio: number): void {
+    this.renderer.setPixelRatio(ratio);
+    this.post.setSize(innerWidth, innerHeight);
+    this.fx.setPixelRatio(ratio);
+    this.world.setPixelRatio(ratio);
+    this.splashFx.setPixelRatio(ratio);
+    this.bullets.setPixelRatio(ratio);
+    this.syncViewport();
+  }
+
+  /**
+   * Trade resolution for frame rate: a slow second steps the pixel ratio down; ten steady seconds try one step up.
+   * A raise that is promptly undone lowers the cap, so it settles instead of oscillating.
+   */
+  private adaptResolution(rawMs: number, now: number): void {
+    this.perfFrames++; this.perfMs += rawMs;
+    if (this.perfMs < 1000) return;
+    const avg = this.perfMs / this.perfFrames;
+    this.perfFrames = 0; this.perfMs = 0;
+    const ratio = this.renderer.getPixelRatio();
+    if (avg > RES.slowMs && ratio > RES.minRatio) {
+      if (now - this.lastRaise < RES.settleMs) this.ratioCap = ratio;
+      this.goodSeconds = 0;
+      this.applyPixelRatio(Math.max(RES.minRatio, ratio - RES.step));
+    } else if (avg <= RES.fastMs && ratio < this.ratioCap) {
+      if (++this.goodSeconds >= RES.raiseAfter) {
+        this.goodSeconds = 0;
+        this.lastRaise = now;
+        this.applyPixelRatio(Math.min(this.ratioCap, ratio + RES.step));
+      }
+    } else {
+      this.goodSeconds = 0;
+    }
   }
 
   private syncViewport(): void {
@@ -314,6 +354,7 @@ export class Game {
       return;
     }
     this.hud.updateFps(rawMs);
+    this.adaptResolution(rawMs, now);
 
     const active = !this.player.over;
     this.movePlayer(dt);
