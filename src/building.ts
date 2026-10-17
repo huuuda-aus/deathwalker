@@ -300,6 +300,22 @@ export class Building {
     return out;
   }
 
+  /** Floor positions in firing bays on any storey (the barrel stands on that bay's slab, clear of the front edge). */
+  bayFloorSpots(count: number, rnd: () => number): THREE.Vector3[] {
+    const out: THREE.Vector3[] = [];
+    for (let tries = 0; out.length < count && this.ledges.length > 0 && tries < 20; tries++) {
+      const l = this.ledges[Math.floor(rnd() * this.ledges.length)];
+      const p = new THREE.Vector3(l.x + (rnd() - 0.5) * 0.8, (l.r + 1) * CELL, this.z0 - 0.7 - rnd() * 1.0);
+      if (out.every((q) => Math.abs(q.y - p.y) > 0.1 || Math.hypot(q.x - p.x, q.z - p.z) > 0.5)) out.push(p);
+    }
+    return out;
+  }
+
+  /** A spot on the street against the front wall, along the building. */
+  streetSpot(rnd: () => number): THREE.Vector3 {
+    return new THREE.Vector3(this.x0 + CELL + rnd() * (this.width - 2 * CELL), 0, this.z0 + 0.3 + rnd() * 0.35);
+  }
+
   /**
    * Spawn data for an enemy that walks in from the floor of a bay to the ledge edge, or null if that floor is not
    * whole any more: the slab must still be there under the whole path across the bay (a floor shot out at the

@@ -5,6 +5,9 @@ import type { Dust } from './dust';
 import { GROUND_TILE, makeGroundTextures } from './ground';
 import { Coals } from './coals';
 import { FireBarrel, FireLights, type BarrelContext } from './fire';
+import { ExplosiveBarrel } from './explosiveBarrel';
+import type { Explosions } from './explosions';
+import { EXPLOSIVE_BARREL } from './config';
 import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
 import { mulberry32 } from './util';
@@ -34,13 +37,14 @@ export class World {
   readonly group = new THREE.Group();
   private chunkSize = 120;
   private centerChunk = NaN;
-  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; puddles: Puddle[] }>();
+  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] }>();
   private fireLights: FireLights;
   /** hot coals from shot barrels */
   readonly coals: Coals;
   /** the barrel hit by the last raycastBarrel() */
   hitBarrel: FireBarrel | null = null;
   private fx: Fx | null = null;
+  private explosions: Explosions | null = null;
   private groundMaps: THREE.Texture[] = [];
   /** the building hit by the last raycast() */
   lastBuilding: Building | null = null;
@@ -74,12 +78,13 @@ export class World {
     scene.add(this.group);
   }
 
-  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; puddles: Puddle[] } {
+  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
     const rng = mulberry32(index * 7919 + 13);
     const g = new THREE.Group();
     const buildings: Building[] = [];
     const props: Building[] = [];
     const barrels: FireBarrel[] = [];
+    const explosives: ExplosiveBarrel[] = [];
     const x0 = index * this.chunkSize;
 
     // destructible rows: the front row hosts enemies, the second row is scenery you can still wreck
@@ -120,7 +125,22 @@ export class World {
     for (const [z, scale, color, dense] of FAR_ROWS) silhouettes(z, scale, color, dense);
     const water = Puddles.build(index, this.chunkSize);
     g.add(water.mesh);
-    return { group: g, buildings, props, barrels, puddles: water.list };
+    // explosive barrels use their own random stream, so adding them leaves the city's layout as it was
+    const brng = mulberry32(index * 104729 + 7);
+    for (const b of buildings) {
+      const share = b.hostsEnemies ? 1 : EXPLOSIVE_BARREL.rearShare;
+      let n = brng() < EXPLOSIVE_BARREL.chance * share ? (brng() < EXPLOSIVE_BARREL.secondChance ? 2 : 1) : 0;
+      while (n-- > 0) {
+        const street = brng() < EXPLOSIVE_BARREL.streetShare;
+        const pos = street ? b.streetSpot(brng) : b.bayFloorSpots(1, brng)[0];
+        // it must stand on a floor that is really there
+        if (!pos || (!street && b.floorTop(pos.x, pos.z, pos.y + 0.05) < pos.y - 0.01)) continue;
+        const barrel = new ExplosiveBarrel(pos, street ? null : b);
+        g.add(barrel.group);
+        explosives.push(barrel);
+      }
+    }
+    return { group: g, buildings, props, barrels, explosives, puddles: water.list };
   }
 
   /** Visit every destructible building whose x-range overlaps [minX, maxX]. */
@@ -187,6 +207,38 @@ export class World {
     }
     return best;
   }
+
+  /** the explosive barrel hit by the last raycastExplosive() */
+  hitExplosive: ExplosiveBarrel | null = null;
+
+  /** Nearest explosive barrel along a ray (distance t, point in out). */
+  raycastExplosive(ray: THREE.Ray, out: THREE.Vector3): number {
+    let best = Infinity;
+    const p = new THREE.Vector3();
+    this.hitExplosive = null;
+    for (const c of this.chunks.values()) {
+      for (const e of c.explosives) {
+        const t = e.raycast(ray, p);
+        if (t < best) { best = t; out.copy(p); this.hitExplosive = e; }
+      }
+    }
+    return best;
+  }
+
+  /** A blast at `at` reaching `radius`: every explosive barrel inside it goes up, the nearer ones sooner. */
+  igniteBarrels(at: THREE.Vector3, radius: number): void {
+    const { chainDelay, chainSpread } = EXPLOSIVE_BARREL;
+    for (const c of this.chunks.values()) {
+      for (const e of c.explosives) {
+        if (e.gone) continue;
+        const d = e.blastPoint.distanceTo(at);
+        if (d <= radius) e.ignite(chainDelay + chainSpread * (d / radius));
+      }
+    }
+  }
+
+  /** The effects that make a barrel's bang; set once they exist. */
+  setExplosions(e: Explosions): void { this.explosions = e; }
 
   /** Pick a random intact firing bay with centre x in [minX, maxX]. */
   /**
@@ -277,6 +329,16 @@ export class World {
         const near = Math.abs(f.top.x - cameraX) < 40;
         f.group.visible = near && !f.gone;
         if (near) { f.update(dt, this.dust, this.barrelContext()); live.push(f); }
+      }
+    }
+    // explosive barrels: the ones near the camera tick; whoever goes off blows up
+    for (const c of this.chunks.values()) {
+      for (const e of c.explosives) {
+        if (e.gone) continue;
+        const near = Math.abs(e.group.position.x - cameraX) < 40;
+        e.group.visible = near;
+        if (!near && !e.lit) continue;
+        if (e.step(dt, (x, y, z) => this.surfaceTop(x, z, y)) === 'boom') this.explosions?.barrelBlast(e.blastPoint);
       }
     }
     this.fireLights.update(dt, live, cameraX);

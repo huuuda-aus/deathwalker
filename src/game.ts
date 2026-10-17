@@ -141,6 +141,7 @@ export class Game {
       },
     };
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
+    this.world.setExplosions(this.explosions);
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
