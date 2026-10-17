@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import type { Dust } from './dust';
 
 const GRAVITY = 8;
+/** sliding along the ground slows a piece at this rate (1/s) */
+const GROUND_DRAG = 3;
+/** landing faster than this (units/s) is a bounce; slower is just resting contact */
+const BOUNCE_MIN = 1;
 
 /** A piece blown off a wreck: it flies, tumbles and bounces until it comes to rest in the `rest` orientation. */
 interface Flung {
@@ -44,10 +48,20 @@ export class Wreckage {
       obj.rotation.z += spin.z * dt;
       if (obj.position.y > f.restY) continue;
       obj.position.y = f.restY;
-      vel.y *= -0.3;
-      vel.x *= 0.6; vel.z *= 0.6;
-      spin.multiplyScalar(0.6);
-      if (Math.abs(vel.y) < 0.4) {
+      const impact = -vel.y;
+      if (impact > BOUNCE_MIN) {
+        // a real bounce: it rebounds a little and loses some speed and spin
+        vel.y = impact * 0.3;
+        vel.x *= 0.6; vel.z *= 0.6;
+        spin.multiplyScalar(0.6);
+      } else {
+        vel.y = 0;
+      }
+      // on the ground it slides on and slows gradually rather than stopping dead
+      const drag = Math.exp(-GROUND_DRAG * dt);
+      vel.x *= drag; vel.z *= drag;
+      if (vel.y === 0) spin.multiplyScalar(Math.exp(-6 * dt));
+      if (vel.y === 0 && Math.hypot(vel.x, vel.z) < 0.15) {
         f.settled = true;
         if (f.rest.x !== undefined) obj.rotation.x = f.rest.x;
         if (f.rest.y !== undefined) obj.rotation.y = f.rest.y;

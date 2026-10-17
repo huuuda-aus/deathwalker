@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { Collider } from './debris';
 import { flameTexture, glowTexture } from './fireTextures';
 
-const METAL = new THREE.MeshStandardMaterial({ color: 0x9ea3ac, roughness: 0.3, metalness: 0.7 });
+/** the mech's main colour: gunmetal */
+const METAL = new THREE.MeshStandardMaterial({ color: 0x59616b, roughness: 0.32, metalness: 0.75 });
 const DARK = new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.45, metalness: 0.5 });
 const GLOW = new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xff7a00, emissiveIntensity: 2 });
 
@@ -17,7 +18,7 @@ export const LANE = { zMin: -3.5, zMax: 4.5 };
 /** Distance of reticle from the cockpit pivot (along x) below which the guns can't fire. */
 const MIN_AIM_DX = 1.0 * MECH_SCALE;
 
-// Digitigrade ("chicken walker") legs, solved with two-bone IK so feet plant on the ground.
+// Digitigrade legs with a backward-pointing knee, solved with two-bone IK so feet plant on the ground.
 const L1 = 1.2;            // thigh
 const L2 = 1.3;            // shin
 const STEP = 0.75;         // half stride: foot travels +-STEP about the hip
@@ -28,6 +29,12 @@ const PELVIS_Y = 2.1;
 const HIP_DROP = 0.2;      // hip joint below pelvis origin
 const ANKLE_H = 0.2;       // ankle height above ground when planted
 const LEG_Z = 1.0;
+/** the lower half turns toward the walking direction: how fast it eases (1/s), its top speed (rad/s), and the speed below which it stops following */
+const TURN_EASE = 9;
+const TURN_RATE = 7;
+const TURN_MIN_SPEED = 0.3;
+/** standing still this long, it turns back to face left */
+const IDLE_RETURN_DELAY = 0.5;
 
 function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -81,6 +88,11 @@ export class Mech {
   readonly pivotWorld = new THREE.Vector3();
 
   private pelvis = new THREE.Group();
+  /** the lower half: hip frame and legs. It turns about the vertical to face the way the mech walks; the cockpit above does not turn with it */
+  private lower = new THREE.Group();
+  /** which way the lower half faces: 0 = left (-x), PI/2 = toward the camera, PI = right */
+  private bodyYaw = 0;
+  private idleTime = 0;
   private cockpit = new THREE.Group();
   private legs: Leg[] = [];
   /** gait cycles completed (fractional) */
@@ -92,8 +104,9 @@ export class Mech {
     this.root.add(this.pelvis);
 
     // pelvis: wide hip frame
-    this.pelvis.add(box(1.7, 0.5, 1.9, DARK));
-    this.pelvis.add(box(1.0, 0.35, 1.2, METAL, 0, -0.3, 0));
+    this.pelvis.add(this.lower);
+    this.lower.add(box(1.7, 0.5, 1.9, DARK));
+    this.lower.add(box(1.0, 0.35, 1.2, METAL, 0, -0.3, 0));
 
     for (const [z, offset] of [[LEG_Z, 0], [-LEG_Z, 0.5]] as const) this.legs.push(this.buildLeg(z, offset));
     for (const r of [R_ANKLE, R_TOE, R_KNEE, R_ANKLE, R_TOE, R_KNEE, R_BODY]) {
@@ -180,32 +193,54 @@ export class Mech {
     }
   }
 
+  /**
+   * A stout leg in the style of the original: a bulky thigh and a long shin on cylindrical joint pins (hip, knee,
+   * ankle), with the knee pointing backward, ending in a flat robot foot.
+   */
   private buildLeg(z: number, offset: number): Leg {
     const hip = new THREE.Group();
     hip.position.set(0, -HIP_DROP, z);
-    hip.add(cyl(0.38, 0.55, DARK, 'z'));                       // hip joint
-    hip.add(box(0.5, L1, 0.42, METAL, 0, -L1 / 2, 0));          // thigh
-    hip.add(box(0.2, L1 * 0.6, 0.5, DARK, -0.3, -L1 * 0.5, 0)); // front armour plate
-    hip.add(cyl(0.06, L1 * 0.7, METAL, 'y', 0.3, -L1 * 0.45, 0.28)); // hydraulic piston
+    hip.add(cyl(0.3, 0.8, DARK, 'z'));                                  // hip joint
+    hip.add(box(0.55, L1, 0.55, METAL, 0, -L1 / 2, 0));                 // thigh
+    hip.add(box(0.2, L1 * 0.7, 0.62, DARK, -0.3, -L1 * 0.5, 0));        // front armour plate
+    hip.add(cyl(0.07, L1 * 0.75, METAL, 'y', 0.33, -L1 * 0.45, 0.34)); // hydraulic piston
 
     const knee = new THREE.Group();
     knee.position.y = -L1;
-    knee.add(cyl(0.32, 0.6, DARK, 'z'));                        // knee joint, points forward
-    knee.add(box(0.3, L2, 0.3, METAL, 0, -L2 / 2, 0));          // shin
-    knee.add(box(0.18, L2 * 0.55, 0.4, DARK, 0.2, -L2 * 0.45, 0));
+    knee.add(cyl(0.27, 0.78, DARK, 'z'));                               // knee joint, points backward
+    knee.add(box(0.42, L2, 0.46, METAL, 0, -L2 / 2, 0));                // shin
+    knee.add(box(0.16, L2 * 0.6, 0.52, DARK, 0.26, -L2 * 0.45, 0));     // rear armour plate
     hip.add(knee);
 
     const foot = new THREE.Group();
     foot.position.y = -L2;
-    foot.add(cyl(0.2, 0.45, DARK, 'z'));                        // ankle
-    foot.add(box(0.45, 0.2, 0.6, DARK, 0.2, -0.1, 0));          // heel
-    foot.add(box(0.95, 0.16, 0.2, METAL, -0.45, -0.12, 0));     // centre toe
-    foot.add(box(0.8, 0.16, 0.18, METAL, -0.4, -0.12, 0.25));   // side toes
-    foot.add(box(0.8, 0.16, 0.18, METAL, -0.4, -0.12, -0.25));
+    foot.add(cyl(0.22, 0.7, DARK, 'z'));                                // ankle joint
+    foot.add(box(0.55, 0.28, 0.6, DARK, 0.02, -0.04, 0));               // ankle housing
+    foot.add(box(1.3, 0.2, 0.66, METAL, -0.22, -0.1, 0));               // flat sole plate
+    const toeCap = box(0.4, 0.14, 0.66, DARK, -0.82, -0.12, 0);         // upturned toe
+    toeCap.rotation.z = 0.3;
+    foot.add(toeCap);
+    foot.add(box(0.3, 0.16, 0.7, DARK, 0.46, -0.1, 0));                 // heel block
     knee.add(foot);
 
-    this.pelvis.add(hip);
+    this.lower.add(hip);
     return { hip, knee, foot, offset };
+  }
+
+  /** Turn the lower half smoothly toward `target` (or back to facing left once it has been idle a moment). */
+  private turnBody(dt: number, target: number | null): void {
+    if (target === null) {
+      this.idleTime += dt;
+      if (this.idleTime < IDLE_RETURN_DELAY) return;
+      target = 0;
+    } else {
+      this.idleTime = 0;
+    }
+    const diff = THREE.MathUtils.euclideanModulo(target - this.bodyYaw + Math.PI, Math.PI * 2) - Math.PI;   // shortest way round
+    const step = diff * (1 - Math.exp(-dt * TURN_EASE));
+    const limit = TURN_RATE * dt;
+    this.bodyYaw += THREE.MathUtils.clamp(step, -limit, limit);
+    this.lower.rotation.y = this.bodyYaw;
   }
 
   /** Place the ankle at (dx, dy) relative to the hip and bend the reverse knee. */
@@ -215,7 +250,7 @@ export class Mech {
     if (dist > reach) { dx *= reach / dist; dy *= reach / dist; }
     const D = Math.hypot(dx, dy);
     const a = Math.acos(THREE.MathUtils.clamp((L1 * L1 + D * D - L2 * L2) / (2 * L1 * D), -1, 1));
-    const t1 = Math.atan2(dx, -dy) - a; // minus: knee bends forward (-x)
+    const t1 = Math.atan2(dx, -dy) + a; // plus: the knee bends backward (+x), as on the original walker
     const sx = dx - L1 * Math.sin(t1);
     const sy = dy + L1 * Math.cos(t1);
     const t2 = Math.atan2(sx, -sy);
@@ -229,11 +264,12 @@ export class Mech {
    * @param aim 3D world point the guns should point at
    */
   update(dt: number, vx: number, vz: number, aim: THREE.Vector3): void {
-    // Gait advances with ground distance covered; reverses when walking backward.
-    // Side-steps (depth walking) shuffle the legs at a reduced rate.
-    const forwardSpeed = (-vx + Math.abs(vz) * 0.6) / MECH_SCALE;
-    this.cycle += (forwardSpeed * dt) / STRIDE;
-    const amp = Math.min(1, Math.hypot(vx, vz) / MECH_SCALE / 1.5);
+    // The lower half turns to face the way it is walking (any direction), so the legs always step forward and the
+    // feet never slide sideways; the gait advances with the ground covered. Standing still, it swings back to face left.
+    const speed = Math.hypot(vx, vz);
+    this.turnBody(dt, speed > TURN_MIN_SPEED ? Math.atan2(vz, -vx) : null);
+    this.cycle += (speed / MECH_SCALE * dt) / STRIDE;
+    const amp = Math.min(1, speed / MECH_SCALE / 1.5);
 
     const bob = Math.abs(Math.sin(this.cycle * Math.PI * 2)) * 0.06 * amp;
     this.pelvis.position.y = PELVIS_Y - bob;

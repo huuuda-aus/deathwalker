@@ -21,6 +21,8 @@ export const CAMERA = {
   mechMargin: 0.92,
   /** debris farther than this many screens from the camera is culled */
   cullScreens: 2.5,
+  /** soldiers fight inside the mech's reachable area: the visible width, less this much at each side */
+  arenaPad: 0.8,
 } as const;
 
 export const SPAWN = {

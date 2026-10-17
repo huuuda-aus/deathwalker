@@ -8,6 +8,8 @@ type State = 'pulling' | 'bolting' | 'dead';
 
 /** hit box in metres around the horse's middle (it faces -x) */
 const BOX = { cx: -0.4, cy: 1.3, hx: 1.7, hy: 1.3, hz: 0.5 };
+/** how quickly a dead horse's slide fades (1/s): at a full gallop it travels about two units */
+const SLIDE_DAMP = 3.5;
 const GALLOP_RATE = { pulling: 14, bolting: 18 };
 
 /**
@@ -23,6 +25,8 @@ export class Horse implements Enemy {
   deadTime = 0;
   state: State = 'pulling';
   private hp: number = CANNON.horseHp;
+  /** speed it was running at when it died (toward -x): the body carries on sliding that way and the speed fades out */
+  private slide = 0;
   private phase = Math.random() * 6;
   private readonly legs: THREE.Group[] = [];
   private readonly body = new THREE.Group();
@@ -70,6 +74,7 @@ export class Horse implements Enemy {
     if (!this.alive) return false;
     this.hp -= n;
     if (this.hp > 0) return false;
+    this.slide = this.state === 'bolting' ? CANNON.rideSpeed * CANNON.horseBoltFactor : CANNON.rideSpeed;
     this.state = 'dead';
     this.deadTime = 0;
     const p = this.group.position;
@@ -85,6 +90,8 @@ export class Horse implements Enemy {
       // roll over onto its side
       this.deadTime += dt;
       const k = Math.min(1, this.deadTime / 0.5);
+      g.position.x -= this.slide * dt;
+      this.slide *= Math.exp(-SLIDE_DAMP * dt);
       g.rotation.x = -1.45 * k;
       g.position.y = 0.35 * UNIT * k;
       return;

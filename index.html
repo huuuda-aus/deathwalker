@@ -27,9 +27,30 @@
       #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
         font: 48px monospace; color: #ffb347; background: rgba(0,0,0,0.5); pointer-events: none; }
       #over small { font-size: 16px; }
+      /* ---- main menu: over the first level's skyline ---- */
+      #menu { position: fixed; inset: 0; display: none; font-family: monospace; color: #ffb347; user-select: none;
+        background: radial-gradient(ellipse at 28% 45%, rgba(2,6,10,0.15) 0%, rgba(2,6,10,0.72) 100%); }
+      body.menu #menu { display: block; }
+      body.menu #hud, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #go, body.menu #over { display: none; }
+      #menu-main { position: absolute; left: 9%; top: 50%; transform: translateY(-50%); }
+      #menu h1 { margin: 0; font-size: clamp(40px, 7vw, 96px); letter-spacing: 0.12em; text-shadow: 0 0 18px rgba(255,140,0,0.55), 4px 4px 0 #3a1c00; }
+      #menu .tag { margin: 6px 0 40px 4px; font-size: 14px; letter-spacing: 0.08em; opacity: 0.65; }
+      #menu-items { list-style: none; margin: 0; padding: 0; }
+      #menu-items li { margin: 0 0 14px; padding: 8px 18px 8px 40px; position: relative; cursor: pointer; width: fit-content; min-width: 280px;
+        font-size: 22px; letter-spacing: 0.14em; border: 2px solid transparent; }
+      #menu-items li::before { content: '\25B6'; position: absolute; left: 14px; opacity: 0; }
+      #menu-items li.sel { border-color: #ffb347; background: rgba(255,179,71,0.12); text-shadow: 0 0 10px rgba(255,140,0,0.7); }
+      #menu-items li.sel::before { opacity: 1; }
+      #menu-items li:hover { border-color: #ffb347; }
+      #menu-note { min-height: 20px; margin: 18px 0 0 4px; font-size: 14px; opacity: 0; transition: opacity 0.25s; color: #ffd9a0; }
+      #menu-note.on { opacity: 0.9; }
+      #kofi { position: absolute; right: 24px; bottom: 24px; width: 148px; text-align: center; text-decoration: none; color: #ffd9a0;
+        font-size: 12px; line-height: 1.35; letter-spacing: 0.03em; }
+      #kofi img { display: block; width: 148px; height: 148px; image-rendering: pixelated; background: #fff; }
+      #kofi span { display: block; margin-top: 8px; }
     </style>
   </head>
-  <body>
+  <body class="menu">
     <div id="hud">
       <div id="scene" style="margin-bottom:8px"></div>
       <div>SHIELD</div><div class="bar"><div id="shield"></div></div>
@@ -42,6 +63,23 @@
     <div id="go">&#9668; GO</div>
     <div id="over">GAME OVER<br /><small>press R</small></div>
     <div id="reticle"></div>
+    <div id="menu">
+      <div id="menu-main">
+        <h1>DEATHWALKER</h1>
+        <p class="tag">a browser remake inspired by Walker (1993)</p>
+        <ul id="menu-items">
+          <li data-action="start">START GAME</li>
+          <li data-action="code">ENTER LEVEL CODE</li>
+          <li data-action="fame">HALL OF FAME</li>
+          <li data-action="credits">CREDITS</li>
+        </ul>
+        <p id="menu-note"></p>
+      </div>
+      <a id="kofi" href="https://ko-fi.com/huuuda" target="_blank" rel="noopener">
+        <img src="kofi-qr.svg" alt="QR code for ko-fi.com/huuuda" />
+        <span>Enjoying this remake? Help me make more!</span>
+      </a>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

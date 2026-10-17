@@ -93,6 +93,8 @@ export class CannonUnit implements Enemy {
   private readonly barrelPivot = new THREE.Group();
   private readonly barrel = new THREE.Group();
   private wreck: Wreckage | null = null;
+  /** its velocity along x right now (rolling in, or coasting to a stop): pieces thrown off a wreck carry it */
+  private vx = 0;
   /** street infantry on their way to take over an unmanned gun, each with the crew slot it was given */
   private claims: { soldier: Soldier; slot: number }[] = [];
 
@@ -216,8 +218,8 @@ export class CannonUnit implements Enemy {
     carriage.add(box(0.5, 0.5, 0.5, CHAR_IRON, 0.1, AXLE_Y + 0.45)); // the broken mount
     const side = Math.random() < 0.5 ? -1 : 1;
     const wreck = (this.wreck = new Wreckage(this.group.parent ?? this.group));
-    wreck.fling(barrelPivot, new THREE.Vector3(side * (0.4 + 0.4 * Math.random()), 3.2, 0.3 + 0.3 * Math.random()), new THREE.Vector3(1, 0.5, side * 4), 0.24 * UNIT, { z: 0 });
-    wreck.fling(lost, new THREE.Vector3(-side * (0.4 + 0.4 * Math.random()), 2.8, 0.4), new THREE.Vector3(0.5, 0, -side * 5), 0.1 * UNIT, { x: Math.PI / 2 });
+    wreck.fling(barrelPivot, new THREE.Vector3(side * (0.4 + 0.4 * Math.random()) + this.vx, 3.2, 0.3 + 0.3 * Math.random()), new THREE.Vector3(1, 0.5, side * 4), 0.24 * UNIT, { z: 0 });
+    wreck.fling(lost, new THREE.Vector3(-side * (0.4 + 0.4 * Math.random()) + this.vx, 2.8, 0.4), new THREE.Vector3(0.5, 0, -side * 5), 0.1 * UNIT, { x: Math.PI / 2 });
   }
 
   /** a small blast: sparks and smoke, plus splinters and scrap that tumble, bounce and settle like real rubble */
@@ -249,6 +251,7 @@ export class CannonUnit implements Enemy {
     switch (this.state) {
       case 'ride':
         g.position.x -= CANNON.rideSpeed * dt;
+        this.vx = -CANNON.rideSpeed;
         this.roll(CANNON.rideSpeed, dt);
         // at its stop mark, or the horse is gone (shot dead), the cannon starts to deploy
         if (g.position.x <= this.stopX + DEPLOY_GLIDE || this.horse.state !== 'pulling') {
@@ -263,9 +266,10 @@ export class CannonUnit implements Enemy {
         const k = Math.min(1, this.t / DEPLOY_TIME);
         const speed = CANNON.rideSpeed * (1 - k) * (1 - k);
         g.position.x -= speed * dt;
+        this.vx = -speed;
         this.roll(speed, dt);
         this.pole.rotation.z = POLE_HITCHED + (POLE_GROUNDED - POLE_HITCHED) * k;
-        if (k >= 1) this.state = 'fire';
+        if (k >= 1) { this.state = 'fire'; this.vx = 0; }
         break;
       }
       case 'fire':
