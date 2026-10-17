@@ -67,6 +67,16 @@ export class Dust {
     });
   }
 
+  /** A column of black smoke from a fire: climbs steadily, widens, and is carried off by the wind as it thins. */
+  plume(at: THREE.Vector3, size: number, life: number): void {
+    if (this.pool.full) return;
+    this.pool.push({
+      pos: at.clone(),
+      vel: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.9 + Math.random() * 0.8, (Math.random() - 0.5) * 0.3),
+      life, maxLife: life, size0: size * 0.6, size1: size * (2.2 + Math.random()), drag: 0.25, alpha: 0.5, dark: 1, windK: 2.4,
+    });
+  }
+
   update(dt: number): void {
     const { items } = this.pool;
     for (let i = items.length - 1; i >= 0; i--) {

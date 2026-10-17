@@ -139,7 +139,7 @@ export class Game {
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
     this.bullets.setPixelRatio(pixelRatio);
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
 
@@ -273,6 +273,7 @@ export class Game {
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
     if (levelEvent === 'cleared' || levelEvent === 'complete') this.enemies.retreatAll();
     if (levelEvent === 'arrived') this.enemies.purgeRetreating();
+    this.enemies.viewTop = CAMERA.height + SCREEN_W / 2 / this.camera.aspect;
     this.enemies.update(dt, this.camX, active);
   }
 
@@ -287,6 +288,7 @@ export class Game {
 
     this.wind.update(dt);
     this.dust.windSpeed = this.wind.speed;
+    this.fx.windSpeed = this.wind.speed;
     this.litter.update(dt, camX);
     this.sky.update(this.camera, now / 1000);
     // the muzzle fire lights the smoke around the barrels

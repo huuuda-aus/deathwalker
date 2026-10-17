@@ -36,8 +36,8 @@ export class Explosions {
     this.blasts = new BlastFx(deps.scene);
   }
 
-  /** @param scale multiplies the particle counts (1 = a shell, ~2 = a vehicle) */
-  detonate(at: THREE.Vector3, radius: number, scale = 1): void {
+  /** @param scale multiplies the particle counts (1 = a shell, ~2 = a vehicle); @param shock multiplies how hard the shockwave shoves rubble */
+  detonate(at: THREE.Vector3, radius: number, scale = 1, shock = 1): void {
     const { fx, dust, world, debris } = this.deps;
     this.blasts.spawn(at, radius);
     fx.muzzleFlash(at);
@@ -52,7 +52,7 @@ export class Explosions {
       world.coals.emit(at, tmpV, 0.8 + Math.random() * 1.6);
     }
     // the shockwave shoves rubble outwards, and the ground throws up clods
-    debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale));
+    debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale) * shock);
     const floor = (x: number, z: number, y: number): number => world.surfaceTop(x, z, y);
     for (let i = 0; i < Math.round(8 * scale); i++) {
       const a = Math.random() * Math.PI * 2;
@@ -63,8 +63,8 @@ export class Explosions {
   }
 
   /** The blast of a destroyed vehicle: the same bang, and it hurts everything within its radius. */
-  wreckBlast(at: THREE.Vector3, radius: number, scale: number): void {
-    this.detonate(at, radius, scale);
+  wreckBlast(at: THREE.Vector3, radius: number, scale: number, shock = 1): void {
+    this.detonate(at, radius, scale, shock);
     this.onBlast?.(at, radius);
   }
 
