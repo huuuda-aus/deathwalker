@@ -39,3 +39,5 @@ export interface Ledge {
   taken: number;
 }
 export const STORY = 5; // rows per storey: slab, spandrel, window, window, header
+/** rows of solid base block the whole building stands on */
+export const BASE = 2;

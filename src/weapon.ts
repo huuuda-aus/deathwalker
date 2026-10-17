@@ -19,6 +19,8 @@ export interface WeaponDeps {
 const { fireRate: FIRE_RATE, heatPerShot: HEAT_PER_SHOT, coolRate: COOL_RATE, lockCoolRate: LOCK_COOL_RATE,
   unlockAt: UNLOCK_AT, damage: DAMAGE, wallRadius: WALL_RADIUS, refDist: REF_DIST } = WEAPON;
 const JITTER = new THREE.Vector3();
+const PUSH = new THREE.Vector3();
+const KILL_PUSH = WEAPON.killPush;
 /** wet earth, dark to light */
 const MUD = [0x3a2c1e, 0x4a3a28, 0x5c4630, 0x6b5a45];
 const EMBER_VEL = new THREE.Vector3();
@@ -112,7 +114,8 @@ export class Weapon {
         EMBER_VEL.set((Math.random() - 0.5) * 3, 1 + Math.random() * 2.5, 0.5 + Math.random() * 2);
         world.coals.emit(hit.point, EMBER_VEL, 0.6 + Math.random() * 0.9);
       }
-      hit.enemy.damage(DAMAGE, fx);
+      // a kill is flung along the bullet's path
+      hit.enemy.damage(DAMAGE, fx, PUSH.copy(this.ray.direction).multiplyScalar(KILL_PUSH));
       return;
     }
     if (hit.kind === 'ground') {

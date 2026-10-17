@@ -44,13 +44,14 @@ export class Dust {
     this.material.uniforms.uScale.value = viewportHeightPx / (2 * Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2));
   }
 
-  puff(at: THREE.Vector3, count: number, size: number, spread = 1.5): void {
+  /** @param dark 0 = the usual grey dust, 1 = near black */
+  puff(at: THREE.Vector3, count: number, size: number, spread = 1.5, dark = 0): void {
     for (let i = 0; i < count && !this.pool.full; i++) {
       const life = 0.8 + Math.random() * 1.2;
       this.pool.push({
         pos: at.clone().add(new THREE.Vector3((Math.random() - 0.5) * size, (Math.random() - 0.5) * size, (Math.random() - 0.5) * size)),
         vel: new THREE.Vector3((Math.random() - 0.5) * spread, Math.random() * spread * 0.8, Math.random() * spread * 0.5),
-        life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag: 1.8, alpha: 0.55, dark: 0, windK: 0.9,
+        life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag: 1.8, alpha: 0.55, dark, windK: 0.9,
       });
     }
   }

@@ -29,6 +29,9 @@ export interface ExplosionDeps {
 export class Explosions {
   private readonly blasts: BlastFx;
 
+  /** told about every blast that hurts whoever is near it (a wrecked vehicle), with where and how far it reaches */
+  onBlast: ((at: THREE.Vector3, radius: number) => void) | null = null;
+
   constructor(private readonly deps: ExplosionDeps) {
     this.blasts = new BlastFx(deps.scene);
   }
@@ -57,6 +60,12 @@ export class Explosions {
       tmpV.set(Math.cos(a) * out, 2 + Math.random() * 3, Math.sin(a) * out * 0.6);
       debris.spawn(at, DIRT_COLORS[i % DIRT_COLORS.length], 0.05 + Math.random() * 0.08, tmpV, floor);
     }
+  }
+
+  /** The blast of a destroyed vehicle: the same bang, and it hurts everything within its radius. */
+  wreckBlast(at: THREE.Vector3, radius: number, scale: number): void {
+    this.detonate(at, radius, scale);
+    this.onBlast?.(at, radius);
   }
 
   update(dt: number): void { this.blasts.update(dt); }

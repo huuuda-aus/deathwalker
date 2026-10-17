@@ -11,7 +11,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, TRUCK, STOMP, STALL, BLAST } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -44,17 +44,37 @@ export class EnemyManager {
   /** how long the scene has gone without a kill or a spawn (see failsafe) */
   private stallT = 0;
   private stallMark = '';
+  private clock = 0;
+  private rubbleHit = new WeakMap<Enemy, number>();
 
   constructor(private readonly deps: EnemyDeps) {
     const { debris, fx } = deps;
+    deps.explosions.onBlast = (at, radius) => this.blast(at, radius);
     // falling masonry crushes soldiers it touches
     debris.onContact = (pos, size) => {
       for (const e of this.list) {
         if (!e.alive) continue;
         e.getBox(crushBox).expandByScalar(size * 0.35);
-        if (crushBox.containsPoint(pos)) e.damage(99, fx);
+        if (!crushBox.containsPoint(pos)) continue;
+        if (e instanceof Soldier) { e.damage(99, fx); continue; }
+        // a gun or truck shrugs rubble off: a light knock, at most a few times a second however much falls on it
+        if (this.clock - (this.rubbleHit.get(e) ?? -1) < 0.25) continue;
+        this.rubbleHit.set(e, this.clock);
+        e.damage(BLAST.rubbleDamage, fx);
       }
     };
+  }
+
+  /** A vehicle blew up: infantry within the radius are killed, guns, trucks and horses are damaged (less toward the edge). */
+  private blast(at: THREE.Vector3, radius: number): void {
+    const { fx } = this.deps;
+    for (const e of [...this.list]) {                        // a chain reaction can add to the list
+      if (!e.alive) continue;
+      const d = e.getBox(crushBox).distanceToPoint(at);
+      if (d > radius) continue;
+      if (e instanceof Soldier) e.damage(99, fx);
+      else e.damage(BLAST.vehicleDamage * (1 - (1 - BLAST.edgeShare) * (d / radius)), fx);
+    }
   }
 
   reset(): void {
@@ -236,6 +256,7 @@ export class EnemyManager {
    */
   update(dt: number, camX: number, spawning: boolean): void {
     const { level, fx, mech, bullets } = this.deps;
+    this.clock += dt;
     if (spawning) this.failsafe(dt, camX);
     if (spawning) { this.spawn(dt, camX); this.spawnCannon(dt, camX); this.spawnTruck(dt, camX); }
     chest.copy(mech.pivotWorld);

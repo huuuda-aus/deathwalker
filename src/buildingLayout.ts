@@ -1,4 +1,4 @@
-import { CELL, STORY, T, type Bay, type BayKind, type Ledge } from './buildingSpec';
+import { BASE, CELL, STORY, T, type Bay, type BayKind, type Ledge } from './buildingSpec';
 
 /** The generated shape of a building: which structural member sits in every cell of its column x row grid. */
 export interface Layout {
@@ -81,8 +81,8 @@ function ruin(type: Uint8Array, cols: number, rows: number, colInfo: { pillar: b
 export function generateLayout(x0: number, rnd: () => number): Layout {
   // ---- layout: pillars between bays; variable height
   const stories = [1, 2, 2, 3, 3, 4, 5][Math.floor(rnd() * 7)];
-  const nBays = 2 + Math.floor(rnd() * 3);
-  const stairBay = rnd() < 0.5 ? Math.floor(rnd() * nBays) : -1;
+  const nBays = 3 + Math.floor(rnd() * 3);
+  const stairBay = Math.floor(nBays / 2);                   // the staircase sits in the middle of the building
   const bays: Bay[] = [];
   const ledges: Ledge[] = [];
   for (let i = 0; i < nBays; i++) {
@@ -90,11 +90,12 @@ export function generateLayout(x0: number, rnd: () => number): Layout {
     const open = Array.from({ length: stories }, (_, st) => st === 0 || rnd() < 0.7);
     bays.push({ kind, width: kind === 'stair' ? 2 : 3, start: 0, open });
   }
+  // the stairs stand against empty space, not a wall: the bay beside them is open on every floor
+  const beside = bays[stairBay + (rnd() < 0.5 ? -1 : 1)] ?? bays[stairBay - 1];
+  beside.kind = 'open';
+  beside.open.fill(true);
   // every building offers at least one firing bay
-  if (!bays.some((b) => b.kind === 'open')) {
-    const b = bays.find((x) => x.kind !== 'stair') ?? bays[0];
-    if (b.kind !== 'stair') b.kind = 'open';
-  }
+  if (!bays.some((b) => b.kind === 'open')) bays[0].kind = 'open';
   // per column: pillar, or (bay index, local column)
   const colInfo: { pillar: boolean; bay: number; local: number }[] = [{ pillar: true, bay: -1, local: 0 }];
   bays.forEach((b, i) => {
@@ -120,5 +121,14 @@ export function generateLayout(x0: number, rnd: () => number): Layout {
 
   // ---- ruin: missing roof, fallen upper pillars, holes in floors, shell damage, broken glazing
   const ruinCount = ruin(type, cols, rows, colInfo, stories, rnd);
-  return { stories, cols, rows, type, ledges, ruinCount };
+
+  // ---- the whole building stands on a big solid base block
+  const total = rows + BASE;
+  const full = new Uint8Array(cols * total);
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < BASE; r++) full[c * total + r] = T.Slab;
+    for (let r = 0; r < rows; r++) full[c * total + BASE + r] = type[c * rows + r];
+  }
+  for (const l of ledges) l.r += BASE;
+  return { stories, cols, rows: total, type: full, ledges, ruinCount };
 }

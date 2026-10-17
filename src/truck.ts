@@ -4,7 +4,7 @@ import { METAL_IMPACT, Soldier, type Enemy, type SoldierEnv } from './enemies';
 import type { Explosions } from './explosions';
 import type { Dust } from './dust';
 import type { Debris, FloorFn } from './debris';
-import { TRUCK } from './config';
+import { TRUCK, WEAPON } from './config';
 import { UNIT, box } from './cannonParts';
 import { Wreckage } from './wreckage';
 
@@ -35,6 +35,7 @@ const CHAR = new Map<THREE.Material, THREE.Material>([
 
 /** where the cab sits along the truck (metres) */
 const FRAME_CAB_X = 1.9;
+const FLAME_COLORS = [0xffd080, 0xff7020, 0xff4010, 0x802010];
 const scratch = new THREE.Vector3();
 const WHEEL_R = 0.55;
 const FRONT_AXLE = 1.9;
@@ -110,6 +111,9 @@ export class TruckUnit implements Enemy {
   retreating = false;
   gone = false;
   deadTime = 0;
+  /** the sections of the blown-up hulk, which burn as they fly, and the effects to burn with */
+  private flaming: THREE.Object3D[] = [];
+  private fx: Fx | null = null;
   private hp: number = TRUCK.hp;
   private state: State = 'drive';
   private readonly body = new THREE.Group();
@@ -174,10 +178,11 @@ export class TruckUnit implements Enemy {
     return out;
   }
 
-  damage(n: number, fx: Fx): boolean {
+  damage(n: number, fx: Fx, push?: THREE.Vector3): boolean {
     if (!this.alive) return false;
     this.hp -= n;
     if (this.hp > 0) return false;
+    if (push) { this.vel.x += push.x * WEAPON.pushShare.vehicle; this.vel.z += push.z * WEAPON.pushShare.vehicle; }   // the hulk carries a little of the bullet's push
     this.destroy(fx);
     return true;
   }
@@ -220,6 +225,7 @@ export class TruckUnit implements Enemy {
         this.deadTime += dt;
         this.wreck?.update(dt);
         this.wreck?.smoulder(dt, this.deadTime, scratch.set(g.x, BED_Y * UNIT, g.z), this.deps.dust);
+        this.burnHulk();
         break;
       case 'idle':
         break;
@@ -283,11 +289,12 @@ export class TruckUnit implements Enemy {
   }
 
   private destroy(fx: Fx): void {
+    this.fx = fx;
     this.state = 'dead';
     this.deadTime = 0;
     const p = this.group.position;
     const at = scratch.set(p.x, 1.2 * UNIT, p.z);
-    this.deps.explosions.detonate(at, TRUCK.blastRadius, TRUCK.blastScale);
+    this.deps.explosions.wreckBlast(at, TRUCK.blastRadius, TRUCK.blastScale);
     fx.burst(at, 20, 4, [0x8a1010, 0xffa040]);
     this.breakApart();
     // whoever was still aboard is thrown out of the wreck: about half do not survive it
@@ -299,6 +306,17 @@ export class TruckUnit implements Enemy {
       if (Math.random() < 0.5) s.damage(99, fx);
     }
     this.unloaded = this.spec.troops;
+  }
+
+  /** The hulk trails flames and black smoke while the blast has it in the air, and burns on for a while after. */
+  private burnHulk(): void {
+    const { fx } = this;
+    if (!fx || this.deadTime > TRUCK.flameTime) return;
+    const k = 1 - this.deadTime / TRUCK.flameTime;
+    for (const o of this.flaming) {
+      fx.burst(o.position, Math.ceil(3 * k), 1.6, FLAME_COLORS, false);
+      if (Math.random() < 0.5 * k) this.deps.dust.puff(o.position, 1, 0.5, 0.8, 1);
+    }
   }
 
   /** scorched, with the wheels, roof canvas, doors and bumper blown off and the hulk sagging */
@@ -314,13 +332,13 @@ export class TruckUnit implements Enemy {
     // every piece keeps the truck's momentum, on top of the blast
     const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x + this.vel.x, y, z + this.vel.z);
     for (const w of this.wheels) {
-      wreck.fling(w, v(r(-2, 2), r(2.5, 4), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2 });
+      wreck.fling(w, v(r(-2, 2), r(3.5, 5), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2 });
     }
-    wreck.fling(this.roof, v(r(-1.2, 1.2), r(4, 5.5), r(0, 1.5)), new THREE.Vector3(r(-2, 2), r(-1, 1), r(-2, 2)), 0.6 * UNIT, { x: 0, z: 0 });
+    wreck.fling(this.roof, v(r(-1.2, 1.2), r(5, 6), r(0, 1.5)), new THREE.Vector3(r(-2, 2), r(-1, 1), r(-2, 2)), 0.6 * UNIT, { x: 0, z: 0 });
     for (const d of this.doors) {
-      wreck.fling(d, v(r(-2.5, 2.5), r(3, 4.5), r(-1, 2.5)), new THREE.Vector3(r(-5, 5), r(-3, 3), r(-5, 5)), 0.03 * UNIT, { x: Math.PI / 2, y: 0, z: 0 });
+      wreck.fling(d, v(r(-2.5, 2.5), r(4, 5.5), r(-1, 2.5)), new THREE.Vector3(r(-5, 5), r(-3, 3), r(-5, 5)), 0.03 * UNIT, { x: Math.PI / 2, y: 0, z: 0 });
     }
-    wreck.fling(this.bumper, v(r(-2, 2), r(2.5, 3.5), r(0.5, 2)), new THREE.Vector3(r(-4, 4), r(-2, 2), r(-4, 4)), 0.15 * UNIT, { x: 0, z: 0 });
+    wreck.fling(this.bumper, v(r(-2, 2), r(3.5, 4.5), r(0.5, 2)), new THREE.Vector3(r(-4, 4), r(-2, 2), r(-4, 4)), 0.15 * UNIT, { x: 0, z: 0 });
     this.hulkToRubble();
   }
 
@@ -339,7 +357,8 @@ export class TruckUnit implements Enemy {
       pivot.position.set(centre.x, size / 2, centre.z);
       world.add(pivot);
       pivot.attach(section);                     // keeps where it is: the model now hangs from the ball's centre
-      debris.spawnBody(pivot, size, new THREE.Vector3((Math.random() - 0.5) * 1.2 + this.vel.x, 1 + Math.random(), (Math.random() - 0.3) * 0.8 + this.vel.z), floor);
+      debris.spawnBody(pivot, size, new THREE.Vector3((Math.random() - 0.5) * 1.6 + this.vel.x, TRUCK.launchMin + Math.random() * TRUCK.launchExtra, (Math.random() - 0.3) * 1.0 + this.vel.z), floor);
+      this.flaming.push(pivot);
     }
   }
 

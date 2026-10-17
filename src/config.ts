@@ -39,9 +39,9 @@ export const SPAWN = {
 
 export const SOLDIER = {
   hp: 4,
-  walkSpeed: 1.2,
+  walkSpeed: 2.2,
   /** troops off a truck run: to cover, or off to a spot of their own */
-  runSpeed: 2.6,
+  runSpeed: 3,
   /** a scattering trooper picks a spot within this far (along the street) of where it landed... */
   scatterSpread: 4,
   /** ...and never nearer the mech than a distance picked between these */
@@ -81,6 +81,16 @@ export const ENEMY_FIRE = {
   spreadDepth: 0.5,
 } as const;
 
+/** what the blast of a destroyed gun or truck does to whoever is within its radius */
+export const BLAST = {
+  /** a fast-moving chunk of rubble that hits a gun, truck or horse does this much (soldiers it kills outright) */
+  rubbleDamage: 2,
+  /** vehicles and horses take this much at the centre... */
+  vehicleDamage: 45,
+  /** ...falling to this share of it at the edge. Infantry caught in it are killed outright. */
+  edgeShare: 0.4,
+} as const;
+
 /** failsafe against a scene that cannot be finished (a straggler that wandered off, a kill that was never counted) */
 export const STALL = {
   /** no kill and no spawn for this long (s) and nobody in sight: anyone still alive off-screen is removed... */
@@ -100,6 +110,9 @@ export const WEAPON = {
   lockCoolRate: 0.4,
   unlockAt: 0.35,
   damage: 1,
+  /** a bullet kill flings the target along the bullet's path at this speed (units/s): a share of the bullet's momentum. Heavier things take less of it. */
+  killPush: 9,
+  pushShare: { soldier: 1, horse: 0.5, vehicle: 0.2 },
   wallRadius: 0.3,
   /** camera distance the jitter radii were tuned at */
   refDist: 24,
@@ -177,4 +190,8 @@ export const TRUCK = {
   blastRadius: 2.6,
   /** particle count multiplier for its explosion (a shell is 1) */
   blastScale: 5,
+  /** the blast throws the hulk up: launch speed (units/s, about 3-5 units of height) and how long it keeps burning in the air and after (s) */
+  launchMin: 4,
+  launchExtra: 1,
+  flameTime: 2.6,
 } as const;

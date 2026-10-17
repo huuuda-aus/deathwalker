@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Fx } from './fx';
 import { FLESH_IMPACT, type Enemy } from './enemies';
-import { CANNON } from './config';
+import { CANNON, WEAPON } from './config';
 import { UNIT, HORSE, MANE, IRON, box } from './cannonParts';
 
 type State = 'pulling' | 'bolting' | 'dead';
@@ -70,11 +70,12 @@ export class Horse implements Enemy {
   /** unhitched: run off to the left */
   release(): void { if (this.state === 'pulling') this.state = 'bolting'; }
 
-  damage(n: number, fx: Fx): boolean {
+  damage(n: number, fx: Fx, push?: THREE.Vector3): boolean {
     if (!this.alive) return false;
     this.hp -= n;
     if (this.hp > 0) return false;
     this.slide = this.state === 'bolting' ? CANNON.rideSpeed * CANNON.horseBoltFactor : CANNON.rideSpeed;
+    if (push) this.slide -= push.x * WEAPON.pushShare.horse;      // slide runs toward -x: a shot from the left slows it, from the right speeds it
     this.state = 'dead';
     this.deadTime = 0;
     const p = this.group.position;
