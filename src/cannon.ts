@@ -9,6 +9,7 @@ import type { Dust } from './dust';
 import { LANE } from './mech';
 import { CANNON, WEAPON } from './config';
 import { UNIT, WOOD, IRON, box } from './cannonParts';
+import { HpBar } from './hpBar';
 import { Wreckage } from './wreckage';
 
 /** horse sits this far ahead (-x) of the axle while hitched */
@@ -83,6 +84,7 @@ export class CannonUnit implements Enemy {
   gone = false;
   deadTime = 0;
   private hp: number = CANNON.hp;
+  private readonly hpBar = new HpBar((BOX.cy + BOX.hy) * UNIT + 0.4);
   private state: State = 'ride';
   private t = 0;
   private fireTimer: number = CANNON.firstShotDelay;
@@ -126,7 +128,7 @@ export class CannonUnit implements Enemy {
     barrelPivot.position.set(0.1, AXLE_Y + 0.45, 0);
     barrelPivot.add(barrel, new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), IRON));
     carriage.add(...this.wheels, pole, barrelPivot, box(1.5, 0.1, 1.1, WOOD, -0.5, DECK_Y - 0.05, 0));
-    this.group.add(carriage);
+    this.group.add(carriage, this.hpBar.group);
 
     for (const c of crew) c.mount();
     this.placeHorse();
@@ -261,6 +263,7 @@ export class CannonUnit implements Enemy {
 
   update(dt: number, target: THREE.Vector3): void {
     const g = this.group;
+    this.hpBar.set(this.hp / CANNON.hp, this.alive);
     // the scene is over: the crew abandon the gun and walk off with everyone else
     if (this.retreating && this.alive) { this.releaseCrew(); this.horse.release(); }
     switch (this.state) {

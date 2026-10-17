@@ -6,6 +6,7 @@ import type { Dust } from './dust';
 import type { Debris, FloorFn } from './debris';
 import { TRUCK, WEAPON } from './config';
 import { UNIT, box } from './cannonParts';
+import { HpBar } from './hpBar';
 import { Wreckage } from './wreckage';
 
 /** a wrecked truck's four big sections: where each one's centre lies along the truck (metres) and how big a ball stands in for it */
@@ -115,6 +116,7 @@ export class TruckUnit implements Enemy {
   private flaming: THREE.Object3D[] = [];
   private fx: Fx | null = null;
   private hp: number = TRUCK.hp;
+  private readonly hpBar = new HpBar(2 * BOX.hy * UNIT + 0.4);
   private state: State = 'drive';
   private readonly body = new THREE.Group();
   private readonly wheels: THREE.Group[] = [];
@@ -154,7 +156,7 @@ export class TruckUnit implements Enemy {
     this.group.rotation.y = this.yaw0;
     this.bumper = this.build();
     this.body.scale.setScalar(UNIT);
-    this.group.add(this.body);
+    this.group.add(this.body, this.hpBar.group);
   }
 
   get alive(): boolean { return this.state !== 'dead'; }
@@ -192,6 +194,7 @@ export class TruckUnit implements Enemy {
 
   update(dt: number): void {
     const g = this.group.position;
+    this.hpBar.set(this.hp / TRUCK.hp, this.alive);
     switch (this.state) {
       case 'drive':
         g.x += this.dirX * TRUCK.speed * dt;
