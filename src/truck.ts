@@ -182,6 +182,7 @@ export class TruckUnit implements Enemy {
 
   damage(n: number, fx: Fx, push?: THREE.Vector3): boolean {
     if (!this.alive) return false;
+    if (n > WEAPON.damage) console.log(`[hp] truck -${n.toFixed(1)}`, new Error().stack?.split('\n')[2]?.trim());   // TEMP
     this.hp -= n;
     if (this.hp > 0) return false;
     if (push) { this.vel.x += push.x * WEAPON.pushShare.vehicle; this.vel.z += push.z * WEAPON.pushShare.vehicle; }   // the hulk carries a little of the bullet's push
