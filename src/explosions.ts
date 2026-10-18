@@ -4,6 +4,7 @@ import type { Dust } from './dust';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { BlastFx } from './blastFx';
+import { EXPLOSIVE_BARREL as BARREL } from './config';
 
 const FIRE_COLORS = [0xffd080, 0xff7020, 0x884422, 0x444444];
 const SPARK_COLORS = [0xffe080, 0xffa030, 0xffffff];
@@ -51,6 +52,8 @@ export class Explosions {
       tmpV.set(Math.cos(a) * out, 2 + Math.random() * 4, Math.sin(a) * out * 0.6);
       world.coals.emit(at, tmpV, 0.8 + Math.random() * 1.6);
     }
+    // anything explosive caught in it goes up a beat later
+    world.igniteBarrels(at, radius);
     // the shockwave shoves rubble outwards, and the ground throws up clods
     debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale) * shock);
     const floor = (x: number, z: number, y: number): number => world.surfaceTop(x, z, y);
@@ -66,6 +69,15 @@ export class Explosions {
   wreckBlast(at: THREE.Vector3, radius: number, scale: number, shock = 1): void {
     this.detonate(at, radius, scale, shock);
     this.onBlast?.(at, radius);
+  }
+
+  /** An explosive barrel went off: the blast kills and hurts as a wreck's does, and bites the building it stands in. */
+  barrelBlast(at: THREE.Vector3): void {
+    const R = BARREL.blastRadius;
+    this.wreckBlast(at, R, BARREL.blastScale, BARREL.shock);
+    for (let i = 0; i < BARREL.buildingPasses; i++) {
+      this.deps.world.forEachBuilding(at.x - R, at.x + R, (b) => b.damage(at.x, at.y, at.z, R));
+    }
   }
 
   update(dt: number): void { this.blasts.update(dt); }

@@ -48,12 +48,16 @@ export class Weapon {
     this.cooldown -= dt;
     this.sinceShot += dt;
 
+    // the cooldown only counts down to "ready": left to run on while idle, the first press would fire every round it
+    // had "missed" in one frame (a tap after two idle seconds is forty bullets in the same spot)
     if (this.locked) {
+      this.cooldown = Math.max(0, this.cooldown);
       this.heat = Math.max(0, this.heat - LOCK_COOL_RATE * dt);
       if (this.heat <= UNLOCK_AT) this.locked = false;
       return;
     }
     if (!firing) {
+      this.cooldown = Math.max(0, this.cooldown);
       this.heat = Math.max(0, this.heat - COOL_RATE * dt);
       return;
     }
@@ -92,6 +96,7 @@ export class Weapon {
         hit.building = world.lastBuilding ?? undefined;
         hit.enemy = undefined;
         hit.barrel = undefined;
+        hit.explosive = undefined;
       }
     }
     // rubble is cover: if a chunk lies on the line from the gun to the target, the bullet hits that instead
@@ -104,6 +109,11 @@ export class Weapon {
       // knocked over along the bullet's path (gun to impact), spilling hot coals
       hit.barrel.shoot(this.dir.subVectors(hit.point, muzzle).normalize(), { coals: world.coals, fx, dust, solid: (x, y, z) => world.solidAt(x, y, z) });
       fx.sparks(hit.point, 3, 3, [0xffd080, 0xffffff]);
+      return;
+    }
+    if (hit.kind === 'explosive' && hit.explosive) {
+      hit.explosive.ignite();
+      fx.sparks(hit.point, 6, 3.5, [0xffd080, 0xffa040, 0xffffff]);
       return;
     }
     if (hit.kind === 'enemy' && hit.enemy) {

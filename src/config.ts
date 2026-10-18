@@ -210,6 +210,29 @@ export const AIRCRAFT = {
   flameTime: 26,
 } as const;
 
+/** Explosive oil barrels: dark drums that go up when shot, hit by a blast, or dropped from a collapsing floor. */
+export const EXPLOSIVE_BARREL = {
+  /** how far the blast kills infantry and hurts vehicles: more than a bomb, less than a truck wreck */
+  blastRadius: 2.2,
+  blastScale: 2.6,
+  /** how hard the shockwave shoves rubble */
+  shock: 1.6,
+  /** the blast bites the building this many times over (each pass weakens every layer in reach by one) */
+  buildingPasses: 3,
+  /** a barrel set off by a nearby blast goes up after this delay, longer toward the edge (seconds) */
+  chainDelay: 0.08,
+  chainSpread: 0.22,
+  /** a barrel dropping further than this when its floor goes explodes on landing */
+  fallBlast: 0.8,
+  /** barrels per building: chance of having any, of a second, and where they stand */
+  chance: 0.7,
+  secondChance: 0.35,
+  /** second-row buildings are scenery: scale the odds down */
+  rearShare: 0.5,
+  /** of those, the share that stand in the street against the front wall rather than in a bay (any floor) */
+  streetShare: 0.35,
+} as const;
+
 /** A bomb: about the size of a soldier, falls with the plane's speed and explodes on the first thing it meets (or when shot). */
 export const BOMB = {
   gravity: 5,

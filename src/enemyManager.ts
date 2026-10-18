@@ -245,7 +245,7 @@ export class EnemyManager {
       let s: Soldier;
       if (bay) {
         s = new Soldier(bay.pos.x, bay.pos.z, env);
-        s.perchAt(bay.pos, { ledgeZ: bay.ledgeZ, backZ: bay.backZ, floorTop: bay.floorTop });
+        s.perchAt(bay.pos, { ledgeZ: bay.ledgeZ, backZ: bay.backZ, floorTop: bay.floorTop, carrierAt: bay.carrierAt });
       } else {
         s = new Soldier(camX - half - 3 - Math.random() * 8, LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin), env);
       }

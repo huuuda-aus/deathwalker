@@ -332,7 +332,7 @@ export class TruckUnit implements Enemy {
     // every piece keeps the truck's momentum, on top of the blast
     const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x + this.vel.x, y, z + this.vel.z);
     for (const w of this.wheels) {
-      wreck.fling(w, v(r(-2, 2), r(3.5, 5), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2 });
+      wreck.fling(w, v(r(-2, 2), r(3.5, 5), r(-1.5, 2)), new THREE.Vector3(r(-3, 3), 0, r(-6, 6)), 0.225 * UNIT, { x: Math.PI / 2, y: 0, z: 0 });
     }
     wreck.fling(this.roof, v(r(-1.2, 1.2), r(5, 6), r(0, 1.5)), new THREE.Vector3(r(-2, 2), r(-1, 1), r(-2, 2)), 0.6 * UNIT, { x: 0, z: 0 });
     for (const d of this.doors) {
@@ -356,7 +356,9 @@ export class TruckUnit implements Enemy {
       const pivot = new THREE.Group();
       pivot.position.set(centre.x, size / 2, centre.z);
       world.add(pivot);
+      const lowest = new THREE.Box3().setFromObject(section).min.y;
       pivot.attach(section);                     // keeps where it is: the model now hangs from the ball's centre
+      section.position.y -= lowest;              // and sits on the ground with the ball, not above it (the chassis rode over the wheels)
       debris.spawnBody(pivot, size, new THREE.Vector3((Math.random() - 0.5) * 1.6 + this.vel.x, TRUCK.launchMin + Math.random() * TRUCK.launchExtra, (Math.random() - 0.3) * 1.0 + this.vel.z), floor);
       this.flaming.push(pivot);
     }
@@ -396,9 +398,11 @@ export class TruckUnit implements Enemy {
     for (const z of [-1.0, 1.0]) cab.add(box(1.3, 0.1, 0.55, OLIVE, FRONT_AXLE, 1.2, z));
     // canvas tilt over the whole bed, open at the back, with two windows each side
     const roofLen = 0.8 - TAILGATE_X;
-    this.roof.position.set((0.8 + TAILGATE_X) / 2, 0, 0);
-    this.roof.add(box(roofLen, 1.25, 2.0, TARP, 0, 2.4, 0), box(roofLen, 0.15, 1.7, TARP, 0, 3.05, 0));
-    for (const z of [-1.01, 1.01]) for (const x of [-1.3, 0.8]) this.roof.add(box(0.9, 0.5, 0.03, CANVAS_WINDOW, x, 2.7, z));
+    // its origin is the middle of the tilt, so that when it is blown off it tumbles about its centre and lands on the ground
+    const ROOF_Y = 2.4;
+    this.roof.position.set((0.8 + TAILGATE_X) / 2, ROOF_Y, 0);
+    this.roof.add(box(roofLen, 1.25, 2.0, TARP, 0, 0, 0), box(roofLen, 0.15, 1.7, TARP, 0, 3.05 - ROOF_Y, 0));
+    for (const z of [-1.01, 1.01]) for (const x of [-1.3, 0.8]) this.roof.add(box(0.9, 0.5, 0.03, CANVAS_WINDOW, x, 2.7 - ROOF_Y, z));
     body.add(this.roof);
     // six big tyres: one axle in front, a pair behind
     for (const x of [FRONT_AXLE, ...REAR_AXLES]) {
