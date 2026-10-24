@@ -32,6 +32,7 @@ The game opens on a main menu over the first level's skyline (rain, fires and al
 | **Hold right mouse button** | Lock on: the reticle sticks to the middle of the enemy under it (or nearest to it) for as long as you hold the button, or until it dies. Hold both buttons to keep the lock and fire |
 | **Q** | Toggle post-processing (bloom, motion blur, vignette, haze) |
 | **H** | Toggle the volumetric haze only |
+| **Esc** | Pause menu: resume, or back to the main menu |
 | **R** | Restart after game over |
 
 The mech never turns around: its body always faces left. Only the cockpit and its two rigid guns rotate, and only within the forward hemisphere, so you cannot shoot behind you. The guns overheat; release to cool down, and a full overheat locks them out until they cool.

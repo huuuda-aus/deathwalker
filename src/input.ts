@@ -34,6 +34,9 @@ export class Input {
     target.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  /** Forget whatever is held down (the game is pausing: keys and buttons let go meanwhile must not stay stuck). */
+  clear(): void { this.keys.clear(); this.fire = false; this.lockHeld = false; this.lockPressed = false; }
+
   /** Was the lock button pressed down since the last call? */
   takeLockPress(): boolean {
     const p = this.lockPressed;

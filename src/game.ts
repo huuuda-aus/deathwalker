@@ -18,6 +18,7 @@ import { Explosions } from './explosions';
 import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
 import { Menu } from './menu';
+import { PauseMenu } from './pauseMenu';
 import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
@@ -95,6 +96,8 @@ export class Game {
   private lastRaise = -Infinity;
   /** 'menu': the main menu over the quiet skyline of the first scene; 'play': the game */
   private mode: 'menu' | 'play' = 'menu';
+  /** the pause menu is up: the game is frozen on its last frame */
+  private paused = false;
   /** where the reticle is drawn (CSS pixels): the mouse, or the locked target */
   private reticlePx: { x: number; y: number } = { x: 0, y: 0 };
 
@@ -155,7 +158,7 @@ export class Game {
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.missiles = new Missiles({
       fx: this.fx, dust, world, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n),
-      add: (e) => this.enemies.add(e), shake: (at, amount) => this.shakeScreen(at, amount),
+      add: (e) => this.enemies.add(e), handOff: (from, to) => this.lock.handOff(from, to), shake: (at, amount) => this.shakeScreen(at, amount),
     });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
@@ -166,6 +169,13 @@ export class Game {
     this.mech.root.visible = false;
     this.placeCamera();
     new Menu(() => this.startPlaying());
+    new PauseMenu({
+      canPause: () => this.mode === 'play' && !this.player.over,
+      onPause: () => { this.paused = true; this.input.clear(); },
+      onResume: () => { this.paused = false; this.last = performance.now(); },
+      // the world (buildings, rubble) has no way to be put back, so a fresh page is the clean way to a new game
+      onQuit: () => location.reload(),
+    });
     this.applyPixelRatio(this.ratioCap);
     addEventListener('resize', () => this.onResize());
     addEventListener('keydown', (e) => {
@@ -381,6 +391,11 @@ export class Game {
       this.updateEnvironment(dt, now);
       this.post.render(dt, 0);
       this.reveal();
+      requestAnimationFrame(this.frame);
+      return;
+    }
+    if (this.paused) {
+      this.post.render(0, 0);
       requestAnimationFrame(this.frame);
       return;
     }

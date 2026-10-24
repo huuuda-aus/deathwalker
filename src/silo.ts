@@ -28,7 +28,7 @@ const FRAME_H = 0.3;
 const DOOR_W = PIT_HALF.x;
 const DOOR_SLIDE = DOOR_W * 0.95;
 /** the missile standing up in the open pit: tail height, and the tip */
-const MISSILE_TAIL = 0.1;
+const MISSILE_TAIL = 0.3;
 const MISSILE_TIP = MISSILE_TAIL + MISSILE_LEN;
 /** half-width of the hit box over the exposed missile */
 const CORE_HALF = 0.3;
@@ -202,7 +202,7 @@ export class SiloUnit implements Enemy {
     this.t = 0;
     this.missile.visible = false;
     const p = this.group.position;
-    this.deps.missiles.launch(tmp.set(p.x, MISSILE_TIP, p.z));
+    this.deps.missiles.launch(tmp.set(p.x, MISSILE_TIP, p.z), this);
   }
 
   /** doors apart by how far open; the missile rises out of the pit with them */

@@ -250,8 +250,8 @@ export const BOMB = {
 export const SILO = {
   /** the missile inside is the weak point: far tougher than a gun, so it takes more than one opening to bring down */
   hp: SOLDIER.hp * 40,
-  /** how far either side of the view's centre they sit (units), and the depth they are in */
-  offsetX: 7,
+  /** where they sit relative to the view's centre (units): side by side on the left half, a little apart, and the depth they are in */
+  offsetsX: [-9, -4],
   z: -2.5,
   /** seconds the doors take to slide open / shut */
   openTime: 1.2,
@@ -273,7 +273,7 @@ export const SILO = {
 /** The silos' missile: climbs straight up, slowly, far above the view, then arcs down toward where the mech was when it turned over. */
 export const MISSILE = {
   /** a missile is a target all the way: tougher than a bomb, but a second or so of sustained fire brings it down */
-  hp: SOLDIER.hp * 5,
+  hp: SOLDIER.hp * 3,
   /** climb: starting speed and acceleration (units/s, units/s²) */
   climbSpeed: 2,
   climbAccel: 3,

@@ -40,13 +40,19 @@
       #menu h1 { margin: 0; }
       #menu h1 img { display: block; margin: 0 auto; width: clamp(338px, 41.6vw, 624px); height: auto; filter: drop-shadow(0 0 18px rgba(255,140,0,0.35)); }
       #menu .tag { margin: 6px 0 40px; font-size: 14px; letter-spacing: 0.08em; opacity: 0.65; }
-      #menu-items { list-style: none; margin: 0; padding: 0; }
-      #menu-items li { margin: 0 auto 14px; padding: 8px 40px; position: relative; cursor: pointer; width: fit-content; min-width: 280px;
+      .menu-items { list-style: none; margin: 0; padding: 0; }
+      .menu-items li { margin: 0 auto 14px; padding: 8px 40px; position: relative; cursor: pointer; width: fit-content; min-width: 280px;
         font-size: 22px; letter-spacing: 0.14em; border: 2px solid transparent; }
-      #menu-items li::before { content: '\25B6'; position: absolute; left: 14px; opacity: 0; }
-      #menu-items li.sel { border-color: #ffb347; background: rgba(255,179,71,0.12); text-shadow: 0 0 10px rgba(255,140,0,0.7); }
-      #menu-items li.sel::before { opacity: 1; }
-      #menu-items li:hover { border-color: #ffb347; }
+      .menu-items li::before { content: '\25B6'; position: absolute; left: 14px; opacity: 0; }
+      .menu-items li.sel { border-color: #ffb347; background: rgba(255,179,71,0.12); text-shadow: 0 0 10px rgba(255,140,0,0.7); }
+      .menu-items li.sel::before { opacity: 1; }
+      .menu-items li:hover { border-color: #ffb347; }
+      /* ---- pause menu: over the frozen game ---- */
+      #pause { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
+        font-family: monospace; color: #ffb347; user-select: none; background: rgba(2,6,10,0.6); cursor: default; }
+      body.paused #pause { display: flex; }
+      body.paused #reticle { display: none; }
+      #pause h2 { margin: 0 0 32px; font-size: 40px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
       #menu-note { min-height: 20px; margin: 18px 0 0; font-size: 14px; opacity: 0; transition: opacity 0.25s; color: #ffd9a0; }
       #menu-note.on { opacity: 0.9; }
       #kofi { position: absolute; right: 24px; bottom: 24px; width: 148px; text-align: center; text-decoration: none; color: #ffd9a0;
@@ -69,11 +75,18 @@
     <div id="go">&#9668; GO</div>
     <div id="over">GAME OVER<br /><small>press R</small></div>
     <div id="reticle"></div>
+    <div id="pause">
+      <h2>PAUSED</h2>
+      <ul class="menu-items">
+        <li data-action="resume">RESUME</li>
+        <li data-action="quit">BACK TO MAIN MENU</li>
+      </ul>
+    </div>
     <div id="menu">
       <div id="menu-main">
         <h1><img src="deathwalker-headline.png" alt="DEATHWALKER" /></h1>
         <p class="tag">a browser remake inspired by Walker (1993)</p>
-        <ul id="menu-items">
+        <ul id="menu-items" class="menu-items">
           <li data-action="start">START GAME</li>
           <li data-action="code">ENTER LEVEL CODE</li>
           <li data-action="fame">HALL OF FAME</li>

@@ -240,7 +240,7 @@ export class EnemyManager {
   }
 
   /**
-   * The scene's boss: two silos set into the ground either side of the view, there from the start of the scene
+   * The scene's boss: two silos set into the ground side by side on the left of the view, there from the start of the scene
    * (shut, so just scenery until the boss opens them). Both come out of the scene's spawn budget.
    */
   private spawnBoss(camX: number): void {
@@ -249,7 +249,7 @@ export class EnemyManager {
     if (!def || this.bossScene === level.index) return;
     this.bossScene = level.index;
     const deps = { explosions, debris, dust, missiles, floor: (x: number, z: number, y: number) => world.surfaceTop(x, z, y) };
-    const silos = [-1, 1].map((side, i) => new SiloUnit(camX + side * SILO.offsetX, SILO.z, SILO.armTime + i * SILO.armStagger, deps));
+    const silos = SILO.offsetsX.map((dx, i) => new SiloUnit(camX + dx, SILO.z, SILO.armTime + i * SILO.armStagger, deps));
     for (const s of silos) { scene.add(s.group); this.list.push(s); }
     this.boss = new SiloBoss(silos, def.opensAfter);
     this.truckT = this.nextTruck(def);
