@@ -1,5 +1,6 @@
 import { LEVEL, type LevelRunner } from './level';
 import type { Weapon } from './weapon';
+import type { SiloBoss } from './boss';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -22,12 +23,14 @@ export class Hud {
   private lives = $('lives');
   private hit = $('hit');
   private over = $('over');
+  private bossBar = $('boss');
+  private bossFills = [...this.bossBar.querySelectorAll<HTMLElement>('.seg > div')];
   private fpsFrames = 0;
   private fpsTime = 0;
   private fpsWorst = 0;
   private sceneHtml = '';
 
-  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon }) {}
+  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null }) {}
 
   setQuality(postOn: boolean): void {
     this.quality.textContent = `Q: post-fx ${postOn ? 'on' : 'off'}  |  H: haze`;
@@ -53,7 +56,7 @@ export class Hud {
       if (i > level.index) return `SCENE ${i + 1}  --`;
       const done = i < level.index || level.phase === 'cleared' || level.phase === 'complete';
       const tag = done ? '  CLEARED' : '';
-      return `SCENE ${i + 1}  KILLED ${k}/${def.spawnBudget}${tag}`;
+      return def.boss ? `SCENE ${i + 1}  BOSS${tag}` : `SCENE ${i + 1}  KILLED ${k}/${def.spawnBudget}${tag}`;
     }).join('<br>');
     if (html !== this.sceneHtml) { this.sceneHtml = html; this.scene.innerHTML = html; }
 
@@ -63,6 +66,17 @@ export class Hud {
     setText(this.lives, `LIVES ${'■'.repeat(Math.max(0, player.lives))}`);
     player.hitFlash = Math.max(0, player.hitFlash - dt * 3);
     this.hit.style.opacity = String(player.hitFlash);
+
+    // the boss's health, one segment per silo; dimmed while its doors are shut and it cannot be hurt
+    const boss = this.deps.boss();
+    const showBoss = boss !== null && level.phase === 'active';
+    this.bossBar.style.display = showBoss ? 'flex' : 'none';
+    if (showBoss) {
+      boss.silos.forEach((s, i) => {
+        this.bossFills[i].style.width = `${s.hpFraction * 100}%`;
+        this.bossFills[i].parentElement!.classList.toggle('shut', !s.vulnerable);
+      });
+    }
 
     this.reticle.style.opacity = canFire ? '1' : '0.35';
     this.reticle.style.transform = `translate(${reticle.x}px, ${reticle.y}px)`;

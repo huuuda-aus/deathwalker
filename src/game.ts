@@ -13,6 +13,7 @@ import { Fx } from './fx';
 import type { SoldierEnv } from './enemies';
 import { EnemyManager } from './enemyManager';
 import { Shells } from './shells';
+import { Missiles } from './missiles';
 import { Explosions } from './explosions';
 import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
@@ -59,6 +60,7 @@ export class Game {
   private readonly weapon: Weapon;
   private readonly explosions: Explosions;
   private readonly shells: Shells;
+  private readonly missiles: Missiles;
   private readonly bullets: Bullets;
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
@@ -79,6 +81,8 @@ export class Game {
   /** walking speed multiplier from rubble underfoot (1 = clear ground) */
   private rubbleSlow = 1;
   private cullTimer = 0;
+  /** screen shake: how far the camera is thrown about right now (world units), dying away */
+  private shake = 0;
   private camX = this.level.camX;
   private last = performance.now();
   /** the views start black and fade in once the first frame has rendered (the shaders compile on it) */
@@ -149,10 +153,14 @@ export class Game {
     this.explosions = new Explosions({ scene, fx: this.fx, dust, world, debris });
     this.world.setExplosions(this.explosions);
     this.shells = new Shells({ scene, fx: this.fx, dust, world, debris, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n) });
+    this.missiles = new Missiles({
+      fx: this.fx, dust, world, explosions: this.explosions, colliders: this.mech.colliders, onPlayerHit: (n) => this.hurtPlayer(n),
+      add: (e) => this.enemies.add(e), shake: (at, amount) => this.shakeScreen(at, amount),
+    });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
-    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon });
+    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss });
 
     // the menu shows the first scene's skyline and weather, without the mech or any fighting
     this.mech.root.visible = false;
@@ -185,11 +193,16 @@ export class Game {
   }
 
   /** the camera at the level's current view */
-  private placeCamera(): void {
+  private placeCamera(dx = 0, dy = 0): void {
     const { camera } = this;
-    camera.position.set(this.camX, CAMERA.height, CAM_DIST);
-    camera.lookAt(this.camX, CAMERA.height - 0.5, 0);
+    camera.position.set(this.camX + dx, CAMERA.height + dy, CAM_DIST);
+    camera.lookAt(this.camX + dx, CAMERA.height - 0.5 + dy, 0);
     camera.updateMatrixWorld();
+  }
+
+  /** A blast at `at` shakes the screen, less the farther from the middle of the view it is. */
+  private shakeScreen(at: THREE.Vector3, amount: number): void {
+    this.shake = Math.max(this.shake, amount * Math.max(0, 1 - Math.abs(at.x - this.camX) / (SCREEN_W * 1.2)));
   }
 
   /** Lock the horizontal view to SCREEN_W at the gameplay depth, whatever the window aspect. */
@@ -254,6 +267,7 @@ export class Game {
     this.enemies.reset();
     this.lock.release();
     this.shells.clear();
+    this.shake = 0;
     this.bullets.clear();
     this.explosions.clear();
     Object.assign(this.player, newPlayer());
@@ -394,7 +408,15 @@ export class Game {
 
     this.hud.update(dt, this.mech.canFire, this.reticlePx, this.lock.target !== null);
     this.updateEnvironment(dt, now);
-    this.post.render(dt, this.level.camVel);
+    // the shake moves the camera only for the drawing: aiming and everything else use the steady view
+    this.shake *= Math.exp(-dt * 5);
+    if (this.shake > 0.004) {
+      this.placeCamera((Math.random() - 0.5) * 2 * this.shake, (Math.random() - 0.5) * 2 * this.shake);
+      this.post.render(dt, this.level.camVel);
+      this.placeCamera();
+    } else {
+      this.post.render(dt, this.level.camVel);
+    }
     this.reveal();
     requestAnimationFrame(this.frame);
   };

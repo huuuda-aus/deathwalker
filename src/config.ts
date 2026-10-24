@@ -241,3 +241,56 @@ export const BOMB = {
   /** shield lost when it lands within the blast radius or hits the mech */
   damage: 20,
 } as const;
+
+/**
+ * Level 1 boss: two missile silos set into the ground. They stay shut and unhurtable while the infantry wave
+ * is on; once enough of it has been sent in they open together, and each arms and launches a slow ballistic
+ * missile at the mech before closing again. Only an open silo can be damaged.
+ */
+export const SILO = {
+  /** the missile inside is the weak point: far tougher than a gun, so it takes more than one opening to bring down */
+  hp: SOLDIER.hp * 40,
+  /** how far either side of the view's centre they sit (units), and the depth they are in */
+  offsetX: 7,
+  z: -2.5,
+  /** seconds the doors take to slide open / shut */
+  openTime: 1.2,
+  closeTime: 1.2,
+  /** seconds both stay shut before they open again (counted from the moment both are shut) */
+  closedTime: 3,
+  /** seconds a silo sits open before it launches; the second one's countdown is this much longer */
+  armTime: 4.5,
+  armStagger: 0.9,
+  /** seconds the missile takes to leave the silo, still a target while it does */
+  fireTime: 0.8,
+  /** with only one silo left it runs its whole cycle this much faster */
+  enrageSpeed: 1.6,
+  /** destroyed: the blast (it hurts whoever is near, as a wrecked gun's does) */
+  wreckBlastRadius: 2.2,
+  wreckBlastScale: 4,
+} as const;
+
+/** The silos' missile: climbs straight up, slowly, far above the view, then arcs down toward where the mech was when it turned over. */
+export const MISSILE = {
+  /** a missile is a target all the way: tougher than a bomb, but a second or so of sustained fire brings it down */
+  hp: SOLDIER.hp * 5,
+  /** climb: starting speed and acceleration (units/s, units/s²) */
+  climbSpeed: 2,
+  climbAccel: 3,
+  /** the height it turns over at (units): well off the top of the view, so the descent is what the mech has to dodge */
+  apexMin: 16,
+  apexMax: 24,
+  /** seconds the descent takes from the top of the climb to the aim point: slow enough to walk out from under */
+  flightMin: 3,
+  flightMax: 5,
+  gravity: 3.2,
+  /** how far from the mech's position at the turn-over the aim point may lie */
+  spreadX: 2,
+  spreadZ: 1,
+  blastRadius: 3,
+  blastScale: 5,
+  /** shield lost when it lands within the blast radius: strips most of the shield at once */
+  damage: 45,
+  /** screen shake (world units of camera movement) for a blast on screen */
+  shake: 0.45,
+} as const;

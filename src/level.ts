@@ -15,10 +15,13 @@ export const FOLLOW_OFFSET = 8;
  * in, and when) are data: see levels/level1.json and levelData.ts.
  */
 
+/** TEMP (testing): start the level this many scenes in. 0 = play from the beginning. */
+const DEBUG_SKIP_SCENES: number = 4;
+
 /** The first scene begins this far into the first screen. */
 const FIRST_SCENE_START = 0.5;
 
-export { LEVEL, type SceneDef, type SpawnEvent } from './levelData';
+export { LEVEL, type SceneDef, type SpawnEvent, type BossDef } from './levelData';
 
 /** Progress (screens) at which each scene's view first locks in. Scenes are contiguous. */
 const SCENE_START: number[] = LEVEL.reduce<number[]>(
@@ -33,12 +36,12 @@ export type LevelEvent = 'cleared' | 'arrived' | 'complete' | null;
 export const camXAt = (screens: number): number => -screens * SCREEN_W - SCREEN_W / 2;
 
 /** Start view: progress 0..1, mech parked near its right edge. */
-export const START_CAM_X = camXAt(0);
+export const START_CAM_X = camXAt(DEBUG_SKIP_SCENES === 0 ? 0 : SCENE_START[DEBUG_SKIP_SCENES]);
 export const START_MECH_X = START_CAM_X + SCREEN_W * 0.4;
 
 /** Scene runner: owns the on-rails camera and the kill-gate state machine. */
 export class LevelRunner {
-  index = 0;
+  index = DEBUG_SKIP_SCENES;
   /**
    * entering: camera rails into the first scene.
    * active:   scene running, camera confined to the scene.
@@ -51,6 +54,8 @@ export class LevelRunner {
   /** everything sent in so far this scene (all kinds), and how many street infantry of it */
   spawned = 0;
   infantrySpawned = 0;
+  /** the scene's boss has been destroyed: what ends a boss scene */
+  bossDown = false;
   /** which of the scene's events have gone (by index into `scene.events`) */
   readonly fired = new Set<number>();
   camX = START_CAM_X;
@@ -68,10 +73,10 @@ export class LevelRunner {
   get progress(): number { const n = this.scene.infantry.count; return n === 0 ? 1 : this.infantrySpawned / n; }
 
   /** a scene begins: nothing has been sent in yet */
-  private beginScene(): void { this.spawned = 0; this.infantrySpawned = 0; this.fired.clear(); }
+  private beginScene(): void { this.spawned = 0; this.infantrySpawned = 0; this.bossDown = false; this.fired.clear(); }
 
   reset(): void {
-    this.index = 0; this.phase = 'entering'; this.killsByScene.fill(0); this.beginScene();
+    this.index = DEBUG_SKIP_SCENES; this.phase = 'entering'; this.killsByScene.fill(0); this.beginScene();
     this.camX = START_CAM_X; this.camVel = 0;
   }
 
@@ -87,13 +92,13 @@ export class LevelRunner {
     const follow = mechX - FOLLOW_OFFSET;
 
     if (this.phase === 'entering') {
-      const { max } = this.range(0);
+      const { max } = this.range(this.index);
       this.camX = Math.max(max, this.camX - RAIL_SPEED * dt);
       if (this.camX <= max) { this.camX = max; this.phase = 'active'; event = 'arrived'; }
     } else if (this.phase === 'active') {
       const { min, max } = this.range(this.index);
       this.camX += (Math.min(max, Math.max(min, follow)) - this.camX) * Math.min(1, dt * 4);
-      if (this.kills >= this.scene.spawnBudget) {
+      if (this.scene.boss ? this.bossDown : this.kills >= this.scene.spawnBudget) {
         this.phase = this.index === LEVEL.length - 1 ? 'complete' : 'cleared';
         event = this.phase === 'complete' ? 'complete' : 'cleared';
       }

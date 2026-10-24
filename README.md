@@ -42,6 +42,7 @@ The mech never turns around: its body always faces left. Only the cockpit and it
 - Enemies arrive in waves. Most spawn **inside the buildings**, walk to a ledge and shoot from there; the rest walk in from off-screen. Soldiers on the street steer around rubble and only fire when they have a clear line of fire.
 - **Buildings are destructible ruins** built from floor slabs, pillars, walls, glazing and stairwells. A load-path solver collapses whatever loses its support, and shooting out the base of a building brings the whole thing down, crushing everyone inside. A collapsed building spawns no more enemies.
 - **Rubble is physical and persistent.** It piles up, blocks soldiers and bullets, is kicked aside by the mech's legs, and slows the mech down when it is dense.
+- **Level 1 boss: the missile silos** (last scene). Two silos sit in the ground either side of the view, shut and unhurtable while the infantry wave is on. Once enough of it has been sent in they open together; only an open silo can be damaged (shut doors just spark). Each launches a slow missile that climbs, then arcs down onto where you were standing, so keep moving. Missiles can be shot down, and loop up well off the top of the screen before they come back, so you have a few seconds to walk away. They close and reopen in unison, but each has its own countdown, so shooting one does not hold up the other; with one gone the survivor works faster. The scene has no kill count: infantry keeps coming, with a truck of troops every 30 seconds or so, until both silos are destroyed (or you die).
 - Your shield is your health; you have three lives.
 
 ## How the shooting works
@@ -58,6 +59,9 @@ src/
   weapon.ts     hitscan guns, heat, jitter
   targeting.ts  ray casts against enemies / walls / ground
   enemies.ts    soldiers: steering, line of fire, ledges, corpses
+  boss.ts       level boss: opens the two silos in unison, enrages the survivor
+  silo.ts       one silo: closed/opening/exposed/firing/closing, hit box, wreck
+  missiles.ts   the silos' missiles: slow climb off-screen, then a lob onto the mech; shootable
   building.ts   destructible buildings, ruin generation, collapse solver
   world.ts      sky, ground, parallax city, chunk streaming
   debris.ts     rubble physics (sleeping bodies, spatial hash), dust
