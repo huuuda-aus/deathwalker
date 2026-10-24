@@ -16,7 +16,7 @@ export const FOLLOW_OFFSET = 8;
  */
 
 /** TEMP (testing): start the level this many scenes in. 0 = play from the beginning. */
-const DEBUG_SKIP_SCENES: number = 4;
+const DEBUG_SKIP_SCENES: number = 0;
 
 /** The first scene begins this far into the first screen. */
 const FIRST_SCENE_START = 0.5;
