@@ -36,7 +36,7 @@ export const sfx = {
     let h = held.get(key);
     if (!h) {
       if (audio.ctx.state !== 'running') return;
-      h = { handle: audio.loop(id, { ...opts, gain: 0 }), seen: clock, ttl };
+      h = { handle: audio.loop(id, opts), seen: clock, ttl };
       held.set(key, h);
     }
     h.seen = clock;
@@ -68,7 +68,7 @@ export const sfx = {
   },
 
   /** the mech's guns: held while they fire; pitch climbs a little as they heat up */
-  gun(heat: number): void { sfx.hold('gun', 'gun', { rate: 1 + heat * 0.12 }, 0.08); },
+  gun(heat: number): void { sfx.hold('gun', 'gun', { rate: 1 + heat * 0.12 }, 0.15); },
 
   /** a bullet hits something */
   impact(kind: 'flesh' | 'metal' | 'wall' | 'ground' | 'rubble', at: THREE.Vector3): void {

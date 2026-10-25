@@ -49,6 +49,17 @@ The mech never turns around: its body always faces left. Only the cockpit and it
 
 Bullets are not projectiles. Each shot is an instant ray cast from the camera through the reticle into the 2.5D world (enemies, walls, rubble, ground), and the guns' effect appears where it lands. The two guns fire alternately, and the heat level widens the spread slightly. Rubble on the line between a gun and its target stops the shot, for both you and the enemy.
 
+## Sound
+
+Web Audio, with a thin engine in `src/audio.ts` (buses, limiter, voice cap, pan and distance muffling) and game events turned into sounds in `src/sfx.ts`. Every sound event is listed in `src/sounds.json` with the loudness it is normalized to, so that file is the mix. Press **F2** in the game for a panel that plays each one. The recordings are free CC0 packs (see `public/audio/CREDITS.md`):
+
+```bash
+npm run audio:samples   # download the packs (once) and cut/layer/loop them into audio-src/<sound>/
+npm run audio           # loudness-normalize and encode them into public/audio (Opus)
+```
+
+A sound with no recording falls back to a synthesized placeholder.
+
 ## Project layout
 
 ```

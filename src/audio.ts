@@ -20,8 +20,11 @@ export type SoundId = keyof typeof raw.sounds;
 export const SOUND_IDS = Object.keys(DEFS) as SoundId[];
 export const soundDef = (id: SoundId): SoundDef => DEFS[id];
 
-/** most sounds playing at once; past it the lowest priority is dropped */
-const MAX_VOICES = 48;
+/**
+ * most one-shot sounds playing at once; past it the lowest priority is dropped. Loops (the machine gun, engines, the weather)
+ * are not counted and never dropped: there are only a handful, and the gun must never be cut off by a burst of explosions.
+ */
+const MAX_VOICES = 64;
 /** the lowest the low-pass goes for a far or muffled sound (Hz), and its open setting */
 const CUT_MIN = 450;
 const CUT_OPEN = 20000;
@@ -44,6 +47,7 @@ export interface PlayOpts {
 
 interface Voice {
   id: SoundId;
+  loop?: boolean;
   priority: number;
   src: AudioBufferSourceNode;
   out: GainNode;
@@ -71,6 +75,8 @@ export class AudioEngine {
   /** which sounds are real recordings and which are placeholders (for the test panel) */
   readonly fromFile = new Set<SoundId>();
   private readonly voices = new Set<Voice>();
+  /** how many of them are one-shots (what the voice cap counts) */
+  private oneShots = 0;
   private readonly active = new Map<SoundId, number>();
   private readonly lastPlay = new Map<SoundId, number>();
   private readonly lastPick = new Map<SoundId, number>();
@@ -177,7 +183,7 @@ export class AudioEngine {
     if (ctx.state !== 'running') return false;
     if (now - (this.lastPlay.get(id) ?? -1) < def.gap) return false;
     if ((this.active.get(id) ?? 0) >= def.voices) return false;
-    if (this.voices.size >= MAX_VOICES && !this.makeRoom(def.priority)) return false;
+    if (this.oneShots >= MAX_VOICES && !this.makeRoom(def.priority)) return false;
     const bufs = this.buffers.get(id)!;
     let pick = Math.floor(Math.random() * bufs.length);
     if (bufs.length > 1 && pick === this.lastPick.get(id)) pick = (pick + 1) % bufs.length;
@@ -194,6 +200,7 @@ export class AudioEngine {
     out.connect(this.buses[def.bus]);
     const voice: Voice = { id, priority: def.priority, src, out };
     this.voices.add(voice);
+    this.oneShots++;
     this.active.set(id, (this.active.get(id) ?? 0) + 1);
     src.onended = () => this.release(voice);
     src.start(now + (opts.delay ?? 0));
@@ -217,7 +224,7 @@ export class AudioEngine {
     filter.connect(pan);
     pan.connect(out);
     out.connect(this.buses[def.bus]);
-    const voice: Voice = { id, priority: def.priority, src, out };
+    const voice: Voice = { id, priority: def.priority, src, out, loop: true };
     this.voices.add(voice);
     const apply = (o: PlayOpts, ramp: number): void => {
       const s = this.spatial(o);
@@ -285,7 +292,7 @@ export class AudioEngine {
   /** Drop the quietest-priority voice that is below `priority`; true if there is room now. */
   private makeRoom(priority: number): boolean {
     let worst: Voice | null = null;
-    for (const v of this.voices) if (v.priority < priority && (!worst || v.priority < worst.priority)) worst = v;
+    for (const v of this.voices) if (!v.loop && v.priority < priority && (!worst || v.priority < worst.priority)) worst = v;
     if (!worst) return false;
     const t = this.ctx.currentTime;
     worst.out.gain.cancelScheduledValues(t);
@@ -297,6 +304,7 @@ export class AudioEngine {
 
   private release(v: Voice): void {
     if (!this.voices.delete(v)) return;
+    if (!v.loop) this.oneShots--;
     this.active.set(v.id, Math.max(0, (this.active.get(v.id) ?? 1) - 1));
     v.src.disconnect();
     v.out.disconnect();

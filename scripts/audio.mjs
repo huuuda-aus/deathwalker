@@ -22,7 +22,8 @@ const analyse = (file, filter) => spawnSync(ffmpeg, ['-hide_banner', '-nostats',
 
 /** integrated loudness of the trimmed file, or null if it is too short or quiet to measure */
 function loudness(file) {
-  const m = analyse(file, 'loudnorm=I=-24:print_format=json').match(/\{[^{}]*"input_i"[^{}]*\}/);
+  // padded with silence: a very short sound is under the 0.4 s the loudness meter needs, and the silence is gated out of the result
+  const m = analyse(file, 'apad=whole_dur=3,loudnorm=I=-24:print_format=json').match(/\{[^{}]*"input_i"[^{}]*\}/);
   if (!m) return null;
   const v = parseFloat(JSON.parse(m[0]).input_i);
   return Number.isFinite(v) && v > -70 ? v : null;
