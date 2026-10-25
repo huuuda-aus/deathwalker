@@ -1,34 +1,30 @@
-import { LEVEL, type LevelRunner } from './level';
+import type { LevelRunner } from './level';
 import type { Weapon } from './weapon';
 import type { SiloBoss } from './boss';
 
 const $ = (id: string) => document.getElementById(id)!;
 
-/** Sets text only when it changed, so static HUD frames cost no DOM work. */
-function setText(el: HTMLElement, s: string): void {
-  if (el.textContent !== s) el.textContent = s;
-}
-
 export interface Player { shield: number; lives: number; over: boolean; hitFlash: number }
 
-/** All DOM overlay writes: stat bars, scene progress, FPS readout, hit flash, game-over screen. */
+/** All DOM overlay writes: stat bars, lives, FPS readout, hit flash, game-over screen. */
 export class Hud {
   readonly reticle = $('reticle');
   private quality = $('quality');
-  private scene = $('scene');
   private fps = $('fps');
   private go = $('go');
   private shield = $('shield');
   private heat = $('heat');
   private lives = $('lives');
   private hit = $('hit');
+  private whiteout = $('flash');
+  private whiteoutLevel = 0;
   private over = $('over');
   private bossBar = $('boss');
   private bossFills = [...this.bossBar.querySelectorAll<HTMLElement>('.seg > div')];
   private fpsFrames = 0;
   private fpsTime = 0;
   private fpsWorst = 0;
-  private sceneHtml = '';
+  private shownLives = -1;
 
   constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null }) {}
 
@@ -36,7 +32,13 @@ export class Hud {
     this.quality.textContent = `Q: post-fx ${postOn ? 'on' : 'off'}  |  H: haze`;
   }
 
-  setGameOver(on: boolean): void { this.over.style.display = on ? 'flex' : 'none'; }
+  /** the whole screen goes white (0..1) and fades back by itself: the mech blowing up */
+  flash(amount: number): void { this.whiteoutLevel = amount; }
+
+  setGameOver(on: boolean): void {
+    this.over.style.display = on ? 'flex' : 'none';
+    document.body.classList.toggle('gameover', on);
+  }
 
   /** FPS readout, refreshed twice a second: average rate plus the slowest frame in that window */
   updateFps(rawMs: number): void {
@@ -51,21 +53,17 @@ export class Hud {
   update(dt: number, canFire: boolean, reticle: { x: number; y: number }, locked: boolean): void {
     const { player, level, weapon } = this.deps;
     this.go.style.display = level.phase === 'cleared' ? 'block' : 'none';
-    const html = LEVEL.map((def, i) => {
-      const k = level.killsByScene[i];
-      if (i > level.index) return `SCENE ${i + 1}  --`;
-      const done = i < level.index || level.phase === 'cleared' || level.phase === 'complete';
-      const tag = done ? '  CLEARED' : '';
-      return def.boss ? `SCENE ${i + 1}  BOSS${tag}` : `SCENE ${i + 1}  KILLED ${k}/${def.spawnBudget}${tag}`;
-    }).join('<br>');
-    if (html !== this.sceneHtml) { this.sceneHtml = html; this.scene.innerHTML = html; }
-
     this.shield.style.width = `${Math.max(0, player.shield)}%`;
     this.heat.style.width = `${weapon.heat * 100}%`;
     this.heat.style.background = weapon.locked ? '#ff3030' : weapon.heat > 0.7 ? '#ff8030' : '#ffb347';
-    setText(this.lives, `LIVES ${'■'.repeat(Math.max(0, player.lives))}`);
+    if (player.lives !== this.shownLives) {
+      this.shownLives = player.lives;
+      this.lives.innerHTML = `LIVES${'<i></i>'.repeat(Math.max(0, player.lives))}`;
+    }
     player.hitFlash = Math.max(0, player.hitFlash - dt * 3);
     this.hit.style.opacity = String(player.hitFlash);
+    this.whiteoutLevel = Math.max(0, this.whiteoutLevel - dt * 1.6);
+    this.whiteout.style.opacity = String(this.whiteoutLevel);
 
     // the boss's health, one segment per silo; dimmed while its doors are shut and it cannot be hurt
     const boss = this.deps.boss();

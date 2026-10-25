@@ -19,6 +19,8 @@ import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
 import { Menu } from './menu';
 import { PauseMenu } from './pauseMenu';
+import { GameOverMenu } from './gameOverMenu';
+import { MechDeath } from './mechDeath';
 import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
@@ -26,7 +28,7 @@ import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
 import { CAM_DIST, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
-import { PLAYER, CAMERA } from './config';
+import { PLAYER, CAMERA, MECH_DEATH } from './config';
 
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
 const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10, settleMs: 15000 };
@@ -65,6 +67,7 @@ export class Game {
   private readonly bullets: Bullets;
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
+  private readonly mechDeath: MechDeath;
   private readonly player = newPlayer();
 
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
@@ -81,6 +84,9 @@ export class Game {
   private autoVx = 0;
   /** walking speed multiplier from rubble underfoot (1 = clear ground) */
   private rubbleSlow = 1;
+  /** seconds left of the mech's death (it is gone, the fireball is up); 0 = alive. And how long a new mech is untouchable */
+  private deathT = 0;
+  private invuln = 0;
   private cullTimer = 0;
   /** screen shake: how far the camera is thrown about right now (world units), dying away */
   private shake = 0;
@@ -163,12 +169,18 @@ export class Game {
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
+    this.mechDeath = new MechDeath({
+      scene, fx: this.fx, dust, explosions: this.explosions, floor: (x, z, y) => world.surfaceTop(x, z, y),
+      shake: (at, amount) => this.shakeScreen(at, amount), flash: (a) => this.hud.flash(a),
+      blastBuildings: (at, radius, speed) => world.forEachBuilding(at.x - radius, at.x + radius, (b) => b.blast(at.x, at.y, at.z, radius, speed)),
+    });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss });
 
     // the menu shows the first scene's skyline and weather, without the mech or any fighting
     this.mech.root.visible = false;
     this.placeCamera();
     new Menu(() => this.startPlaying());
+    new GameOverMenu({ isOver: () => this.player.over, onRetry: () => this.reset(), onQuit: () => location.reload() });
     new PauseMenu({
       canPause: () => this.mode === 'play' && !this.player.over,
       onPause: () => { this.paused = true; this.input.clear(); },
@@ -181,7 +193,6 @@ export class Game {
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyQ') this.hud.setQuality(this.post.toggle());
       if (e.code === 'KeyH') this.post.toggleHaze();
-      if (e.code === 'KeyR' && this.player.over) this.reset();
     });
   }
 
@@ -278,6 +289,9 @@ export class Game {
     this.lock.release();
     this.shells.clear();
     this.shake = 0;
+    this.mechDeath.clear();
+    this.mech.root.visible = true;
+    this.deathT = this.invuln = 0;
     this.bullets.clear();
     this.explosions.clear();
     Object.assign(this.player, newPlayer());
@@ -291,15 +305,40 @@ export class Game {
 
   private hurtPlayer(n: number): void {
     const { player } = this;
-    if (player.over) return;
+    if (player.over || this.deathT > 0 || this.invuln > 0) return;
     player.shield -= n;
     player.hitFlash = 1;
-    if (player.shield <= 0) {
-      this.fx.burst(this.mech.pivotWorld, 40, 5, [0xffa040, 0xff5020, 0x888888]);
-      player.lives--;
-      player.shield = PLAYER.maxShield;
-      if (player.lives <= 0) { player.over = true; this.hud.setGameOver(true); }
-    }
+    if (player.shield <= 0) this.killMech();
+  }
+
+  /** The shield is gone: the mech blows up. A moment later the next life starts, or the game over screen comes up. */
+  private killMech(): void {
+    const { player, mech } = this;
+    player.shield = 0;
+    player.lives--;
+    // the cockpit climbs to a fifth of the way down from the top of the view (at the mech's depth)
+    const half = ((CAM_DIST - mech.root.position.z) / CAM_DIST) * (SCREEN_W / 2 / this.camera.aspect);
+    this.mechDeath.start(mech, CAMERA.height + half * 0.6);
+    mech.root.visible = false;
+    // its hit spheres go with it (shells and missiles would otherwise burst on thin air)
+    for (const c of mech.colliders) { c.pos.set(0, -1000, 0); c.vel.set(0, 0, 0); }
+    this.lock.release();
+    this.vx = this.vz = 0;
+    this.deathT = MECH_DEATH.time;
+  }
+
+  private updateDeath(dt: number): void {
+    const { player } = this;
+    this.invuln = Math.max(0, this.invuln - dt);
+    this.mechDeath.update(dt);
+    if (this.deathT <= 0) return;
+    this.deathT -= dt;
+    if (this.deathT > 0) return;
+    if (player.lives <= 0) { player.over = true; this.hud.setGameOver(true); return; }
+    player.shield = PLAYER.maxShield;
+    this.mech.root.visible = true;
+    this.weapon.reset();
+    this.invuln = MECH_DEATH.invulnerable;
   }
 
   /** smooth acceleration; dense rubble around the feet slows the mech, and the mech auto-walks while the scene rolls in */
@@ -311,8 +350,9 @@ export class Game {
     this.rubbleSlow += (slowTarget - this.rubbleSlow) * Math.min(1, dt * PLAYER.rubbleSlowEase);
     const speed = PLAYER.walkSpeed * this.rubbleSlow;
     const ease = Math.min(1, dt * PLAYER.walkAccel);
-    this.vx += (input.move * speed - this.vx) * ease;
-    this.vz += (input.depth * speed - this.vz) * ease;
+    const alive = this.deathT <= 0;
+    this.vx += ((alive ? input.move : 0) * speed - this.vx) * ease;
+    this.vz += ((alive ? input.depth : 0) * speed - this.vz) * ease;
     this.autoVx = level.phase === 'entering' ? level.camVel : 0;
     pos.x += (this.vx + this.autoVx) * dt;
     pos.z = THREE.MathUtils.clamp(pos.z + this.vz * dt, LANE.zMin, LANE.zMax);
@@ -333,6 +373,7 @@ export class Game {
   /** mouse ray -> nearest thing in the world (enemy / wall / ground / backdrop), then aim and shoot */
   private aimAndFire(dt: number, active: boolean): void {
     const { input, mech, raycaster, muzzlePos } = this;
+    if (this.deathT > 0) return;           // no mech to aim
     // holding the lock button grabs the enemy under the reticle; the reticle rides on that enemy's middle until it
     // dies or the button is let go
     if (input.takeLockPress()) this.lock.acquire(this.enemies.list, this.camera, input.mousePx, this.aimHit);
@@ -402,7 +443,8 @@ export class Game {
     this.hud.updateFps(rawMs);
     this.adaptResolution(rawMs, now);
 
-    const active = !this.player.over;
+    this.updateDeath(dt);
+    const active = !this.player.over && this.deathT <= 0;
     this.movePlayer(dt);
     const levelEvent = this.updateCamera(dt);
     this.aimAndFire(dt, active);
@@ -424,7 +466,7 @@ export class Game {
     this.hud.update(dt, this.mech.canFire, this.reticlePx, this.lock.target !== null);
     this.updateEnvironment(dt, now);
     // the shake moves the camera only for the drawing: aiming and everything else use the steady view
-    this.shake *= Math.exp(-dt * 5);
+    this.shake *= Math.exp(-dt * (this.shake > 0.5 ? 2.2 : 5));
     if (this.shake > 0.004) {
       this.placeCamera((Math.random() - 0.5) * 2 * this.shake, (Math.random() - 0.5) * 2 * this.shake);
       this.post.render(dt, this.level.camVel);

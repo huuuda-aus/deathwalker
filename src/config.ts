@@ -10,7 +10,7 @@ export const PLAYER = {
   /** how quickly the slowdown eases in and out (1/s) */
   rubbleSlowEase: 6,
   maxShield: 100,
-  lives: 3,
+  lives: 1,
   /** shield lost per enemy hit */
   hitDamage: 4,
 } as const;
@@ -66,9 +66,9 @@ export const ENEMY_FIRE = {
    */
   bulletSpeed: 6,
   /** each shot is aimed at the mech's chest as it is right then (no allowance for movement), off by up to this far... */
-  spreadBase: 0.5,
+  spreadBase: 0.4,
   /** ...plus this much per unit of distance to the mech */
-  spreadPerUnit: 0.07,
+  spreadPerUnit: 0.055,
   /** vertical and depth misses are this share of the sideways one */
   spreadVertical: 0.6,
   spreadDepth: 0.5,
@@ -97,7 +97,7 @@ export const STALL = {
 export const WEAPON = {
   /** shots / second (machine gun) */
   fireRate: 20,
-  heatPerShot: 0.02 / 6,
+  heatPerShot: 0.02 / 4,
   /** heat lost per second while idle / while locked out */
   coolRate: 0.25,
   lockCoolRate: 0.4,
@@ -293,4 +293,44 @@ export const MISSILE = {
   damage: 45,
   /** screen shake (world units of camera movement) for a blast on screen */
   shake: 0.45,
+} as const;
+
+/** The mech's death: a huge fireball, a mushroom cloud, and the mech's parts flung about. */
+export const MECH_DEATH = {
+  /** how long the screen is the mech's funeral before the next life starts or the game over screen comes up (s) */
+  time: 3.8,
+  /** a new mech cannot be hurt for this long (s) */
+  invulnerable: 2.5,
+  /** the middle of the blast, above the ground; it kills infantry and hurts vehicles within the radius */
+  height: 1.2,
+  blastRadius: 7,
+  blastScale: 6,
+  /** the biggest lobe of the fireball (diameter, units) and how many smaller lobes boil round it */
+  fireballSize: 16,
+  lobes: 9,
+  ringLife: 1,
+  /** screen shake (units of camera movement), mild, for each of the two blasts */
+  shake: 0.5,
+  podShake: 0.35,
+  /** the blast tears buildings apart this far out (units), flinging the rubble away at up to this speed (units/s) */
+  buildingRadius: 9,
+  buildingSpeed: 14,
+  /** smoke: the stem climbs at this speed for this long; the cap starts then and spreads this fast for capTime */
+  stemSpeed: 7,
+  stemTime: 3,
+  capStart: 1.3,
+  capTime: 1.8,
+  capSpread: 4,
+  /** the cockpit is launched straight up to the height the game gives it, tilting up to this much (degrees) about each axis on the way, and blows up there */
+  podGravity: 6,
+  podTiltDeg: 15,
+  podBlastRadius: 4.5,
+  podBlastScale: 4,
+  podFireballSize: 9,
+  podBuildingRadius: 5,
+  podBuildingSpeed: 8,
+  /** parts: how hard they are thrown, the share that burn, and for how long (s) */
+  partSpeed: 5,
+  burnShare: 0.25,
+  burnTime: 8,
 } as const;

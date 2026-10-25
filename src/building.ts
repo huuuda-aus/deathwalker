@@ -515,6 +515,75 @@ export class Building {
     return res;
   }
 
+  /**
+   * A big blast at a point: every layer within `radius * wreckShare` of it is torn out and its rubble flung away from the
+   * blast, hardest nearest it; layers farther out, up to `radius`, are only weakened by one hit. What is left
+   * without support then comes down as usual, but the blast itself does not simply drop the building.
+   * @param speed how fast the nearest rubble is thrown (units/s)
+   */
+  blast(px: number, py: number, pz: number, radius: number, speed: number, wreckShare = 0.65): DamageResult {
+    const res = { hit: false, destroyed: 0 };
+    if (px < this.x0 - radius || px > this.x0 + this.width + radius || py - radius > this.height) return res;
+    const cMin = Math.max(0, Math.floor((px - radius - this.x0) / CELL));
+    const cMax = Math.min(this.cols - 1, Math.floor((px + radius - this.x0) / CELL));
+    const rMin = Math.max(0, Math.floor((py - radius) / CELL));
+    const rMax = Math.min(this.rows - 1, Math.floor((py + radius) / CELL));
+    const wreck = radius * wreckShare;
+    const centre = new THREE.Vector3(), dir = new THREE.Vector3(), vel = new THREE.Vector3();
+    let changed = false;
+    for (let c = cMin; c <= cMax; c++) {
+      for (let r = rMin; r <= rMax; r++) {
+        const i = c * this.rows + r;
+        if (this.hp[i] === 0) continue;
+        const spec = SPEC[this.type[i]], L = this.layersOf(this.type[i]), lt = spec.thick / L;
+        const bx0 = this.x0 + c * CELL, by0 = r * CELL;
+        const dx = Math.max(bx0 - px, 0, px - (bx0 + CELL)), dy = Math.max(by0 - py, 0, py - (by0 + CELL));
+        if (dx * dx + dy * dy > radius * radius) continue;
+        for (let k = 0; k < L; k++) {
+          const li = i * MAXL + k;
+          if (this.lhp[li] === 0) continue;
+          const zf = this.z0 + spec.front - k * lt, zb = zf - lt;
+          const dz = Math.max(zb - pz, 0, pz - zf);
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (d > radius) continue;
+          res.hit = changed = true;
+          if (d > wreck) {
+            // the edge of the blast: cracked and scorched, no more
+            this.lhp[li]--;
+            if (this.lhp[li] === 0) { res.destroyed++; this.breakLayer(c, r, k, true); }
+            else this.mesh.setColorAt(this.inst[li], this.tmpColor.copy(this.layerColors[li]!).multiplyScalar(0.55));
+            continue;
+          }
+          // torn out and thrown away from the blast
+          res.destroyed++;
+          this.removeLayer(c, r, k);
+          this.mesh.setMatrixAt(this.inst[li], ZERO);
+          centre.set(bx0 + CELL / 2, by0 + CELL / 2, (zf + zb) / 2);
+          this.debris.wakeNear(centre, CELL * 1.2);
+          dir.subVectors(centre, new THREE.Vector3(px, py, pz));
+          if (dir.lengthSq() < 1e-4) dir.set(Math.random() - 0.5, 0.5, Math.random() - 0.5);
+          dir.normalize();
+          const push = speed * (1 - d / radius) ** 0.7;
+          const glass = this.type[i] === T.Window;
+          const pieces = Math.random() < 0.5 ? 2 : 1;
+          for (let n = 0; n < pieces; n++) {
+            const s = push * (0.5 + Math.random());
+            vel.set(dir.x * s + (Math.random() - 0.5) * 2, Math.max(0, dir.y) * s * 0.6 + 1 + Math.random() * push * 0.25, dir.z * s + (Math.random() - 0.5) * 2);
+            this.debris.spawn(centre, this.layerColors[li]!, CELL * (glass ? 0.2 + Math.random() * 0.15 : 0.35 + Math.random() * 0.4), vel, this.floorFn);
+          }
+          if (Math.random() < 0.15) this.dust.puff(centre, 1, CELL * 2.5, 2, RUIN_DARK);
+        }
+      }
+    }
+    if (changed) {
+      this.version++;
+      this.settle();
+      this.mesh.instanceMatrix.needsUpdate = true;
+      if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    }
+    return res;
+  }
+
   /** Top of the highest intact cell under (x, z) whose top is at or below yBelow; 0 = ground. */
   solidTop(x: number, z: number, yBelow: number): number {
     if (z > this.z0 + 0.4 * CELL || z < this.z0 - DEPTH) return 0;
