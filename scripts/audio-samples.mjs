@@ -31,16 +31,21 @@ const PACKS = {
   missile: 'missile.wav',
   whoosh: 'whoosh2_0.wav',
   rumble: 'rumble.wav',
+  engine: 'engine_sound.mp3',
+  // freesound preview (CC0): a worn two-stroke chainsaw, for the noise under the machine gun
+  saw: 'https://cdn.freesound.org/previews/807/807194_10594370-hq.mp3',
+  woodmetal: '100-CC0-wood-metal-SFX.zip',
+  prop: 'airplane_prop_0.ogg',
   mech: ['clank1.wav', 'mechanical1.wav', 'mechanical2.wav', 'rattle1.wav', 'squeakyclick1.wav'],
 };
 
 async function fetchFile(name, file) {
   const dir = join(packs, name);
-  const out = join(dir, decodeURIComponent(file));
+  const out = join(dir, decodeURIComponent(file.split('/').pop()));
   if (existsSync(out)) return out;
   mkdirSync(dir, { recursive: true });
   console.log(`downloading ${file}`);
-  const res = await fetch(OGA + file);
+  const res = await fetch(file.startsWith('http') ? file : OGA + file);
   if (!res.ok) throw new Error(`${file}: ${res.status}`);
   await pipeline(Readable.fromWeb(res.body), createWriteStream(out));
   if (out.endsWith('.zip')) new AdmZip(out).extractAllTo(dir, true);
@@ -65,12 +70,12 @@ const X = {
 };
 
 /** `d` seconds crossfaded across the seam, so a sound of length `len` repeats without a click; reads label `from`, ends the graph */
-const loopify = (from, len, d) =>
+const loopify = (from, len, d, to = '') =>
   `[${from}]asplit=3[l1][l2][l3];` +
   `[l1]atrim=start=${d}:end=${len - d},asetpts=PTS-STARTPTS[mid];` +
   `[l2]atrim=start=${len - d}:end=${len},afade=t=out:d=${d}:curve=qsin,asetpts=PTS-STARTPTS[tl];` +
   `[l3]atrim=start=0:end=${d},afade=t=in:d=${d}:curve=qsin,asetpts=PTS-STARTPTS[hd];` +
-  `[tl][hd]amix=inputs=2:normalize=0:duration=longest[x];[mid][x]concat=n=2:v=0:a=1`;
+  `[tl][hd]amix=inputs=2:normalize=0:duration=longest[x];[mid][x]concat=n=2:v=0:a=1${to ? `[${to}]` : ''}`;
 
 /** every input at 48 kHz, so mixing and pitch changes work the same whatever the source */
 const R = '[0:a]aresample=48000';
@@ -87,37 +92,39 @@ const mix = (a, b, chainA, chainB, after = 'anull') => ({
 const verb = 'aecho=0.8:0.6:90|180:0.4|0.25';
 
 /**
- * The machine gun: one second of 20 shots (the gun's fire rate), as a loop that repeats cleanly. The shots take turns among five
- * different recordings, each a little off the beat and a little different in volume, and between them the action clicks:
- * a faint metallic tick from the bolt (high-passed, 12 ms) half-way through each round.
+ * The machine gun: one second of 60 rounds a second, as a loop that repeats cleanly. A round is a 16.7 ms cell (exactly 800 samples):
+ * the crack of a shot, cut short, and half-way through it a faint metallic tick from the bolt. Three different cells take turns, in a
+ * fixed order and level, so it is steady, with a little variety. Under it all runs the rasp of a chainsaw, with its engine tone
+ * filtered away: only the noise, so the gun sounds like it is tearing, a little bass under that, and the faint grinding of the barrels turning.
  */
 function gunLoop() {
-  const SHOTS = 20, SHOT_LEN = 0.05, CLICK_LEN = 0.012;
-  const shots = [[X.bang('shot_03'), 0], [X.bang('shot_01'), 0], [X.a('shot_02'), 0], [X.gun('cz'), 0.21], [X.bang('shot_02'), 0]];
+  const CELL = 800;                       // samples at 48 kHz: 60 a second
+  const SAW_VOLUME = 2, BASS_VOLUME = 0.2, GRIND_VOLUME = 5;
+  // [file, where the shot starts in it, level that evens the three out]
+  const shots = [[X.bang('shot_01'), 0, 0.8], [X.bang('bang_01'), 0, 0.95], [X.gun('sks'), 4.03, 1.3]];
   const clicks = [X.a('metal_02'), X.a('metal_11'), X.mech('mechanical1')];
-  // a repeatable shuffle, so the loop is the same every build
-  let seed = 7;
-  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  const order = Array.from({ length: SHOTS }, (_, i) => (i * 2 + Math.floor(i / 5)) % shots.length);
-  const useCount = shots.map((_, j) => order.filter((x) => x === j).length);
-  const clickCount = clicks.map((_, j) => Array.from({ length: SHOTS }, (_, i) => i % clicks.length).filter((x) => x === j).length);
   const mono = 'aresample=48000,aformat=channel_layouts=mono';
-  const parts = [];
-  shots.forEach(([, start], j) => parts.push(
-    `[${j}:a]${mono},atrim=start=${start}:end=${start + 0.4},asetpts=PTS-STARTPTS,silenceremove=start_periods=1:start_threshold=-35dB,atrim=0:${SHOT_LEN},asetpts=PTS-STARTPTS,afade=t=out:st=0.034:d=0.016,apad=whole_dur=${SHOT_LEN},asplit=${Math.max(2, useCount[j])}${Array.from({ length: Math.max(2, useCount[j]) }, (_, k) => `[s${j}_${k}]`).join('')}`));
-  clicks.forEach((_, j) => parts.push(
-    `[${shots.length + j}:a]${mono},atrim=0:${CLICK_LEN},asetpts=PTS-STARTPTS,highpass=f=2500,afade=t=out:st=0.006:d=0.006,asplit=${Math.max(2, clickCount[j])}${Array.from({ length: Math.max(2, clickCount[j]) }, (_, k) => `[c${j}_${k}]`).join('')}`));
-  const used = shots.map(() => 0), usedC = clicks.map(() => 0);
-  const labels = [];
-  for (let i = 0; i < SHOTS; i++) {
-    const j = order[i], jit = i === 0 ? 0 : Math.round((rnd() - 0.5) * 3), at = i * 50 + jit;
-    parts.push(`[s${j}_${used[j]++}]volume=${(0.8 + rnd() * 0.2).toFixed(2)},adelay=delays=${at}:all=1[p${i}]`);
-    const c = i % clicks.length;
-    parts.push(`[c${c}_${usedC[c]++}]volume=${(0.22 + rnd() * 0.1).toFixed(2)},adelay=delays=${i * 50 + 20}:all=1[q${i}]`);
-    labels.push(`[p${i}]`, `[q${i}]`);
-  }
-  parts.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0,apad=whole_dur=1,atrim=0:1`);
-  return { inputs: [...shots.map(([f]) => f), ...clicks], fc: parts.join(';') };
+  const parts = [], cells = [];
+  shots.forEach(([, start, level], j) => {
+    const click = shots.length + j;
+    parts.push(
+      `[${j}:a]${mono},atrim=start=${start}:end=${start + 0.4},asetpts=PTS-STARTPTS,silenceremove=start_periods=1:start_threshold=-35dB,` +
+      `atrim=end_sample=${CELL - 40},asetpts=PTS-STARTPTS,afade=t=out:st=0.009:d=0.007,volume=${level},apad=whole_len=${CELL}[sh${j}]`,
+      `[${click}:a]${mono},atrim=0:0.008,asetpts=PTS-STARTPTS,highpass=f=2500,afade=t=out:st=0.004:d=0.004,volume=0.3,adelay=delays=${CELL / 2}S:all=1,apad=whole_len=${CELL}[ck${j}]`,
+      `[sh${j}][ck${j}]amix=inputs=2:normalize=0,atrim=end_sample=${CELL},asetpts=PTS-STARTPTS[cell${j}]`);
+    cells.push(`[cell${j}]`);
+  });
+  // three cells = 50 ms; twenty turns of them = one second
+  parts.push(`${cells.join('')}concat=n=${cells.length}:v=0:a=1,aloop=loop=19:size=${CELL * cells.length}[rounds]`);
+  // 1.5 s of steady running, high-passed above the engine's tone, and crossfaded into a 1 s loop
+  parts.push(`[${shots.length + clicks.length}:a]${mono},atrim=start=8:end=9.5,asetpts=PTS-STARTPTS,highpass=f=1800,lowpass=f=9000,volume=${SAW_VOLUME}[saw0];${loopify('saw0', 1.5, 0.5, 'saw')}`);
+  // a little bass: a 55 Hz and a 110 Hz tone whose level swells with every round (a whole number of cycles in the second, so it loops cleanly)
+  parts.push(`aevalsrc=(0.6*sin(2*PI*55*t)+0.3*sin(2*PI*110*t))*(0.65+0.35*cos(2*PI*60*t)):d=1:s=48000,lowpass=f=220,volume=${BASS_VOLUME}[bass]`);
+  // the barrels spinning: a metallic grinding, a slice of a machine loop with its metal ring brought out, pulsing ten times a second
+  // (the barrels turning), crossfaded into a loop; the ten whole cycles keep it seamless
+  parts.push(`[${shots.length + clicks.length + 1}:a]${mono},atrim=start=2:end=3.5,asetpts=PTS-STARTPTS,highpass=f=1000,lowpass=f=6500,equalizer=f=2800:t=q:w=6:g=6,equalizer=f=4300:t=q:w=6:g=5,volume=${GRIND_VOLUME}[grind0];${loopify('grind0', 1.5, 0.5, 'grind1')};[grind1]tremolo=f=10:d=0.35[grind]`);
+  parts.push('[rounds][saw][bass][grind]amix=inputs=4:normalize=0,apad=whole_dur=1,atrim=0:1');
+  return { inputs: [...shots.map(([f]) => f), ...clicks, P('saw/807194_10594370-hq.mp3'), P('sfx100b/sfx100v2_loop_machine_02.ogg')], fc: parts.join(';') };
 }
 
 const RECIPES = {
@@ -159,7 +166,16 @@ const RECIPES = {
     inputs: [X.whoosh, P('sfx100b/sfx100v2_loop_machine_01.ogg')],
     fc: `[0:a]aresample=48000,atrim=0:5,asetpts=PTS-STARTPTS,lowpass=f=2500[a];[1:a]aresample=48000,atrim=0:5,asetpts=PTS-STARTPTS,volume=1.2[b];[a][b]amix=inputs=2:normalize=0[m];${loopify('m', 5, 1)}`,
   }],
-  aircraft: [{ inputs: [X.b('loop_machine_04')], fc: `${R},atrim=0:4.5,asetpts=PTS-STARTPTS,lowpass=f=1800[m];${loopify('m', 4.5, 0.8)}` }],
+  // a WW2 propeller aeroplane (CC BY 3.0, see the credits): a steady drone that was recorded to loop
+  aircraft: [one(P('prop/airplane_prop_0.ogg'), 'anull')],
+  // the truck's engine: a steady idle, slowed to a heavier diesel note, looped with a crossfade
+  truckEngine: [{ inputs: [P('engine/engine_sound.mp3')], fc: `${R},atrim=2:14,asetpts=PTS-STARTPTS,${slow(0.85)},lowpass=f=1500,atrim=0:10,asetpts=PTS-STARTPTS[m];${loopify('m', 10, 1.5)}` }],
+  // a dry wooden wheel: one short, high squeak a turn, as one loop (the game plays it faster the faster the gun rolls)
+  wheelSqueak: [{
+    inputs: [P('woodmetal/wood_squeak_02.ogg')],
+    fc: `${R},aformat=channel_layouts=mono,atrim=0:0.3,asetpts=PTS-STARTPTS,${slow(1.7)},afade=t=out:st=0.1:d=0.07,apad=whole_dur=0.6,atrim=0:0.6`,
+  }],
+
   // no free recording of a falling bomb: a descending whistle with some air
   bombWhistle: [{
     lavfi: 'aevalsrc=0.5*sin(2*PI*(2400*t-583.33*t*t))*min(t*8\\,1)*(1-t/1.2):d=1.2:s=48000',

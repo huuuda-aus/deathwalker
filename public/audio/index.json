@@ -22,5 +22,7 @@
  "siloDoor": 3,
  "rain": 1,
  "wind": 1,
- "thunder": 3
+ "thunder": 3,
+ "truckEngine": 1,
+ "wheelSqueak": 1
 }

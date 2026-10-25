@@ -80,6 +80,8 @@ export class Mech {
   readonly root = new THREE.Group();
   /** One muzzle per gun, fired alternately. */
   readonly muzzles: THREE.Object3D[] = [];
+  /** and the ejection port of each gun, where its casings come out (they are thrown outward, up and back) */
+  readonly ports: THREE.Object3D[] = [];
   /** False while the reticle is behind the mech: guns park sideways and can't fire. */
   canFire = true;
   /** Kinematic spheres (ankle, toe, knee per leg + body) that shove rubble. Updated in place. */
@@ -145,6 +147,10 @@ export class Mech {
       muzzle.position.set(-2.25, 0, z);
       this.cockpit.add(muzzle);
       this.muzzles.push(muzzle);
+      const port = new THREE.Object3D();
+      port.position.set(-0.85, 0.2, z);
+      this.cockpit.add(port);
+      this.ports.push(port);
       this.flames.push(this.buildFlame(muzzle));
     }
   }

@@ -349,3 +349,24 @@ export const CRATER = {
   /** seconds it takes to dig itself out */
   digTime: 0.7,
 } as const;
+
+/** Bullet casings thrown out of the guns: size (units), how many per shot, speed, how far the direction may stray, how long they last */
+export const CASING = {
+  radius: 0.011,
+  length: 0.055,
+  /** casings per shot of the gun: it fires fast, so there are many */
+  perShot: 2,
+  /** most at once: the oldest are never dropped, new ones are just not thrown while full */
+  max: 600,
+  speedMin: 2.2,
+  speedMax: 4.4,
+  /** the random angle off the ejection direction (degrees, up to this far either way) */
+  spreadDeg: 25,
+  /** the bounce off the ground, and the speed (units/s) below which it stops bouncing and lies still */
+  bounce: 0.35,
+  restSpeed: 0.8,
+  lifeMin: 2.5,
+  lifeMax: 4,
+  /** seconds it takes to shrink away at the end */
+  fadeTime: 0.6,
+} as const;

@@ -10,6 +10,7 @@ import { LANE } from './mech';
 import { CANNON, WEAPON } from './config';
 import { UNIT, WOOD, IRON, box } from './cannonParts';
 import { Wreckage } from './wreckage';
+import { sfx } from './sfx';
 
 /** horse sits this far ahead (-x) of the axle while hitched */
 const HORSE_OFFSET = 3.4;
@@ -268,6 +269,7 @@ export class CannonUnit implements Enemy {
         g.position.x -= CANNON.rideSpeed * dt;
         this.vx = -CANNON.rideSpeed;
         this.roll(CANNON.rideSpeed, dt);
+        this.squeak(CANNON.rideSpeed);
         // at its stop mark, or the horse is gone (shot dead), the cannon starts to deploy
         if (g.position.x <= this.stopX + DEPLOY_GLIDE || this.horse.state !== 'pulling') {
           this.state = 'deploy';
@@ -283,6 +285,7 @@ export class CannonUnit implements Enemy {
         g.position.x -= speed * dt;
         this.vx = -speed;
         this.roll(speed, dt);
+        this.squeak(speed);
         this.pole.rotation.z = POLE_HITCHED + (POLE_GROUNDED - POLE_HITCHED) * k;
         if (k >= 1) { this.state = 'fire'; this.vx = 0; }
         break;
@@ -344,6 +347,12 @@ export class CannonUnit implements Enemy {
     this.barrelPivot.localToWorld(tmpMuzzle.set(BARREL_LEN, 0, 0));
     this.deps.shells.launch(tmpMuzzle, round.aim, round.flight);
     this.recoil = 1;
+  }
+
+  /** the wheels squeak while the gun rolls: faster and louder the faster it goes, slowing to a stop with it */
+  private squeak(speed: number): void {
+    const k = Math.min(1, speed / CANNON.rideSpeed);
+    sfx.hold(this, 'wheelSqueak', { x: this.group.position.x, gain: k, rate: 0.5 + 0.9 * k }, 0.15);
   }
 
   private roll(speed: number, dt: number): void {
