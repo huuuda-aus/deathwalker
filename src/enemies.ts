@@ -114,7 +114,7 @@ export class Soldier implements Enemy {
   hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
   /** what killed him, for the score: set by whatever does it (a bullet unless said otherwise) */
-  cause: 'bullet' | 'stomp' | 'crush' | 'blast' = 'bullet';
+  cause: 'bullet' | 'stomp' | 'crush' | 'blast' | 'air' = 'bullet';
   /** hitbox half extents (padded for forgiveness) */
   readonly half = new THREE.Vector3(0.345, 0.2875, 0.345).multiplyScalar(SOLDIER_SCALE);
   centerY = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
