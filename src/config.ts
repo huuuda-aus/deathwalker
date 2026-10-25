@@ -396,3 +396,27 @@ export const SCORE = {
   /** the hall of fame keeps this many */
   fameSize: 10,
 } as const;
+
+/** Thunderstorm: strikes come now and then while it rains; the heavier the rain, the closer together. */
+export const STORM = {
+  /** seconds between strikes: this long at the lightest rain, shorter as the rain gets heavier (and none below `minRain`) */
+  every: [22, 55] as const,
+  minRain: 0.12,
+  /** the first strike comes this soon after the page loads (s) */
+  first: [6, 12] as const,
+  /** how far up the sky the bolt reaches, where it ends, and how far behind the city it is (world units) */
+  boltTop: 70,
+  boltBottom: 4,
+  boltZ: -95,
+  /** the strike's x is within this of the middle of the view */
+  boltSpread: 45,
+  /** strike kinds: how likely, how bright the flash is, and the delay before its thunder (s) */
+  kinds: [
+    { id: 'thunderClose', chance: 0.25, power: 1, delay: [0.15, 0.45], shake: 0.14 },
+    { id: 'thunderNormal', chance: 0.5, power: 0.75, delay: [3, 5], shake: 0 },
+    { id: 'thunderDistant', chance: 0.25, power: 0.45, delay: [6.5, 9.5], shake: 0 },
+  ] as const,
+  /** how much the flash adds to the scene's lights at full power */
+  hemiBoost: 3.2,
+  sunBoost: 3.4,
+} as const;

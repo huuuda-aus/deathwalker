@@ -27,6 +27,7 @@ import { audio } from './audio';
 import { sfx } from './sfx';
 import { SoundTest } from './soundTest';
 import { MusicToggle } from './musicToggle';
+import { Lightning } from './lightning';
 import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
@@ -34,7 +35,7 @@ import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
 import { CAM_DIST, LEVEL, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
-import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING } from './config';
+import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING, STORM } from './config';
 import { Casings } from './casings';
 
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
@@ -48,6 +49,11 @@ const MENU_AMBIENCE = 0.2;
 
 /** seconds between clearing the level and the level complete screen coming up */
 const WIN_DELAY = 3;
+
+/** the lights' usual strength, which the lightning adds to; the flash's colour (the moonlight's is the sun's own) */
+const HEMI_BASE = 0.75;
+const SUN_BASE = 1.15;
+const FLASH_COLOR = new THREE.Color(0.85, 0.92, 1);
 
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
 
@@ -82,6 +88,8 @@ export class Game {
   private readonly hud: Hud;
   private readonly mechDeath: MechDeath;
   private readonly casings: Casings;
+  private readonly lightning: Lightning;
+  private readonly hemi = new THREE.HemisphereLight(0x34447a, 0x0a2a22, HEMI_BASE);
   private readonly score = new Score();
   private readonly endScreen: EndScreen;
   /** the level is cleared: the mech cannot be hurt, and the level complete screen is on its way (seconds) */
@@ -91,6 +99,8 @@ export class Game {
   private readonly player = newPlayer();
 
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
+  private readonly boltShake = new THREE.Vector3();
+  private readonly boltDir = new THREE.Vector3();
   private readonly muzzlePos = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly ejectAt = new THREE.Vector3();
   private readonly ejectDir = new THREE.Vector3();
@@ -145,7 +155,8 @@ export class Game {
 
     // neutral studio reflections on the mech only, so silver/black reads as metal under coloured light
     setMechEnvironment(new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture);
-    scene.add(new THREE.HemisphereLight(0x34447a, 0x0a2a22, 0.75));
+    scene.add(this.hemi);
+    this.lightning = new Lightning(scene, (a) => this.shakeScreen(this.boltShake.set(this.camX, 0, 0), a));
     sun.position.set(-30, 25, 20);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -237,12 +248,16 @@ export class Game {
     addEventListener('resize', () => this.onResize());
     addEventListener('keydown', (e) => {
       if (document.activeElement instanceof HTMLInputElement) return;     // typing a name
+      if (e.code === 'F4') this.lightning.strike(this.camX);              // dev: a strike now
       if (e.code === 'KeyQ') this.hud.setQuality(this.post.toggle());
       if (e.code === 'KeyH') this.post.toggleHaze();
     });
   }
 
-  start(): void { this.frame(); }
+  start(): void {
+    if (import.meta.env.DEV) Object.assign(window, { __game: this });     // dev: poke at it from the console
+    this.frame();
+  }
 
   /** "start game" was chosen on the menu */
   startPlaying(): void {
@@ -486,8 +501,16 @@ export class Game {
   /** lights, weather, atmosphere and everything that is just scenery */
   private updateEnvironment(dt: number, now: number): void {
     const { sun, rim, camX, mech, rain, post, hazeLights, muzzlePos, weapon, world } = this;
-    sun.position.set(camX - 30, 25, 20);
+    // lightning: the sun and the sky's light jump up for a moment and the scene is lit hard from above
+    const flash = this.lightning.level;
+    this.lightning.update(dt, camX, rain.intensity);
+    this.hemi.intensity = HEMI_BASE + STORM.hemiBoost * flash;
+    sun.intensity = SUN_BASE + STORM.sunBoost * flash;
+    sun.color.setHex(0x98a6d8).lerp(FLASH_COLOR, Math.min(1, flash * 1.5));
+    if (flash > 0.12) sun.position.set(camX + (this.lightning.boltAt.x - camX) * 0.3, 55, 20);
+    else sun.position.set(camX - 30, 25, 20);
     sun.target.position.set(camX, 0, 0);
+    this.sky.setFlash(flash, this.boltDir.copy(this.lightning.boltAt).sub(this.camera.position));
     rim.position.set(camX + 10, 6, -40);
     rim.target.position.set(camX, 2, 0);
     world.update(camX, dt);

@@ -31,6 +31,13 @@ const PACKS = {
   missile: 'missile.wav',
   whoosh: 'whoosh2_0.wav',
   rumble: 'rumble.wav',
+  // freesound previews (CC0): thunder recorded close, and further off
+  thunder: [
+    'https://cdn.freesound.org/previews/534/534023_9395330-hq.mp3',
+    'https://cdn.freesound.org/previews/347/347853_57789-hq.mp3',
+    'https://cdn.freesound.org/previews/536/536900_57789-hq.mp3',
+    'https://cdn.freesound.org/previews/397/397952_2247456-hq.mp3',
+  ],
   engine: 'engine_sound.mp3',
   // freesound preview (CC0): a worn two-stroke chainsaw, for the noise under the machine gun
   saw: 'https://cdn.freesound.org/previews/807/807194_10594370-hq.mp3',
@@ -55,6 +62,9 @@ async function fetchFile(name, file) {
 // ---- recipes ------------------------------------------------------------------------------------------------
 const P = (p) => join(packs, p);
 /** a numbered file in a pack folder of the owlish / yelling / wind zips etc. */
+/** a thunder preview, by its freesound number */
+const THUNDER_FILES = { 534023: '534023_9395330-hq.mp3', 347853: '347853_57789-hq.mp3', 536900: '536900_57789-hq.mp3', 397952: '397952_2247456-hq.mp3' };
+const T = (n) => join(packs, 'thunder', THUNDER_FILES[n]);
 const X = {
   bang: (n) => P(`bangs/${n}.ogg`),
   a: (n) => P(`sfx100/${n}.ogg`),
@@ -135,6 +145,29 @@ const stepLayer = (file, k, file2, chain2, sub) => ({
   fc: `[0:a]aresample=48000,${slow(k)},lowpass=f=2600[a];[1:a]aresample=48000,${chain2}[b];${SUB(sub)}[sub];[a][b][sub]amix=inputs=3:normalize=0,atrim=0:0.55,asetpts=PTS-STARTPTS,afade=t=out:st=0.4:d=0.15`,
 });
 
+/** a rumble: the earthquake recording (from `from` seconds in) and a rumble recording under stones falling at the given moments, slowed to `k` */
+function rumble(from, mid, stones, k) {
+  const inputs = [X.owl('Ambience/earthquake'), X.rumble, ...stones.map(([n]) => X.b(n))];
+  const parts = [
+    `[0:a]aresample=48000,atrim=start=${from}:end=${from + 6},asetpts=PTS-STARTPTS,${slow(k)},lowpass=f=170,volume=0.3[q]`,
+    `[1:a]aresample=48000,atrim=start=${from % 9 + 3}:end=${from % 9 + 9},asetpts=PTS-STARTPTS,${slow(k)},lowpass=f=650,volume=${mid * 2}[r]`,
+    ...stones.map(([, at], i) => `[${i + 2}:a]aresample=48000,${slow(0.55 * k)},lowpass=f=1300,volume=1.6,adelay=delays=${Math.round(at * 1000)}:all=1[s${i}]`),
+  ];
+  const labels = ['[q]', '[r]', ...stones.map((_, i) => `[s${i}]`)].join('');
+  parts.push(`${labels}amix=inputs=${2 + stones.length}:normalize=0,atrim=0:5,asetpts=PTS-STARTPTS,afade=t=in:d=0.6,afade=t=out:st=2.6:d=2.4`);
+  return { inputs, fc: parts.join(';') };
+}
+
+/** a crash: a heavy slam and a slowed bang, rubble landing a moment later, and a deep boom under it all, with an echo */
+function crash(slam, bang, stones, k) {
+  return {
+    inputs: [slam, bang, X.b(stones)],
+    fc: `[0:a]aresample=48000,${slow(k)},lowpass=f=1500[a];[1:a]aresample=48000,${slow(k * 0.85)},lowpass=f=900[b];` +
+      `[2:a]aresample=48000,${slow(0.55)},lowpass=f=1800,adelay=delays=120:all=1[c];${SUB(3)}[sub];` +
+      '[a][b][c][sub]amix=inputs=4:normalize=0,atrim=0:1.5,asetpts=PTS-STARTPTS,afade=t=out:st=0.8:d=0.7,aecho=0.8:0.6:80|160:0.3|0.2',
+  };
+}
+
 const RECIPES = {
   gun: [gunLoop()],
   impactFlesh: ['hit', 'slap2', 'fruit1', 'fruit2'].map((n) => one(X.owl(`Impacts/${n}`), `${cap(0.4)},lowpass=f=4500`)),
@@ -202,10 +235,30 @@ const RECIPES = {
   ],
   rain: [one(P('rain/4.ogg'), 'anull')],
   wind: [{ inputs: [P('wind/wind/Wind2.ogg')], fc: `${R},atrim=0:6.6,asetpts=PTS-STARTPTS[m];${loopify('m', 6.6, 1.5)}` }],
-  thunder: [
-    one(X.b('thunder_01'), 'afade=t=out:st=4:d=1.2'),
-    mix(X.b('thunder_01'), X.rumble, slow(0.8), 'atrim=2:9,afade=t=in:d=0.4,afade=t=out:st=4:d=3,lowpass=f=350', 'aecho=0.8:0.6:200|450:0.35|0.2'),
-    one(X.rumble, `atrim=3:11,afade=t=in:d=1,afade=t=out:st=4:d=4,lowpass=f=400,${verb}`),
+  // thunder, by how far off the strike was. Close: the sharp crack and its first roll. Normal: the clap and a long roll. Distant: only the low
+  // rumble, the cracks taken out.
+  // a building coming down: a long, heavy, low rumble (the ground itself, the thick of it) with stones crumbling through it
+  buildingRumble: [
+    rumble(10, 0.8, [['stones_01', 0.5], ['stones_02', 1.3], ['stones_03', 2.2]], 1),
+    rumble(22, 0.9, [['stones_02', 0.7], ['stones_01', 1.6], ['stones_03', 2.6]], 0.85),
+  ],
+  // a block of it hitting the ground: a thud with a sub-bass boom and a crash of rubble
+  buildingCrash: [
+    crash(X.a('slam_02'), X.bang('bang_03'), 'stones_01', 0.6),
+    crash(X.a('slam_03'), X.bang('bang_09'), 'stones_02', 0.55),
+    crash(X.a('metal_08'), X.bang('bang_01'), 'stones_03', 0.65),
+  ],
+  thunderClose: [
+    one(T('536900'), 'atrim=start=1.9:end=7,asetpts=PTS-STARTPTS,afade=t=out:st=3.5:d=1.5'),
+    one(T('347853'), 'atrim=start=0.9:end=8,asetpts=PTS-STARTPTS,afade=t=out:st=4.5:d=2.5'),
+  ],
+  thunderNormal: [
+    one(T('397952'), 'atrim=start=0.5:end=11,asetpts=PTS-STARTPTS,lowpass=f=4500,afade=t=in:d=0.4,afade=t=out:st=7:d=3.5'),
+    one(T('534023'), 'atrim=start=1.2:end=11,asetpts=PTS-STARTPTS,lowpass=f=4000,afade=t=in:d=0.3,afade=t=out:st=6.5:d=3.3'),
+  ],
+  thunderDistant: [
+    one(T('397952'), `atrim=start=6:end=18,asetpts=PTS-STARTPTS,${slow(0.85)},lowpass=f=260,afade=t=in:d=1.8,afade=t=out:st=7:d=4.5`),
+    one(T('347853'), `atrim=start=4:end=17,asetpts=PTS-STARTPTS,${slow(0.8)},lowpass=f=240,afade=t=in:d=2,afade=t=out:st=8:d=4.5`),
   ],
 };
 

@@ -17,16 +17,17 @@ const FALL_SCREAM_CHANCE = 0.9;
 /** the blast radius (world units) up to which an explosion is small, and up to which it is medium */
 const SMALL_BLAST = 2;
 const MEDIUM_BLAST = 5;
-/** seconds between the far-off explosions and the thunder, give or take */
+/** seconds between the far-off explosions, give or take (the thunder is the lightning's: see lightning.ts) */
 const DISTANT_EVERY = [5, 14] as const;
-const THUNDER_EVERY = [14, 40] as const;
 /** how long the servo sound is as recorded (s), to fit it to the swing of the leg */
 const SERVO_LEN = 0.3;
+/** a collapsing piece of a building must be at least this many layers to be heard, and this many to be heard in full */
+const COLLAPSE_MIN = 12;
+const COLLAPSE_FULL = 160;
 /** wind loop volume: it follows the gusts (their speed is about 0.4 .. 3) */
 const WIND_MAX = 3;
 
 let distantT = 4;
-let thunderT = 12;
 
 const range = (r: readonly [number, number]): number => r[0] + Math.random() * (r[1] - r[0]);
 
@@ -60,11 +61,6 @@ export const sfx = {
       const side = Math.random() < 0.5 ? -1 : 1;
       audio.play('explosionDistant', { x: audio.listenerX + side * (30 + Math.random() * 25), muffle: 0.55 + Math.random() * 0.3, gain: 0.5 + Math.random() * 0.5 });
     }
-    thunderT -= dt;
-    if (thunderT <= 0) {
-      thunderT = range(THUNDER_EVERY);
-      audio.play('thunder', { x: audio.listenerX + (Math.random() * 2 - 1) * 20, muffle: 0.25 });
-    }
   },
 
   /** the mech's guns: held while they fire; pitch climbs a little as they heat up */
@@ -87,6 +83,19 @@ export const sfx = {
   explosion(at: THREE.Vector3, radius: number): void {
     const id: SoundId = radius < SMALL_BLAST ? 'explosionSmall' : radius < MEDIUM_BLAST ? 'explosionMedium' : 'explosionHuge';
     audio.play(id, { x: at.x });
+  },
+
+  /** a piece of a building lets go: a low, heavy rumble, fuller the more of it there is (a handful of bricks makes none) */
+  buildingRumble(x: number, mass: number, rate = 1): void {
+    if (mass < COLLAPSE_MIN) return;
+    audio.play('buildingRumble', { x, gain: 0.45 + 0.55 * Math.min(1, mass / COLLAPSE_FULL), rate });
+  },
+
+  /** a block of a building hits the ground: a heavy thud and a crash of rubble, harder for a bigger block and a longer fall */
+  buildingCrash(x: number, mass: number, fall: number): void {
+    if (mass < COLLAPSE_MIN) return;
+    const weight = Math.min(1, (mass / COLLAPSE_FULL) * (0.6 + 0.4 * Math.min(1, fall / 3)));
+    audio.play('buildingCrash', { x, gain: 0.4 + 0.6 * weight, rate: 1.1 - 0.25 * weight });
   },
 
   cannon(from: THREE.Vector3): void { audio.play('cannonFire', { x: from.x }); },
