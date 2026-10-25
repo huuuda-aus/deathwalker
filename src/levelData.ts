@@ -38,6 +38,8 @@ export interface SceneDef {
   /** sorted by `at` */
   events: SpawnEvent[];
   boss: BossDef | null;
+  /** seconds a good player takes to clear the scene: the time bonus is paid against it */
+  parTime: number;
   /** everything the scene sends in; every one of them must be killed to clear it (Infinity for a boss scene, which ends with the boss) */
   spawnBudget: number;
 }
@@ -101,7 +103,7 @@ export function parseLevel(data: unknown): SceneDef[] {
         truckTroops: Math.round(num(`${w} boss.truckTroops`, b.truckTroops ?? 10, 1)),
       };
     }
-    return { name: String(sc.name ?? w), widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, boss, spawnBudget: boss ? Infinity : budget };
+    return { name: String(sc.name ?? w), widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, boss, parTime: num(`${w} parTime`, sc.parTime ?? 90, 10), spawnBudget: boss ? Infinity : budget };
   });
 }
 

@@ -127,6 +127,14 @@ function gunLoop() {
   return { inputs: [...shots.map(([f]) => f), ...clicks, P('saw/807194_10594370-hq.mp3'), P('sfx100b/sfx100v2_loop_machine_02.ogg')], fc: parts.join(';') };
 }
 
+/** a deep boom: a tone sliding down from 62 Hz, dying away in half a second, at volume `v` (a source in a filter graph, so it ends in no label) */
+const SUB = (v) => `aevalsrc=0.9*sin(2*PI*(62*t-45*t*t))*exp(-8*t):d=0.5:s=48000,volume=${v}*0.22`;
+/** a step: `file` slowed to `k` and rounded off, a second sound over it, and the boom */
+const stepLayer = (file, k, file2, chain2, sub) => ({
+  inputs: [file, file2],
+  fc: `[0:a]aresample=48000,${slow(k)},lowpass=f=2600[a];[1:a]aresample=48000,${chain2}[b];${SUB(sub)}[sub];[a][b][sub]amix=inputs=3:normalize=0,atrim=0:0.55,asetpts=PTS-STARTPTS,afade=t=out:st=0.4:d=0.15`,
+});
+
 const RECIPES = {
   gun: [gunLoop()],
   impactFlesh: ['hit', 'slap2', 'fruit1', 'fruit2'].map((n) => one(X.owl(`Impacts/${n}`), `${cap(0.4)},lowpass=f=4500`)),
@@ -152,15 +160,20 @@ const RECIPES = {
     mix(X.bang('cannon_04'), X.rumble, `${slow(0.6)},lowpass=f=1200`, 'atrim=0:4,afade=t=out:st=2:d=2,lowpass=f=250', 'aecho=0.8:0.8:200|400|700:0.5|0.35|0.25'),
     mix(X.bang('bang_09'), X.rumble, `${slow(0.5)},lowpass=f=1000`, 'atrim=5:9,afade=t=in:d=0.5,afade=t=out:st=2:d=2,lowpass=f=250', 'aecho=0.8:0.8:200|400|700:0.5|0.35|0.25'),
   ],
-  // the mech's foot: a stomp, layered with metal
+  // the mech's foot: a heavy stomp slowed right down and rounded off, with a deep sub-bass boom under it and a little metal on top
   step: [
-    one(X.stomp, 'volume=2'),
-    mix(X.stomp, X.a('metal_09'), slow(0.85), 'atrim=0:0.4,volume=0.6'),
-    mix(X.stomp, X.a('slam_04'), slow(1.1), 'volume=0.7'),
-    mix(X.stomp, X.mech('clank1'), 'anull', 'adelay=20,volume=0.5,atrim=0:0.5'),
+    { inputs: [X.stomp], fc: `${R},${slow(0.75)},lowpass=f=2600[a];${SUB(1.4)}[sub];[a][sub]amix=inputs=2:normalize=0,atrim=0:0.55,asetpts=PTS-STARTPTS,afade=t=out:st=0.4:d=0.15` },
+    stepLayer(X.stomp, 0.7, X.a('metal_09'), `${slow(0.6)},volume=0.35`, 1.5),
+    stepLayer(X.stomp, 0.8, X.a('slam_04'), `${slow(0.8)},volume=0.7`, 1.3),
+    stepLayer(X.stomp, 0.72, X.mech('clank1'), `${slow(0.7)},adelay=delays=20:all=1,volume=0.25`, 1.5),
   ],
-  servoBurst: [X.owl('Scifi/robotics1'), X.owl('Scifi/robotics2'), X.mech('mechanical1'), X.mech('mechanical2'), X.mech('squeakyclick1')]
-    .map((f) => one(f, cap(0.4, 0.15))),
+  // a leg's servo whine, taken down: slowed, with the thin top cut away, over a low motor growl rising a little in pitch
+  servoBurst: [[X.owl('Scifi/robotics1'), 19.2], [X.owl('Scifi/robotics2'), 19.2], [X.mech('mechanical1'), 1.2], [X.mech('mechanical2'), 2.4], [X.mech('squeakyclick1'), 2.4]]
+    .map(([f, level]) => ({
+      inputs: [f],
+      fc: `${R},${slow(0.6)},highpass=f=80,lowpass=f=3200,volume=${level},atrim=0:0.3,asetpts=PTS-STARTPTS,afade=t=out:st=0.2:d=0.1[a];` +
+        'aevalsrc=0.6*sin(2*PI*(95*t+60*t*t))*min(t*60\\,1)*exp(-6*t):d=0.3:s=48000,volume=0.12[g];[a][g]amix=inputs=2:normalize=0',
+    })),
   rocketLaunch: [one(X.missile, `${cap(2.7, 0.3)},lowpass=f=7000`)],
   rocketFlight: [{
     inputs: [X.whoosh, P('sfx100b/sfx100v2_loop_machine_01.ogg')],

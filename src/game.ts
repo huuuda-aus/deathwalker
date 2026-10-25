@@ -17,10 +17,12 @@ import { Missiles } from './missiles';
 import { Explosions } from './explosions';
 import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
-import { Menu } from './menu';
 import { PauseMenu } from './pauseMenu';
 import { GameOverMenu } from './gameOverMenu';
 import { MechDeath } from './mechDeath';
+import { Score, nominalLevel, gradeFor } from './score';
+import { hof } from './hallOfFame';
+import { EndScreen } from './endScreen';
 import { audio } from './audio';
 import { sfx } from './sfx';
 import { SoundTest } from './soundTest';
@@ -31,7 +33,7 @@ import { Weapon } from './weapon';
 import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
-import { CAM_DIST, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
+import { CAM_DIST, LEVEL, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
 import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING } from './config';
 import { Casings } from './casings';
 
@@ -43,6 +45,9 @@ const FADE_IN = 1.8;
 
 /** the weather and the far-off war are turned down on the menu, so the soundtrack stands out (share of full volume) */
 const MENU_AMBIENCE = 0.2;
+
+/** seconds between clearing the level and the level complete screen coming up */
+const WIN_DELAY = 3;
 
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
 
@@ -77,6 +82,12 @@ export class Game {
   private readonly hud: Hud;
   private readonly mechDeath: MechDeath;
   private readonly casings: Casings;
+  private readonly score = new Score();
+  private readonly endScreen: EndScreen;
+  /** the level is cleared: the mech cannot be hurt, and the level complete screen is on its way (seconds) */
+  private won = false;
+  private winT = 0;
+  private wasLocked = false;
   private readonly player = newPlayer();
 
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
@@ -98,6 +109,8 @@ export class Game {
   /** seconds left of the mech's death (it is gone, the fireball is up); 0 = alive. And how long a new mech is untouchable */
   private deathT = 0;
   private invuln = 0;
+  /** the level complete screen is up */
+  private winShown = false;
   private cullTimer = 0;
   /** screen shake: how far the camera is thrown about right now (world units), dying away */
   private shake = 0;
@@ -179,7 +192,7 @@ export class Game {
       add: (e) => this.enemies.add(e), handOff: (from, to) => this.lock.handOff(from, to), shake: (at, amount) => this.shakeScreen(at, amount),
     });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n), score: this.score });
     this.casings = new Casings(scene, (x, z, y) => world.surfaceTop(x, z, y));
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list, onShot: (gun) => this.ejectCasings(gun) });
     this.mechDeath = new MechDeath({
@@ -191,7 +204,8 @@ export class Game {
       },
       blastBuildings: (at, radius, speed) => world.forEachBuilding(at.x - radius, at.x + radius, (b) => b.blast(at.x, at.y, at.z, radius, speed)),
     });
-    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss });
+    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss, score: this.score });
+    this.endScreen = new EndScreen(hof);
 
     // the menu shows the first scene's skyline and weather, without the mech or any fighting
     this.mech.root.visible = false;
@@ -207,10 +221,13 @@ export class Game {
     audio.ctx.addEventListener('statechange', showLock);
     showLock();
     for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => audio.unlock(), { capture: true });
-    new Menu(() => this.startPlaying());
-    new GameOverMenu({ isOver: () => this.player.over, onRetry: () => this.reset(), onQuit: () => location.reload() });
+    new GameOverMenu({
+      isOver: () => this.player.over || this.winShown,
+      onRetry: () => { this.endScreen.commit(); this.reset(); },
+      onQuit: () => { this.endScreen.commit(); location.reload(); },
+    });
     new PauseMenu({
-      canPause: () => this.mode === 'play' && !this.player.over,
+      canPause: () => this.mode === 'play' && !this.player.over && !this.winShown,
       onPause: () => { this.paused = true; this.input.clear(); audio.suspend(); },
       onResume: () => { this.paused = false; this.last = performance.now(); audio.resume(); },
       // the world (buildings, rubble) has no way to be put back, so a fresh page is the clean way to a new game
@@ -219,6 +236,7 @@ export class Game {
     this.applyPixelRatio(this.ratioCap);
     addEventListener('resize', () => this.onResize());
     addEventListener('keydown', (e) => {
+      if (document.activeElement instanceof HTMLInputElement) return;     // typing a name
       if (e.code === 'KeyQ') this.hud.setQuality(this.post.toggle());
       if (e.code === 'KeyH') this.post.toggleHaze();
     });
@@ -226,7 +244,9 @@ export class Game {
 
   start(): void { this.frame(); }
 
-  private startPlaying(): void {
+  /** "start game" was chosen on the menu */
+  startPlaying(): void {
+    document.body.classList.remove('loading');
     this.mode = 'play';
     audio.stopMusic(2);
     audio.setVolume('ambience', 1, 1.5);               // the menu's soundtrack: there is no music in the game itself
@@ -333,13 +353,17 @@ export class Game {
     this.camX = this.level.camX;
     this.vx = this.vz = 0;
     this.hud.setGameOver(false);
+    this.score.reset();
+    this.won = this.winShown = false;
+    this.winT = 0;
   }
 
   private hurtPlayer(n: number): void {
     const { player } = this;
-    if (player.over || this.deathT > 0 || this.invuln > 0) return;
+    if (player.over || this.won || this.deathT > 0 || this.invuln > 0) return;
     player.shield -= n;
     player.hitFlash = 1;
+    this.score.noteHit();
     if (player.shield <= 0) this.killMech();
   }
 
@@ -366,7 +390,7 @@ export class Game {
     if (this.deathT <= 0) return;
     this.deathT -= dt;
     if (this.deathT > 0) return;
-    if (player.lives <= 0) { player.over = true; this.hud.setGameOver(true); return; }
+    if (player.lives <= 0) { player.over = true; this.showEnd('over'); return; }
     player.shield = PLAYER.maxShield;
     this.mech.root.visible = true;
     this.weapon.reset();
@@ -436,7 +460,23 @@ export class Game {
     for (let i = 0; i < CASING.perShot; i++) this.casings.eject(this.ejectAt, this.ejectDir);
   }
 
+  /** The game over / level complete screen: the score and where it came from, and a place on the hall of fame if it earned one. */
+  private showEnd(kind: 'over' | 'win'): void {
+    const { score } = this;
+    if (kind === 'win') this.winShown = true;
+    this.endScreen.show({
+      kind, score: score.total, scenes: score.results.length, sceneCount: LEVEL.length, time: score.time, kills: score.kills, results: score.results,
+      grade: kind === 'win' ? gradeFor(score.total, nominalLevel(LEVEL)) : undefined,
+    });
+    this.hud.setGameOver(true, kind === 'win' ? 4 : undefined);
+  }
+
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
+    if (levelEvent === 'arrived') this.score.beginScene();
+    if (levelEvent === 'cleared' || levelEvent === 'complete') {
+      this.score.endScene(this.level.index, LEVEL[this.level.index].parTime, this.player.shield, PLAYER.maxShield);
+    }
+    if (levelEvent === 'complete') { this.won = true; this.winT = WIN_DELAY; }
     if (levelEvent === 'cleared' || levelEvent === 'complete') this.enemies.retreatAll();
     if (levelEvent === 'arrived') this.enemies.purgeRetreating();
     this.enemies.viewTop = CAMERA.height + SCREEN_W / 2 / this.camera.aspect;
@@ -491,6 +531,10 @@ export class Game {
     this.adaptResolution(rawMs, now);
 
     this.updateDeath(dt);
+    this.score.update(dt, this.level.phase === 'active' && !this.won && !this.player.over && this.deathT <= 0);
+    if (this.weapon.locked && !this.wasLocked) this.score.noteOverheat();
+    this.wasLocked = this.weapon.locked;
+    if (this.winT > 0 && (this.winT -= dt) <= 0) this.showEnd('win');
     const active = !this.player.over && this.deathT <= 0;
     this.movePlayer(dt);
     const levelEvent = this.updateCamera(dt);

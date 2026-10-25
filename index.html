@@ -34,14 +34,42 @@
       #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
         font-family: monospace; color: #ffb347; user-select: none; cursor: default;
         background: radial-gradient(ellipse at 50% 50%, rgba(40,0,0,0.45) 0%, rgba(2,6,10,0.8) 100%); }
-      body.gameover #reticle { display: none; }
-      #over h2 { margin: 0 0 40px; font-size: clamp(40px, 7vw, 88px); letter-spacing: 0.2em; padding-left: 0.2em; color: #ff5a4a;
+      body.gameover #reticle, body.gameover #hud, body.gameover #boss { display: none; }
+      #over.win h2 { color: #7dff9a; text-shadow: 0 0 22px rgba(60,255,120,0.55), 4px 4px 0 #002a0a; }
+      #over-summary { width: min(420px, 80vw); margin-bottom: 18px; font-size: 16px; letter-spacing: 0.12em; }
+      #over-summary .row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(255,179,71,0.18); }
+      #over-summary .row:first-child { font-size: 26px; color: #ffd9a0; padding-bottom: 8px; }
+      #over-summary .row.grade span:last-child { font-size: 30px; color: #7dff9a; }
+      #over-entry { flex-direction: column; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 14px; letter-spacing: 0.14em; }
+      #over-name { width: 3.2ch; font: inherit; font-size: 28px; text-align: center; letter-spacing: 0.2em; color: #ffd9a0; background: rgba(255,179,71,0.1);
+        border: 2px solid #ffb347; padding: 4px 8px 4px 16px; outline: none; text-transform: uppercase; }
+      #over-name:focus { box-shadow: 0 0 14px rgba(255,140,0,0.6); }
+      #over-name:disabled { opacity: 0.6; }
+      #over-rank { color: #ffd9a0; min-height: 1.2em; }
+      #score { margin-bottom: 8px; font-size: 16px; letter-spacing: 0.1em; color: #ffd9a0; }
+      #score b { font-size: 20px; }
+      #score i { font-style: normal; color: #ff8c00; margin-left: 8px; }
+      /* ---- hall of fame, over the main menu ---- */
+      #fame { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 5; font-family: monospace; color: #ffb347;
+        background: rgba(2,6,10,0.94); cursor: pointer; }
+      body.fame #fame { display: flex; }
+      #fame h2 { margin: 0 0 24px; text-align: center; font-size: 36px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
+      #fame table { border-collapse: collapse; font-size: 18px; letter-spacing: 0.1em; }
+      #fame th { text-align: left; padding: 6px 22px 10px 0; color: #ffd9a0; opacity: 0.7; font-weight: normal; }
+      #fame td { padding: 5px 22px 5px 0; border-top: 1px solid rgba(255,179,71,0.15); }
+      #fame td.num, #fame th:nth-child(3), #fame th:nth-child(5) { text-align: right; }
+      #loading { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; font: 22px monospace; letter-spacing: 0.4em; color: #ffb347; z-index: 6; background: #000; }
+      body.loading #loading { display: flex; }
+      body.fame #menu-main, body.fame #kofi, body.fame #music-toggle { visibility: hidden; }
+      #fame tr:nth-child(2) td { color: #ffd9a0; font-size: 22px; }
+      #fame p { margin: 22px 0 0; text-align: center; font-size: 12px; opacity: 0.6; letter-spacing: 0.15em; }
+      #over h2 { margin: 0 0 24px; font-size: clamp(40px, 7vw, 88px); letter-spacing: 0.2em; padding-left: 0.2em; color: #ff5a4a;
         text-shadow: 0 0 22px rgba(255,60,30,0.6), 4px 4px 0 #3a0a00; }
       /* ---- main menu: over the first level's skyline ---- */
       #menu { position: fixed; inset: 0; display: none; font-family: monospace; color: #ffb347; user-select: none;
         background: radial-gradient(ellipse at 50% 45%, rgba(2,6,10,0.15) 0%, rgba(2,6,10,0.72) 100%); }
       body.menu #menu { display: block; }
-      body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
+      body.fame #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
       #menu-main { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
       #menu h1 { margin: 0; }
       #menu h1 img { display: block; margin: 0 auto; width: clamp(338px, 41.6vw, 624px); height: auto; filter: drop-shadow(0 0 18px rgba(255,140,0,0.35)); }
@@ -78,6 +106,7 @@
   </head>
   <body class="menu">
     <div id="hud">
+      <div id="score"></div>
       <div>SHIELD</div><div class="bar"><div id="shield"></div></div>
       <div>HEAT</div><div class="bar"><div id="heat"></div></div>
       <div id="lives"></div>
@@ -89,7 +118,12 @@
     <div id="hit"></div>
     <div id="go">&#9668; GO</div>
     <div id="over">
-      <h2>GAME OVER</h2>
+      <h2 id="over-title">GAME OVER</h2>
+      <div id="over-summary"></div>
+      <form id="over-entry" autocomplete="off">
+        <label>ENTER YOUR NAME <input id="over-name" maxlength="3" spellcheck="false" autocomplete="off" /></label>
+        <span id="over-rank"></span>
+      </form>
       <ul class="menu-items">
         <li data-action="retry">RETRY</li>
         <li data-action="quit">BACK TO MAIN MENU</li>
@@ -102,6 +136,14 @@
         <li data-action="resume">RESUME</li>
         <li data-action="quit">BACK TO MAIN MENU</li>
       </ul>
+    </div>
+    <div id="loading">LOADING</div>
+    <div id="fame">
+      <div id="fame-box">
+        <h2>HALL OF FAME</h2>
+        <table id="fame-table"></table>
+        <p>ESC, ENTER OR CLICK TO CLOSE</p>
+      </div>
     </div>
     <div id="menu">
       <div id="menu-main">

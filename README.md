@@ -49,6 +49,16 @@ The mech never turns around: its body always faces left. Only the cockpit and it
 
 Bullets are not projectiles. Each shot is an instant ray cast from the camera through the reticle into the 2.5D world (enemies, walls, rubble, ground), and the guns' effect appears where it lands. The two guns fire alternately, and the heat level widens the spread slightly. Rubble on the line between a gun and its target stops the shot, for both you and the enemy.
 
+## Score and hall of fame
+
+Every enemy is worth points (a soldier 10, a horse 25, a gun 120, a truck 200, a plane 250, a silo 1500), and the level's spawns are fixed, so the points available are the same for everyone. What tells two players who kill everything apart:
+
+- **Combo:** kills less than 1.5 s apart build a multiplier (up to x3). Stomping a soldier (+15) or crushing him under falling rubble (+10) pays extra.
+- **Scene bonuses:** each cleared scene pays for **speed** (up to 1000, against the scene's `parTime` in `level1.json`: full at 60% of it or faster, none at 150%), **shield left** (up to 500), **no damage taken** (500) and **no overheat** (300). The boss scene has no kill count, so its speed bonus is the point of it.
+- **Grade:** a cleared level is graded S to D by its score as a share of the level's nominal total (every enemy once, every bonus in full, no combos).
+
+The **hall of fame** (main menu) keeps the ten best runs on this machine, in `localStorage`. They are ranked by how far the run got (a cleared level beats any unfinished one), then score, then time, so identical scores are told apart by speed. A run that makes the list asks for three letters on the game over / level complete screen; leaving without typing enters it as AAA.
+
 ## Sound
 
 Web Audio, with a thin engine in `src/audio.ts` (buses, limiter, voice cap, pan and distance muffling) and game events turned into sounds in `src/sfx.ts`. Every sound event is listed in `src/sounds.json` with the loudness it is normalized to, so that file is the mix. Press **F2** in the game for a panel that plays each one. The recordings are free CC0 packs (see `public/audio/CREDITS.md`):

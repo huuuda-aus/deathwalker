@@ -370,3 +370,29 @@ export const CASING = {
   /** seconds it takes to shrink away at the end */
   fadeTime: 0.6,
 } as const;
+
+/**
+ * Score. Every enemy is worth points (the same however the level is played, since the level's spawns are fixed);
+ * kills in quick succession build a multiplier; and each scene pays bonuses for being fast, taking few hits and
+ * never overheating, so two players who kill everything still end up apart.
+ */
+export const SCORE = {
+  points: { soldier: 10, horse: 25, cannon: 120, truck: 200, aircraft: 250, silo: 1500 },
+  /** extra for killing a soldier in a showier way than shooting him */
+  causeBonus: { bullet: 0, stomp: 15, crush: 10, blast: 5 },
+  /** a kill within this many seconds of the last one adds to the combo; the multiplier grows by `comboStep` each time, up to `comboMax` */
+  comboWindow: 1.5,
+  comboStep: 0.1,
+  comboMax: 3,
+  /**
+   * What a cleared scene pays. Time: all of it at 60% of the scene's par time or faster, none at 150% or slower. Shield: in
+   * proportion to the shield left. The other two are all or nothing.
+   */
+  bonus: { time: 1000, shield: 500, noDamage: 500, noOverheat: 300 },
+  timeBest: 0.6,
+  timeWorst: 1.5,
+  /** a finished run is graded by its score as a share of the level's nominal total (every enemy once, every bonus in full, no combos) */
+  grades: [['S', 1.15], ['A', 0.9], ['B', 0.7], ['C', 0.45]] as const,
+  /** the hall of fame keeps this many */
+  fameSize: 10,
+} as const;

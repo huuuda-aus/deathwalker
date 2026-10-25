@@ -110,6 +110,8 @@ export class Soldier implements Enemy {
   readonly impact = FLESH_IMPACT;
   hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
+  /** what killed him, for the score: set by whatever does it (a bullet unless said otherwise) */
+  cause: 'bullet' | 'stomp' | 'crush' | 'blast' = 'bullet';
   /** hitbox half extents (padded for forgiveness) */
   readonly half = new THREE.Vector3(0.345, 0.2875, 0.345).multiplyScalar(SOLDIER_SCALE);
   centerY = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
@@ -299,6 +301,7 @@ export class Soldier implements Enemy {
   /** Flattened under the mech's foot: dead on the spot, squashed flat in a pool of blood, no hop. */
   splat(fx: Fx): void {
     if (!this.alive) return;
+    this.cause = 'stomp';
     this.hp = 0;
     this.state = 'dead';
     this.deadTime = 0;

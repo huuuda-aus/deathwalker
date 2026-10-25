@@ -1,6 +1,7 @@
 import type { LevelRunner } from './level';
 import type { Weapon } from './weapon';
 import type { SiloBoss } from './boss';
+import type { Score } from './score';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -22,6 +23,8 @@ export class Hud {
   private whiteout = $('flash');
   private whiteoutLevel = 0;
   private over = $('over');
+  private scoreEl = $('score');
+  private shownScore = '';
   private bossBar = $('boss');
   private bossFills = [...this.bossBar.querySelectorAll<HTMLElement>('.seg > div')];
   private fpsFrames = 0;
@@ -29,7 +32,7 @@ export class Hud {
   private fpsWorst = 0;
   private shownLives = -1;
 
-  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null }) {}
+  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null; score: Score }) {}
 
   setQuality(postOn: boolean): void {
     this.quality.textContent = `Q: post-fx ${postOn ? 'on' : 'off'}  |  H: haze`;
@@ -38,7 +41,8 @@ export class Hud {
   /** the whole screen goes white (0..1) and fades back by itself: the mech blowing up */
   flash(amount: number): void { this.whiteoutLevel = amount; }
 
-  setGameOver(on: boolean): void {
+  /** @param fade seconds the screen takes to come up */
+  setGameOver(on: boolean, fade = GAME_OVER_FADE): void {
     const { style } = this.over;
     style.display = on ? 'flex' : 'none';
     // the screen comes up slowly: start clear, then fade in
@@ -46,7 +50,7 @@ export class Hud {
     style.opacity = '0';
     if (on) {
       void this.over.offsetWidth;           // let the clear state register before the fade starts
-      style.transition = `opacity ${GAME_OVER_FADE}s ease-in`;
+      style.transition = `opacity ${fade}s ease-in`;
       style.opacity = '1';
     }
     document.body.classList.toggle('gameover', on);
@@ -63,7 +67,10 @@ export class Hud {
   }
 
   update(dt: number, canFire: boolean, reticle: { x: number; y: number }, locked: boolean): void {
-    const { player, level, weapon } = this.deps;
+    const { player, level, weapon, score } = this.deps;
+    // the score, and the combo multiplier while a chain of kills is running
+    const sc = `SCORE <b>${String(score.total).padStart(6, '0')}</b>${score.combo > 1 ? `<i>x${score.multiplier.toFixed(1)}</i>` : ''}`;
+    if (sc !== this.shownScore) { this.shownScore = sc; this.scoreEl.innerHTML = sc; }
     this.go.style.display = level.phase === 'cleared' ? 'block' : 'none';
     this.shield.style.width = `${Math.max(0, player.shield)}%`;
     this.heat.style.width = `${weapon.heat * 100}%`;
