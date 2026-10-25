@@ -60,10 +60,10 @@ export class Bullets {
   setPixelRatio(r: number): void { this.mat.uniforms.uPixelRatio.value = r; }
 
   /** Send a bullet from `from` toward `aim`. */
-  fire(from: THREE.Vector3, aim: THREE.Vector3): void {
+  fire(from: THREE.Vector3, aim: THREE.Vector3, speed: number = ENEMY_FIRE.bulletSpeed, heavy = false): void {
     if (this.pool.full) return;
-    sfx.enemyShot(from);
-    const vel = new THREE.Vector3().subVectors(aim, from).normalize().multiplyScalar(ENEMY_FIRE.bulletSpeed);
+    if (heavy) sfx.gunnerShot(from); else sfx.enemyShot(from);
+    const vel = new THREE.Vector3().subVectors(aim, from).normalize().multiplyScalar(speed);
     this.pool.push({ pos: from.clone(), vel, age: 0 });
   }
 

@@ -72,6 +72,8 @@ export const sfx = {
   },
 
   enemyShot(from: THREE.Vector3): void { audio.play('enemyShot', { x: from.x }); },
+  /** a round from a heavy machine gun: deeper and harder than a rifle's */
+  gunnerShot(from: THREE.Vector3): void { audio.play('gunnerShot', { x: from.x }); },
 
   /** a soldier is killed; one thrown off a building screams more, and longer */
   soldierDeath(x: number, plunge: boolean): void {

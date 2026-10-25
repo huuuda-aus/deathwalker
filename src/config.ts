@@ -377,7 +377,7 @@ export const CASING = {
  * never overheating, so two players who kill everything still end up apart.
  */
 export const SCORE = {
-  points: { soldier: 10, horse: 25, cannon: 120, truck: 200, aircraft: 250, silo: 1500 },
+  points: { soldier: 10, gunner: 60, horse: 25, cannon: 120, truck: 200, aircraft: 250, silo: 1500 },
   /** extra for killing a soldier in a showier way than shooting him */
   causeBonus: { bullet: 0, stomp: 15, crush: 10, blast: 5 },
   /** a kill within this many seconds of the last one adds to the combo; the multiplier grows by `comboStep` each time, up to `comboMax` */
@@ -419,4 +419,35 @@ export const STORM = {
   /** how much the flash adds to the scene's lights at full power */
   hemiBoost: 3.2,
   sunBoost: 3.4,
+} as const;
+
+/**
+ * The heavy machine gunner: runs in with his gun over his shoulder, drops to the ground at a spot with a line of fire, sets the gun up
+ * and fires long, accurate bursts at the mech; he is tougher than a rifleman.
+ */
+export const GUNNER = {
+  hp: SOLDIER.hp * 2,
+  /** slower than a rifleman running, with the gun to carry */
+  runSpeed: 2.5,
+  /** how far from the mech he sets up (units), and how many he sends in at a time at most */
+  standoffMin: 8,
+  standoffMax: 13,
+  packMax: 3,
+  /** setting up: he leaps forward (this long, this far and this high, in world units), lands on his belly and the gun settles (s), then he is ready; picking the gun up again takes `packTime` */
+  diveTime: 0.4,
+  diveDist: 0.85,
+  diveHeight: 0.16,
+  landTime: 0.45,
+  packTime: 0.7,
+  /** a burst is this many rounds, fired at this rate (rounds/s); between bursts he rests this long (s) */
+  burst: [14, 24] as const,
+  rate: 9,
+  rest: [1.3, 2.4] as const,
+  /** the first burst comes this long after he is down (s) */
+  firstDelay: 0.6,
+  /** his aim: the share of an ordinary soldier's miss (1 = as bad), and how fast his bullets fly (units/s; a rifleman's is `ENEMY_FIRE.bulletSpeed`) */
+  precision: 0.45,
+  bulletSpeed: 9,
+  /** no line of fire for this long (s) and he packs up and finds another spot */
+  noSightLimit: 1.2,
 } as const;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Soldier, type Enemy, type SoldierEnv } from './enemies';
+import { MachineGunner } from './gunner';
 import { CannonUnit } from './cannon';
 import { Horse } from './horse';
 import { TruckUnit } from './truck';
@@ -105,7 +106,8 @@ export class EnemyManager {
   /** Points for something killed (the soldiers a gun's crew lose count one by one; the missiles and bombs are not worth any). */
   private award(e: Enemy): void {
     let kind: ScoreKind | null = null;
-    if (e instanceof Soldier) kind = 'soldier';
+    if (e instanceof MachineGunner) kind = 'gunner';
+    else if (e instanceof Soldier) kind = 'soldier';
     else if (e instanceof Horse) kind = 'horse';
     else if (e instanceof CannonUnit) kind = 'cannon';
     else if (e instanceof TruckUnit) kind = 'truck';
@@ -207,6 +209,23 @@ export class EnemyManager {
       const unit = new CannonUnit(x, z, stopX, crew, horse, { shells, debris, dust, explosions, floor: (fx, fz, fy) => world.surfaceTop(fx, fz, fy) });
       for (const e of [unit, ...crew, horse]) { scene.add(e.group); this.list.push(e); }
       level.spawned += cost;
+    }
+    return true;
+  }
+
+  /**
+   * Heavy machine gunners run in from off screen on the left, each with a gun over his shoulder, and set up wherever they find a clear
+   * line of fire. A few at a time at most: the next group waits until these are dead.
+   */
+  private spawnGunners(count: number, camX: number): boolean {
+    const { scene, level, env } = this.deps;
+    if (this.list.some((e) => e instanceof MachineGunner && e.alive && !e.retreating)) return false;
+    const half = SCREEN_W / 2;
+    for (let n = 0; n < count; n++) {
+      const g = new MachineGunner(camX - half - 3 - n * 2.2, LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin), env);
+      scene.add(g.group);
+      this.list.push(g);
+      level.spawned++;
     }
     return true;
   }
@@ -331,6 +350,7 @@ export class EnemyManager {
       if (level.fired.has(i) || level.progress < ev.at) return;
       const sent = ev.type === 'cannon' ? this.spawnCannon(ev.count, camX)
         : ev.type === 'truck' ? this.spawnTruck(ev.troops, camX)
+        : ev.type === 'gunner' ? this.spawnGunners(ev.count, camX)
         : this.spawnAircraft(ev.count, camX);
       if (sent) level.fired.add(i);
     });
@@ -381,17 +401,17 @@ export class EnemyManager {
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];
-      e.update(dt, mech.root.position, fx, (from, miss) => {
+      e.update(dt, mech.root.position, fx, (from, miss, opts) => {
         if (!spawning) return;
         // aimed at where the mech's chest is right now, off by a random amount that grows with distance: a mech
         // that keeps moving walks out of the way of the bullets
-        const spread = ENEMY_FIRE.spreadBase + ENEMY_FIRE.spreadPerUnit * from.distanceTo(chest);
+        const spread = (ENEMY_FIRE.spreadBase + ENEMY_FIRE.spreadPerUnit * from.distanceTo(chest)) * (opts?.precision ?? 1);
         shotAt.set(
           chest.x + miss.x * spread,
           chest.y + miss.y * spread * ENEMY_FIRE.spreadVertical,
           chest.z + miss.z * spread * ENEMY_FIRE.spreadDepth,
         );
-        bullets.fire(from, shotAt);
+        bullets.fire(from, shotAt, opts?.speed, opts?.heavy);
       });
       if (e instanceof Soldier && e.alive && this.underFoot(e)) e.splat(fx);
       if (e instanceof CannonUnit && e.needsCrew) this.recruit(e);

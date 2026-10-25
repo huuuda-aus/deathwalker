@@ -176,6 +176,12 @@ const RECIPES = {
   impactGround: [X.b('footstep_wet_01'), X.b('footstep_wet_02'), X.b('footstep_wet_03')].map((f) => one(f, `${cap(0.4)},lowpass=f=2500`)),
   impactRubble: [X.b('stones_01'), X.b('stones_02'), X.b('stones_03'), X.mech('rattle1')].map((f) => one(f, cap(0.5))),
   enemyShot: [shot(X.gun('cz'), 0.23), shot(X.gun('cz'), 2.82), shot(X.gun('sks'), 2.3), shot(X.gun('sks'), 0.35), shot(X.gun('mosin'), 0.44), shot(X.gun('mosin'), 1.66)],
+  // a heavy machine gun's round: a rifle shot slowed down for body, with a low thump under it
+  gunnerShot: [[X.gun('sks'), 4.03], [X.gun('sks'), 2.28], [X.gun('mosin'), 1.64], [X.bang('shot_01'), 0]].map(([f, at]) => ({
+    inputs: [f],
+    fc: `${R},atrim=start=${at}:end=${at + 0.5},asetpts=PTS-STARTPTS,silenceremove=start_periods=1:start_threshold=-35dB,${slow(0.7)},lowpass=f=2800,atrim=0:0.26,afade=t=out:st=0.12:d=0.14[a];` +
+      'aevalsrc=0.8*sin(2*PI*(95*t-120*t*t))*exp(-22*t):d=0.2:s=48000[sub];[a][sub]amix=inputs=2:normalize=0',
+  })),
   soldierScream: ['1yell12', '2yell11', '2yell7', '3yell10', '3yell12', 'yell4', 'yell7', '3yell15'].map((n) => one(X.yell(n), `silenceremove=start_periods=1:start_threshold=-45dB,${cap(1.4, 0.4)}`)),
   soldierFall: [
     ...['3yell1', 'yell1', '3yell14'].map((n) => one(X.yell(n), `silenceremove=start_periods=1:start_threshold=-45dB,${cap(3, 0.6)}`)),
