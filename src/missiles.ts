@@ -7,6 +7,7 @@ import type { Collider } from './debris';
 import type { Explosions } from './explosions';
 import { glowTexture } from './fireTextures';
 import { MISSILE } from './config';
+import { sfx } from './sfx';
 
 const BODY_LEN = 1.6;
 const RADIUS = 0.2;
@@ -105,6 +106,7 @@ export class Rocket implements Enemy {
     this.group.add(this.flame, this.glow);
     this.group.position.copy(from);
     const { fx, dust } = deps;
+    sfx.rocketLaunch(from);
     fx.burst(from, 24, 3.5, SPARK_COLORS, false, 1.2);
     fx.muzzleFlash(from);
     dust.puff(from, 12, 0.9, 2.5, 0.2);
@@ -147,8 +149,9 @@ export class Rocket implements Enemy {
     p.addScaledVector(this.vel, dt);
     this.group.quaternion.setFromUnitVectors(UP, dir.copy(this.vel).normalize());
     this.exhaust(dt);
+    sfx.hold(this, 'rocketFlight', { x: p.x, rate: this.state === 'dive' ? 1.15 : 0.9 + Math.min(0.4, p.y / 40) }, 0.15);
 
-    let hit = this.state === 'dive' && (world.solidAt(p.x, p.y, p.z) || p.y <= Math.max(0, world.surfaceTop(p.x, p.z, p.y + 0.1)));
+    let hit = this.state === 'dive' && (world.solidAt(p.x, p.y, p.z) || p.y <= world.surfaceTop(p.x, p.z, p.y + 0.1));
     if (!hit) for (const c of colliders) if (p.distanceTo(c.pos) < c.r + RADIUS) { hit = true; break; }
     if (hit) this.explode();
   }

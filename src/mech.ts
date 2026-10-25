@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Collider } from './debris';
 import { flameTexture, glowTexture } from './fireTextures';
+import { sfx } from './sfx';
 
 /** the mech's main colour: gunmetal */
 const METAL = new THREE.MeshStandardMaterial({ color: 0x59616b, roughness: 0.32, metalness: 0.75 });
@@ -65,6 +66,8 @@ interface Leg {
   knee: THREE.Group;
   foot: THREE.Group;
   offset: number;
+  /** where in the gait cycle it was last frame (unwrapped), to catch the moment it plants */
+  prevU: number;
 }
 
 /**
@@ -226,7 +229,7 @@ export class Mech {
     knee.add(foot);
 
     this.lower.add(hip);
-    return { hip, knee, foot, offset };
+    return { hip, knee, foot, offset, prevU: 0 };
   }
 
   /** Turn the lower half smoothly toward `target` (or back to facing left once it has been idle a moment). */
@@ -273,7 +276,10 @@ export class Mech {
     this.turnBody(dt, speed > TURN_MIN_SPEED ? Math.atan2(vz, Math.abs(vx)) : null);
     // moving against the way the base faces: play the stride backward so the feet still plant
     const along = -vx * Math.cos(this.bodyYaw) + vz * Math.sin(this.bodyYaw);
-    this.cycle += ((along < 0 ? -speed : speed) / MECH_SCALE * dt) / STRIDE;
+    const dCycle = ((along < 0 ? -speed : speed) / MECH_SCALE * dt) / STRIDE;
+    this.cycle += dCycle;
+    /** seconds a foot spends in the air each stride, at the current pace */
+    const swing = ((1 - STANCE) * dt) / Math.max(1e-4, Math.abs(dCycle));
     const amp = Math.min(1, speed / MECH_SCALE / 1.5);
 
     const bob = Math.abs(Math.sin(this.cycle * Math.PI * 2)) * 0.06 * amp;
@@ -281,7 +287,15 @@ export class Mech {
     const hipHeight = this.pelvis.position.y - HIP_DROP - ANKLE_H;
 
     for (const leg of this.legs) {
-      const p = (((this.cycle + leg.offset) % 1) + 1) % 1;
+      const u = this.cycle + leg.offset;
+      // forward the foot lands as the cycle comes round to 0; played in reverse, as it comes back down to the end of its stance
+      const planted = u > leg.prevU ? Math.floor(u) > Math.floor(leg.prevU) : Math.floor(u - STANCE) < Math.floor(leg.prevU - STANCE);
+      // the foot leaves the ground as the stance ends (forward) or as the cycle comes back round to 0 (reverse): servos whine, then it plants
+      const lifted = u > leg.prevU ? Math.floor(u - STANCE) > Math.floor(leg.prevU - STANCE) : Math.floor(u) < Math.floor(leg.prevU);
+      if (lifted && amp > 0.15) sfx.servoBurst(this.root.position.x, amp, swing);
+      if (planted && amp > 0.15) sfx.step(this.root.position.x, amp);
+      leg.prevU = u;
+      const p = (((u % 1) + 1) % 1);
       let fx: number, lift: number;
       if (p < STANCE) {
         fx = -STEP + 2 * STEP * (p / STANCE);

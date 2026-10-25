@@ -303,17 +303,17 @@ export const MECH_DEATH = {
   invulnerable: 2.5,
   /** the middle of the blast, above the ground; it kills infantry and hurts vehicles within the radius */
   height: 1.2,
-  blastRadius: 7,
+  blastRadius: 14,
   blastScale: 6,
   /** the biggest lobe of the fireball (diameter, units) and how many smaller lobes boil round it */
-  fireballSize: 16,
+  fireballSize: 32,
   lobes: 9,
   ringLife: 1,
   /** screen shake (units of camera movement), mild, for each of the two blasts */
   shake: 0.5,
   podShake: 0.35,
   /** the blast tears buildings apart this far out (units), flinging the rubble away at up to this speed (units/s) */
-  buildingRadius: 9,
+  buildingRadius: 18,
   buildingSpeed: 14,
   /** smoke: the stem climbs at this speed for this long; the cap starts then and spreads this fast for capTime */
   stemSpeed: 7,
@@ -324,13 +324,28 @@ export const MECH_DEATH = {
   /** the cockpit is launched straight up to the height the game gives it, tilting up to this much (degrees) about each axis on the way, and blows up there */
   podGravity: 6,
   podTiltDeg: 15,
-  podBlastRadius: 4.5,
+  podBlastRadius: 9,
   podBlastScale: 4,
-  podFireballSize: 9,
-  podBuildingRadius: 5,
+  podFireballSize: 18,
+  podBuildingRadius: 10,
   podBuildingSpeed: 8,
   /** parts: how hard they are thrown, the share that burn, and for how long (s) */
   partSpeed: 5,
   burnShare: 0.25,
   burnTime: 8,
+} as const;
+
+/** Craters: every ground-level blast scorches the ground (a flat decal); the mech's death digs a real one. */
+export const CRATER = {
+  /** most scorch decals kept; the oldest is overwritten */
+  maxScorch: 80,
+  /** a blast scorches an area this many times its radius across, and none smaller than this (units) */
+  scorchPerRadius: 1.5,
+  scorchMin: 0.8,
+  /** the mech's crater: the bowl's radius and depth, and the raised lip round it (units) */
+  mechRadius: 5.5,
+  mechDepth: 1.1,
+  mechLip: 0.22,
+  /** seconds it takes to dig itself out */
+  digTime: 0.7,
 } as const;

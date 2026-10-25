@@ -42,6 +42,8 @@ export interface MechDeathDeps {
   flash: (amount: number) => void;
   /** a blast tears at the buildings near it, flinging their blocks away */
   blastBuildings: (at: THREE.Vector3, radius: number, speed: number) => void;
+  /** dig the crater the mech leaves at (x, z) */
+  dig: (x: number, z: number) => void;
 }
 
 const tmp = new THREE.Vector3();
@@ -71,7 +73,7 @@ export class MechDeath {
    * @param apexY how high the cockpit climbs before it blows
    */
   start(mech: Mech, apexY: number): void {
-    const { scene, fx, dust, explosions, shake, flash, blastBuildings } = this.deps;
+    const { scene, fx, dust, explosions, shake, flash, blastBuildings, dig } = this.deps;
     this.clear();
     this.age = 0;
     mech.root.updateMatrixWorld(true);
@@ -80,7 +82,8 @@ export class MechDeath {
     const at = this.at;
 
     // the bang itself: it kills the infantry round about, tears the buildings and shoves rubble away
-    explosions.wreckBlast(at, MECH_DEATH.blastRadius, MECH_DEATH.blastScale, 2.5);
+    explosions.wreckBlast(at, MECH_DEATH.blastRadius, MECH_DEATH.blastScale, 2.5, false);   // its own crater, not a flat scorch
+    dig(at.x, at.z);
     blastBuildings(at, MECH_DEATH.buildingRadius, MECH_DEATH.buildingSpeed);
     fx.burst(at, 120, 9, FIRE_COLORS, false, 1.6);
     fx.sparks(at, 150, 12, FIRE_COLORS);
@@ -186,7 +189,7 @@ export class MechDeath {
     }
     if (this.ring) {
       const k = Math.min(1, t / MECH_DEATH.ringLife);
-      this.ring.scale.setScalar(2 + MECH_DEATH.blastRadius * 2.4 * (1 - (1 - k) * (1 - k)));
+      this.ring.scale.setScalar(4 + MECH_DEATH.blastRadius * 2.4 * (1 - (1 - k) * (1 - k)));
       (this.ring.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
       this.ring.visible = k < 1;
     }

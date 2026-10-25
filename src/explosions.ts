@@ -4,7 +4,8 @@ import type { Dust } from './dust';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { BlastFx } from './blastFx';
-import { EXPLOSIVE_BARREL as BARREL } from './config';
+import { EXPLOSIVE_BARREL as BARREL, CRATER } from './config';
+import { sfx } from './sfx';
 
 const FIRE_COLORS = [0xffd080, 0xff7020, 0x884422, 0x444444];
 const SPARK_COLORS = [0xffe080, 0xffa030, 0xffffff];
@@ -38,9 +39,14 @@ export class Explosions {
   }
 
   /** @param scale multiplies the particle counts (1 = a shell, ~2 = a vehicle); @param shock multiplies how hard the shockwave shoves rubble */
-  detonate(at: THREE.Vector3, radius: number, scale = 1, shock = 1): void {
+  detonate(at: THREE.Vector3, radius: number, scale = 1, shock = 1, scorch = true): void {
     const { fx, dust, world, debris } = this.deps;
     this.blasts.spawn(at, radius);
+    // a blast at ground level (not on a roof or in the air) scorches the ground
+    if (scorch && at.y < radius * 0.9 + 0.5 && world.surfaceTop(at.x, at.z, at.y + 0.2) < 0.25) {
+      world.craters.stamp(at.x, at.z, Math.max(CRATER.scorchMin, radius * CRATER.scorchPerRadius));
+    }
+    sfx.explosion(at, radius);
     fx.muzzleFlash(at);
     fx.burst(at, Math.round(60 * scale), 7, FIRE_COLORS);
     fx.sparks(at, Math.round(30 * scale), 7, SPARK_COLORS);
@@ -66,8 +72,8 @@ export class Explosions {
   }
 
   /** The blast of a destroyed vehicle: the same bang, and it hurts everything within its radius. */
-  wreckBlast(at: THREE.Vector3, radius: number, scale: number, shock = 1): void {
-    this.detonate(at, radius, scale, shock);
+  wreckBlast(at: THREE.Vector3, radius: number, scale: number, shock = 1, scorch = true): void {
+    this.detonate(at, radius, scale, shock, scorch);
     this.onBlast?.(at, radius);
   }
 

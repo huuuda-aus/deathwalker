@@ -21,6 +21,10 @@ import { Menu } from './menu';
 import { PauseMenu } from './pauseMenu';
 import { GameOverMenu } from './gameOverMenu';
 import { MechDeath } from './mechDeath';
+import { audio } from './audio';
+import { sfx } from './sfx';
+import { SoundTest } from './soundTest';
+import { MusicToggle } from './musicToggle';
 import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
 import { Weapon } from './weapon';
@@ -28,13 +32,16 @@ import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
 import { CAM_DIST, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
-import { PLAYER, CAMERA, MECH_DEATH } from './config';
+import { PLAYER, CAMERA, MECH_DEATH, CRATER } from './config';
 
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
 const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10, settleMs: 15000 };
 
 /** seconds for the scene to fade in from black once it is first drawn */
 const FADE_IN = 1.8;
+
+/** the weather and the far-off war are turned down on the menu, so the soundtrack stands out (share of full volume) */
+const MENU_AMBIENCE = 0.2;
 
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
 
@@ -136,6 +143,7 @@ export class Game {
     this.rain = new Rain(scene, this.world);
     this.splashFx = new SplashFx(scene);
     this.debris.setColliders(this.mech.colliders);
+    this.debris.ground = (x, z) => this.world.groundHeight(x, z);
     this.mech.root.position.x = START_MECH_X;
     scene.add(this.mech.root);
 
@@ -172,6 +180,10 @@ export class Game {
     this.mechDeath = new MechDeath({
       scene, fx: this.fx, dust, explosions: this.explosions, floor: (x, z, y) => world.surfaceTop(x, z, y),
       shake: (at, amount) => this.shakeScreen(at, amount), flash: (a) => this.hud.flash(a),
+      dig: (x, z) => {
+        world.craters.dent(x, z, CRATER.mechRadius, CRATER.mechDepth, CRATER.mechLip);
+        debris.wakeNear(new THREE.Vector3(x, 0.3, z), CRATER.mechRadius * 2.2);      // rubble that lay there falls in
+      },
       blastBuildings: (at, radius, speed) => world.forEachBuilding(at.x - radius, at.x + radius, (b) => b.blast(at.x, at.y, at.z, radius, speed)),
     });
     this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss });
@@ -179,12 +191,23 @@ export class Game {
     // the menu shows the first scene's skyline and weather, without the mech or any fighting
     this.mech.root.visible = false;
     this.placeCamera();
+    // sound: the samples load behind the menu, and the browser wants a click or key press before it will play any
+    void audio.load();
+    audio.playMusic('menu');
+    audio.setVolume('ambience', MENU_AMBIENCE);
+    new SoundTest(audio);
+    new MusicToggle();
+    // until the browser lets sound start (a first click or key press) the menu says so
+    const showLock = (): void => { document.body.classList.toggle('audio-locked', audio.ctx.state !== 'running'); };
+    audio.ctx.addEventListener('statechange', showLock);
+    showLock();
+    for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => audio.unlock(), { capture: true });
     new Menu(() => this.startPlaying());
     new GameOverMenu({ isOver: () => this.player.over, onRetry: () => this.reset(), onQuit: () => location.reload() });
     new PauseMenu({
       canPause: () => this.mode === 'play' && !this.player.over,
-      onPause: () => { this.paused = true; this.input.clear(); },
-      onResume: () => { this.paused = false; this.last = performance.now(); },
+      onPause: () => { this.paused = true; this.input.clear(); audio.suspend(); },
+      onResume: () => { this.paused = false; this.last = performance.now(); audio.resume(); },
       // the world (buildings, rubble) has no way to be put back, so a fresh page is the clean way to a new game
       onQuit: () => location.reload(),
     });
@@ -200,6 +223,8 @@ export class Game {
 
   private startPlaying(): void {
     this.mode = 'play';
+    audio.stopMusic(2);
+    audio.setVolume('ambience', 1, 1.5);               // the menu's soundtrack: there is no music in the game itself
     this.mech.root.visible = true;
     this.last = performance.now();
   }
@@ -290,6 +315,7 @@ export class Game {
     this.shells.clear();
     this.shake = 0;
     this.mechDeath.clear();
+    this.world.craters.clear();
     this.mech.root.visible = true;
     this.deathT = this.invuln = 0;
     this.bullets.clear();
@@ -356,6 +382,8 @@ export class Game {
     this.autoVx = level.phase === 'entering' ? level.camVel : 0;
     pos.x += (this.vx + this.autoVx) * dt;
     pos.z = THREE.MathUtils.clamp(pos.z + this.vz * dt, LANE.zMin, LANE.zMax);
+    // the mech stands on the ground, craters and all
+    pos.y += (this.world.groundHeight(pos.x, pos.z) - pos.y) * Math.min(1, dt * 8);
     if (pos.z === LANE.zMin || pos.z === LANE.zMax) this.vz = 0;
   }
 
@@ -406,6 +434,8 @@ export class Game {
     rim.position.set(camX + 10, 6, -40);
     rim.target.position.set(camX, 2, 0);
     world.update(camX, dt);
+    audio.setListener(camX, SCREEN_W / 2);
+    sfx.update(dt, rain.intensity, this.wind.speed);
 
     this.wind.update(dt);
     this.dust.windSpeed = this.wind.speed;

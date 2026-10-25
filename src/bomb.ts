@@ -5,6 +5,7 @@ import type { Explosions } from './explosions';
 import type { World } from './world';
 import type { Collider } from './debris';
 import { BOMB } from './config';
+import { sfx } from './sfx';
 
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.5, metalness: 0.2 });
 const FIN = new THREE.MeshStandardMaterial({ color: 0xd6dade, roughness: 0.6 });
@@ -54,6 +55,7 @@ export class Bomb implements Enemy {
     }
     this.group.position.copy(from);
     this.vel.copy(vel);
+    sfx.bombDropped(from);
     this.point();
   }
 
@@ -83,7 +85,7 @@ export class Bomb implements Enemy {
     this.vel.y -= BOMB.gravity * dt;
     p.addScaledVector(this.vel, dt);
     this.point();
-    let hit = world.solidAt(p.x, p.y, p.z) || p.y <= Math.max(0, world.surfaceTop(p.x, p.z, p.y + 0.1));
+    let hit = world.solidAt(p.x, p.y, p.z) || p.y <= world.surfaceTop(p.x, p.z, p.y + 0.1);
     if (!hit) for (const c of colliders) if (p.distanceTo(c.pos) < c.r + RADIUS) { hit = true; break; }
     if (hit) this.explode();
   }

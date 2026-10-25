@@ -7,6 +7,7 @@ import type { Dust } from './dust';
 import { makeMissileModel, MISSILE_BELOW, MISSILE_LEN, type Missiles } from './missiles';
 import { Wreckage } from './wreckage';
 import { SILO } from './config';
+import { sfx } from './sfx';
 import { box } from './cannonParts';
 
 const CONCRETE = new THREE.MeshStandardMaterial({ color: 0xd6dade, roughness: 0.9 });
@@ -110,6 +111,7 @@ export class SiloUnit implements Enemy {
     this.state = 'opening';
     this.t = 0;
     this.missile.visible = true;
+    sfx.siloDoor(this.x);
   }
 
   /** the slab while shut or moving; the narrow vertical column over the missile once it stands exposed */
@@ -187,7 +189,7 @@ export class SiloUnit implements Enemy {
         if (this.t >= this.armTime) this.launch();
         break;
       case 'firing':
-        if (this.t >= SILO.fireTime) { this.state = 'closing'; this.t = 0; }
+        if (this.t >= SILO.fireTime) { this.state = 'closing'; this.t = 0; sfx.siloDoor(this.x); }
         break;
       case 'closing':
         this.door = 1 - Math.min(1, this.t / SILO.closeTime);

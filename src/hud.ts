@@ -4,6 +4,9 @@ import type { SiloBoss } from './boss';
 
 const $ = (id: string) => document.getElementById(id)!;
 
+/** seconds the game over screen takes to fade in */
+const GAME_OVER_FADE = 10;
+
 export interface Player { shield: number; lives: number; over: boolean; hitFlash: number }
 
 /** All DOM overlay writes: stat bars, lives, FPS readout, hit flash, game-over screen. */
@@ -36,7 +39,16 @@ export class Hud {
   flash(amount: number): void { this.whiteoutLevel = amount; }
 
   setGameOver(on: boolean): void {
-    this.over.style.display = on ? 'flex' : 'none';
+    const { style } = this.over;
+    style.display = on ? 'flex' : 'none';
+    // the screen comes up slowly: start clear, then fade in
+    style.transition = 'none';
+    style.opacity = '0';
+    if (on) {
+      void this.over.offsetWidth;           // let the clear state register before the fade starts
+      style.transition = `opacity ${GAME_OVER_FADE}s ease-in`;
+      style.opacity = '1';
+    }
     document.body.classList.toggle('gameover', on);
   }
 
