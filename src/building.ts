@@ -3,6 +3,7 @@ import type { Debris } from './debris';
 import type { Dust } from './dust';
 import { generateLayout } from './buildingLayout';
 import { BASE, CELL, DEPTH, MAXL, STORY, T, SPEC, DEEP, type Ledge } from './buildingSpec';
+import { sfx } from './sfx';
 
 export { CELL, type Ledge };
 
@@ -751,7 +752,10 @@ export class Building {
     let alive = 0;
     for (let i = 0; i < this.hp.length; i++) if (this.hp[i] > 0) alive++;
     // a storey that failed, or most of the structure gone: the building is down for good
+    const wasDown = this.down;
     if (this.storeyFailed || alive < this.initialAlive * 0.4) this.down = true;
+    // the whole building is going: a deeper, heavier rumble for it
+    if (this.down && !wasDown) sfx.buildingRumble(this.x0 + this.width / 2, 400, 0.8);
     if (falling.length === 0) return;
     // whatever lost its support comes down in connected pieces, each storey a rigid block that falls as one
     const fallingSet = new Set(falling);
@@ -823,6 +827,8 @@ export class Building {
     else { this.smokeC0 = Math.min(this.smokeC0, ...cs); this.smokeC1 = Math.max(this.smokeC1, ...cs); }
     this.smokeLeft = SMOKE_TAIL;
     this.version++;
+    // it lets go: a low rumble, from where the piece is
+    sfx.buildingRumble(this.x0 + (Math.min(...cs) + Math.max(...cs) + 1) * CELL / 2, layers.length);
   }
 
   /** Is anything of this building still coming down? */
@@ -920,6 +926,7 @@ export class Building {
   /** The body has landed: a burst of dust, and what it landed on takes the blow. */
   private impact(b: Block): void {
     for (const c of b.contact) this.bottomPuffAt(b, c, 3, 1.6);
+    sfx.buildingCrash(this.x0 + (b.cols[0][0] + b.cols[b.cols.length - 1][0] + 1) * CELL / 2, b.total, -b.ty);
     this.landed(b);
   }
 

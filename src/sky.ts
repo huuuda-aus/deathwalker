@@ -25,6 +25,8 @@ export class Sky {
         uTan: { value: new THREE.Vector2(1, 1) },
         uFog: { value: new THREE.Color(FOG_COLOR) },
         uGlow: { value: new THREE.Color(GLOW_COLOR) },
+        uFlash: { value: 0 },
+        uBolt: { value: new THREE.Vector3(0, 1, 0) },
       },
       vertexShader: /* glsl */ `
         varying vec2 vNdc;
@@ -39,6 +41,8 @@ export class Sky {
         uniform mat3 uCamRot;
         uniform vec2 uTan;
         uniform vec3 uFog, uGlow;
+        uniform float uFlash;
+        uniform vec3 uBolt;       // the direction of the lightning
 
         float hash(vec2 p) {
           p = fract(p * vec2(123.34, 456.21));
@@ -108,6 +112,10 @@ export class Sky {
           // --- stars show through gaps in the cloud
           float s = star(dir) * smoothstep(0.02, 0.25, e);
           cloud *= toBlack;
+          // lightning: the clouds light up from within, brightest round the bolt, and the open sky pales
+          float near = pow(max(dot(dir, uBolt), 0.0), 14.0);
+          cloud += vec3(0.55, 0.64, 0.95) * uFlash * (0.45 + 0.9 * lit + 2.0 * near) * (1.0 - 0.4 * dense);
+          sky += vec3(0.10, 0.14, 0.30) * uFlash * (0.5 + 3.0 * near) * toBlack;
           vec3 col = mix(sky, cloud, alpha) + vec3(0.55, 0.65, 0.9) * s * (1.0 - alpha) * 0.5;
           gl_FragColor = vec4(col, 1.0);
         }`,
@@ -116,6 +124,12 @@ export class Sky {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -100;
     scene.add(this.mesh);
+  }
+
+  /** @param flash how lit the sky is by lightning (0..1); @param toward the direction (from the camera) of the bolt */
+  setFlash(flash: number, toward: THREE.Vector3): void {
+    this.mat.uniforms.uFlash.value = flash;
+    this.mat.uniforms.uBolt.value.copy(toward).normalize();
   }
 
   update(camera: THREE.PerspectiveCamera, seconds: number): void {

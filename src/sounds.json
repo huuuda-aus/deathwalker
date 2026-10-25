@@ -51,11 +51,19 @@
       "synth": { "dur": 1, "layers": [ { "type": "saw", "f0": 60, "f1": 60, "amp": 0.7 }, { "type": "noise", "lp": 0.05, "amp": 0.5 }, { "type": "square", "f0": 30, "f1": 30, "amp": 0.4 } ] } },
     "wheelSqueak":  { "bus": "sfx", "priority": 3, "voices": 3, "gap": 0, "pitch": 0, "loop": true, "gain": 1, "lufs": -32,
       "synth": { "dur": 1.4, "layers": [ { "type": "sine", "f0": 1800, "f1": 2400, "decay": 0.2, "attack": 0.02, "amp": 0.5 }, { "type": "sine", "f0": 2100, "f1": 1700, "decay": 0.2, "attack": 0.02, "delay": 0.7, "amp": 0.5 } ] } },
+    "buildingRumble": { "bus": "sfx", "priority": 7, "voices": 3, "gap": 0.4, "pitch": 0.08, "gain": 1, "lufs": -17,
+      "synth": { "dur": 4.5, "layers": [ { "type": "noise", "lp": 0.04, "decay": 2.2, "attack": 0.5, "amp": 1 }, { "type": "sine", "f0": 48, "f1": 30, "decay": 2.5, "attack": 0.4, "amp": 0.9 } ] } },
+    "buildingCrash":  { "bus": "sfx", "priority": 7, "voices": 3, "gap": 0.12, "pitch": 0.1, "gain": 1, "lufs": -15,
+      "synth": { "dur": 1.4, "layers": [ { "type": "noise", "lp": 0.15, "decay": 0.3, "amp": 1 }, { "type": "sine", "f0": 80, "f1": 30, "decay": 0.4, "amp": 1 } ] } },
     "rain":         { "bus": "ambience", "priority": 1, "voices": 1, "gap": 0, "pitch": 0, "loop": true, "gain": 1, "lufs": -40,
       "synth": { "dur": 2, "layers": [ { "type": "noise", "lp": 0.6, "hp": 0.05, "amp": 1 } ] } },
     "wind":         { "bus": "ambience", "priority": 1, "voices": 1, "gap": 0, "pitch": 0, "loop": true, "gain": 1, "lufs": -42,
       "synth": { "dur": 3, "layers": [ { "type": "noise", "lp": 0.03, "amp": 1 } ] } },
-    "thunder":      { "bus": "ambience", "priority": 2, "voices": 2, "gap": 3, "pitch": 0.1, "gain": 1, "lufs": -22,
-      "synth": { "dur": 5, "layers": [ { "type": "noise", "lp": 0.04, "decay": 1.8, "attack": 0.2, "amp": 1 }, { "type": "sine", "f0": 45, "f1": 25, "decay": 2.5, "amp": 0.8 } ] } }
+    "thunderClose":   { "bus": "ambience", "priority": 9, "voices": 2, "gap": 1, "pitch": 0.05, "gain": 1, "lufs": -12,
+      "synth": { "dur": 3, "layers": [ { "type": "noise", "lp": 0.3, "decay": 0.25, "amp": 1 }, { "type": "sine", "f0": 70, "f1": 30, "decay": 0.8, "amp": 0.8 } ] } },
+    "thunderNormal":  { "bus": "ambience", "priority": 8, "voices": 2, "gap": 1, "pitch": 0.06, "gain": 1, "lufs": -15,
+      "synth": { "dur": 5, "layers": [ { "type": "noise", "lp": 0.08, "decay": 1.5, "attack": 0.1, "amp": 1 }, { "type": "sine", "f0": 55, "f1": 28, "decay": 2, "amp": 0.8 } ] } },
+    "thunderDistant": { "bus": "ambience", "priority": 6, "voices": 2, "gap": 1, "pitch": 0.06, "gain": 1, "lufs": -22,
+      "synth": { "dur": 7, "layers": [ { "type": "noise", "lp": 0.04, "decay": 2.5, "attack": 0.5, "amp": 1 }, { "type": "sine", "f0": 45, "f1": 25, "decay": 3, "attack": 0.4, "amp": 0.8 } ] } }
   }
 }
