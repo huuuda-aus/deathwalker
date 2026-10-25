@@ -7,12 +7,14 @@
     "event types: 'cannon' (count guns, each with a crew of 2), 'truck' (troops soldiers aboard), 'aircraft' (count planes, each at its own height).",
     "kills needed to clear a scene = infantry.count + 3 per cannon + (1 + troops) per truck + 1 per plane.",
     "widthScreens: how wide the scene is, in screens (the camera scrolls through scenes wider than 1).",
+    "parTime: seconds a good player takes to clear the scene; the scene pays a time bonus against it (full at 60% of it or faster, nothing at 150% or slower).",
     "boss: null for none, or { \"type\": \"silos\", \"opensAfter\": n, \"truckEvery\": s, \"truckJitter\": s, \"truckTroops\": n }: two missile silos that stay shut and unhurtable until n infantry have been sent in, then open together and launch missiles at the mech. A boss scene has no kill count: it ends when both silos are destroyed, and its infantry (infantry.count is ignored) keeps coming, with a truck of troops every truckEvery +- truckJitter seconds."
   ],
   "scenes": [
     {
       "name": "Outskirts",
       "widthScreens": 1,
+      "parTime": 75,
       "infantry": { "count": 36, "waveMin": 3, "waveExtra": 3, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "cannon", "at": 0.85, "count": 1 }
@@ -22,6 +24,7 @@
     {
       "name": "Supply road",
       "widthScreens": 2,
+      "parTime": 110,
       "infantry": { "count": 40, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "truck", "at": 0.15, "troops": 10 },
@@ -33,6 +36,7 @@
     {
       "name": "Crossroads",
       "widthScreens": 1,
+      "parTime": 90,
       "infantry": { "count": 34, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "cannon", "at": 0.2, "count": 1 },
@@ -44,6 +48,7 @@
     {
       "name": "Air raid",
       "widthScreens": 2,
+      "parTime": 120,
       "infantry": { "count": 40, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "aircraft", "at": 0.05, "count": 2 },
@@ -57,6 +62,7 @@
     {
       "name": "The last stand",
       "widthScreens": 2,
+      "parTime": 150,
       "infantry": { "count": 130, "waveMin": 4, "waveExtra": 5, "intervalMin": 2, "intervalExtra": 2, "maxAlive": 18 },
       "events": [],
       "boss": null
@@ -64,6 +70,7 @@
     {
       "name": "Missile silos",
       "widthScreens": 1,
+      "parTime": 150,
       "infantry": { "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 14 },
       "events": [],
       "boss": { "type": "silos", "opensAfter": 15, "truckEvery": 30, "truckJitter": 10, "truckTroops": 10 }

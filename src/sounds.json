@@ -33,7 +33,7 @@
       "synth": { "dur": 4, "layers": [ { "type": "noise", "lp": 0.08, "decay": 1.2, "amp": 1 }, { "type": "sine", "f0": 60, "f1": 20, "decay": 1.8, "amp": 1 } ] } },
     "explosionDistant": { "bus": "ambience", "priority": 2, "voices": 3, "gap": 1, "pitch": 0.1, "gain": 1, "lufs": -24,
       "synth": { "dur": 3, "layers": [ { "type": "noise", "lp": 0.05, "decay": 0.8, "amp": 1 }, { "type": "sine", "f0": 55, "f1": 25, "decay": 1.2, "amp": 1 } ] } },
-    "step":         { "bus": "sfx", "priority": 5, "voices": 3, "gap": 0.1, "pitch": 0.08, "gain": 1, "lufs": -20,
+    "step":         { "bus": "sfx", "priority": 5, "voices": 4, "gap": 0.1, "pitch": 0.08, "gain": 1, "lufs": -20,
       "synth": { "dur": 0.5, "layers": [ { "type": "sine", "f0": 70, "f1": 30, "decay": 0.12, "amp": 1 }, { "type": "noise", "lp": 0.12, "decay": 0.08, "amp": 0.7 }, { "type": "sine", "f0": 400, "f1": 300, "decay": 0.04, "amp": 0.25 } ] } },
     "servoBurst":   { "bus": "sfx", "priority": 4, "voices": 3, "gap": 0.05, "pitch": 0.06, "gain": 1, "lufs": -26,
       "synth": { "dur": 0.3, "layers": [ { "type": "saw", "f0": 260, "f1": 720, "attack": 0.02, "decay": 0.12, "amp": 0.6 }, { "type": "sine", "f0": 1300, "f1": 2100, "decay": 0.1, "amp": 0.25 }, { "type": "noise", "hp": 0.5, "decay": 0.08, "amp": 0.3 } ] } },

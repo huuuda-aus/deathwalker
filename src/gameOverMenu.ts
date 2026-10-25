@@ -17,6 +17,8 @@ export class GameOverMenu {
       else if (action === 'quit') deps.onQuit();
     });
     addEventListener('keydown', (e) => {
+      // typing a name into the box is not a menu key
+      if (document.activeElement instanceof HTMLInputElement) return;
       if (deps.isOver() && this.list.key(e.code)) e.preventDefault();
     });
   }

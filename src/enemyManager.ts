@@ -7,6 +7,7 @@ import { AircraftUnit } from './aircraft';
 import { Bomb } from './bomb';
 import { SiloUnit } from './silo';
 import { SiloBoss } from './boss';
+import type { Score, ScoreKind } from './score';
 import type { BossDef } from './level';
 import type { Missiles } from './missiles';
 import type { Explosions } from './explosions';
@@ -43,6 +44,7 @@ export interface EnemyDeps {
   bullets: Bullets;
   /** shield damage to the player (a bomb going off beside the mech) */
   onPlayerHit: (damage: number) => void;
+  score: Score;
 }
 
 export class EnemyManager {
@@ -56,6 +58,8 @@ export class EnemyManager {
   private stallMark = '';
   private clock = 0;
   private rubbleHit = new WeakMap<Enemy, number>();
+  /** the dead already paid for */
+  private scored = new WeakSet<Enemy>();
   /** the scene's boss, once it is in place, and the scene it belongs to */
   boss: SiloBoss | null = null;
   private bossScene = -1;
@@ -71,7 +75,7 @@ export class EnemyManager {
         if (!e.alive) continue;
         e.getBox(crushBox).expandByScalar(size * 0.35);
         if (!crushBox.containsPoint(pos)) continue;
-        if (e instanceof Soldier) { e.damage(99, fx); continue; }
+        if (e instanceof Soldier) { e.cause = 'crush'; e.damage(99, fx); continue; }
         // a gun or truck shrugs rubble off: a light knock, at most a few times a second however much falls on it
         if (this.clock - (this.rubbleHit.get(e) ?? -1) < 0.25) continue;
         this.rubbleHit.set(e, this.clock);
@@ -87,7 +91,7 @@ export class EnemyManager {
       if (!e.alive) continue;
       const d = e.getBox(crushBox).distanceToPoint(at);
       if (d > radius) continue;
-      if (e instanceof Soldier) e.damage(99, fx);
+      if (e instanceof Soldier) { e.cause = 'blast'; e.damage(99, fx); }
       else e.damage(BLAST.vehicleDamage * (1 - (1 - BLAST.edgeShare) * (d / radius)), fx);
     }
   }
@@ -96,6 +100,18 @@ export class EnemyManager {
   add(e: Enemy): void {
     this.deps.scene.add(e.group);
     this.list.push(e);
+  }
+
+  /** Points for something killed (the soldiers a gun's crew lose count one by one; the missiles and bombs are not worth any). */
+  private award(e: Enemy): void {
+    let kind: ScoreKind | null = null;
+    if (e instanceof Soldier) kind = 'soldier';
+    else if (e instanceof Horse) kind = 'horse';
+    else if (e instanceof CannonUnit) kind = 'cannon';
+    else if (e instanceof TruckUnit) kind = 'truck';
+    else if (e instanceof AircraftUnit) kind = 'aircraft';
+    else if (e instanceof SiloUnit) kind = 'silo';
+    if (kind) this.deps.score.kill(kind, e instanceof Soldier ? e.cause : 'bullet');
   }
 
   reset(): void {
@@ -340,6 +356,7 @@ export class EnemyManager {
       if (e instanceof AircraftUnit || e instanceof Bomb || e instanceof SiloUnit) { left++; continue; }   // they patrol in and out of view / cannot be hurt until they open
       const seen = Math.abs(e.x - camX) < half;
       if (seen && this.stallT < STALL.anyoneAfter) { left++; continue; }
+      this.scored.add(e);                               // taken off the field, not shot: no points
       e.damage(9999, fx);
     }
     if (left === 0 && this.stallT >= STALL.writeOffAfter && level.spawned >= level.scene.spawnBudget) level.writeOffKills();
@@ -383,6 +400,7 @@ export class EnemyManager {
       // likewise an empty truck, once its troops are out
       if (e instanceof TruckUnit && e.alive && !e.counted && !e.retreating && e.empty) { e.counted = true; level.addKill(); }
       if (!e.alive && !e.counted) { e.counted = true; level.addKill(); }
+      if (!e.alive && spawning && !this.scored.has(e)) { this.scored.add(e); this.award(e); }
       if ((!e.alive && e.deadTime > 8) || e.gone || (e.retreating && e.x < camX - 14)) {
         this.discard(e);
         this.list.splice(i, 1);
