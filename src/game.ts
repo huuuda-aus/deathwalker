@@ -32,7 +32,8 @@ import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
 import { CAM_DIST, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
-import { PLAYER, CAMERA, MECH_DEATH, CRATER } from './config';
+import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING } from './config';
+import { Casings } from './casings';
 
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
 const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10, settleMs: 15000 };
@@ -75,10 +76,13 @@ export class Game {
   private readonly enemies: EnemyManager;
   private readonly hud: Hud;
   private readonly mechDeath: MechDeath;
+  private readonly casings: Casings;
   private readonly player = newPlayer();
 
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
   private readonly muzzlePos = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly ejectAt = new THREE.Vector3();
+  private readonly ejectDir = new THREE.Vector3();
   private readonly raycaster = new THREE.Raycaster();
   private readonly mouseNdc = new THREE.Vector2();
   private readonly aimHit = newHit();
@@ -176,7 +180,8 @@ export class Game {
     });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
     this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n) });
-    this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list });
+    this.casings = new Casings(scene, (x, z, y) => world.surfaceTop(x, z, y));
+    this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list, onShot: (gun) => this.ejectCasings(gun) });
     this.mechDeath = new MechDeath({
       scene, fx: this.fx, dust, explosions: this.explosions, floor: (x, z, y) => world.surfaceTop(x, z, y),
       shake: (at, amount) => this.shakeScreen(at, amount), flash: (a) => this.hud.flash(a),
@@ -315,6 +320,7 @@ export class Game {
     this.shells.clear();
     this.shake = 0;
     this.mechDeath.clear();
+    this.casings.clear();
     this.world.craters.clear();
     this.mech.root.visible = true;
     this.deathT = this.invuln = 0;
@@ -419,6 +425,17 @@ export class Game {
     this.weapon.update(dt, active && input.fire && mech.canFire, muzzlePos, raycaster.ray);
   }
 
+  /** a gun fired: its casings fly out of its ejection port, outward, up and a little back, each at its own angle */
+  private ejectCasings(gun: number): void {
+    const port = this.mech.ports[gun];
+    if (!port) return;
+    port.updateWorldMatrix(true, false);
+    port.getWorldPosition(this.ejectAt);
+    const side = gun === 0 ? -1 : 1;                 // the guns are on either flank of the cockpit
+    this.ejectDir.set(0.35, 0.6, side * 0.8).transformDirection(port.matrixWorld);
+    for (let i = 0; i < CASING.perShot; i++) this.casings.eject(this.ejectAt, this.ejectDir);
+  }
+
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
     if (levelEvent === 'cleared' || levelEvent === 'complete') this.enemies.retreatAll();
     if (levelEvent === 'arrived') this.enemies.purgeRetreating();
@@ -482,6 +499,7 @@ export class Game {
     this.shells.update(dt);
     this.bullets.update(dt);
     this.explosions.update(dt);
+    this.casings.update(dt);
 
     this.fx.update(dt);
     this.debris.update(dt);

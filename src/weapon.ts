@@ -15,6 +15,8 @@ export interface WeaponDeps {
   dust: Dust;
   debris: Debris;
   enemies: Enemy[];
+  /** a round was fired from gun `index` */
+  onShot?: (index: number) => void;
 }
 
 const { fireRate: FIRE_RATE, heatPerShot: HEAT_PER_SHOT, coolRate: COOL_RATE, lockCoolRate: LOCK_COOL_RATE,
@@ -66,7 +68,9 @@ export class Weapon {
 
     while (this.cooldown <= 0) {
       this.cooldown += 1 / FIRE_RATE;
-      this.shoot(muzzles[this.side++ % muzzles.length], aim);
+      const gun = this.side++ % muzzles.length;
+      this.deps.onShot?.(gun);
+      this.shoot(muzzles[gun], aim);
       this.heat += HEAT_PER_SHOT;
       if (this.heat >= 1) { this.heat = 1; this.locked = true; break; }
     }

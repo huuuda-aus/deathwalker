@@ -19,5 +19,12 @@ The game's sound effects are cut, layered and looped from free **CC0 (public dom
 | [rumble fx](https://opengameart.org/content/rumble-fx) | the low end of the big explosions and thunder |
 | [Rain (loopable)](https://opengameart.org/content/rain-loopable) | rain |
 | [Wind](https://opengameart.org/content/wind) | wind |
+| [Engine sounds(2)](https://opengameart.org/content/engine-sounds2) | the truck's engine |
+| [100 CC0 metal and wood SFX](https://opengameart.org/content/100-cc0-metal-and-wood-sfx) | the cannons' squeaking wheels |
+
+The noise under the machine gun is a high-passed slice of [a worn two-stroke chainsaw](https://freesound.org/people/Mihacappy/sounds/807194/) by Mihacappy on Freesound, licensed CC0.
+
+**Needs credit (CC BY 3.0):** the aeroplane's engine is [Airplane Prop Loop](https://opengameart.org/content/airplane-prop-loop) by jakobthiesen, licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The credits screen must name him if the game ships.
+
 
 The falling-bomb whistle is synthesized. The menu soundtrack (`music_menu.opus`) was supplied by the project owner.

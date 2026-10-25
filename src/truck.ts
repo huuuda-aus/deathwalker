@@ -7,6 +7,7 @@ import type { Debris, FloorFn } from './debris';
 import { TRUCK, WEAPON } from './config';
 import { UNIT, box } from './cannonParts';
 import { Wreckage } from './wreckage';
+import { sfx } from './sfx';
 
 /** a wrecked truck's four big sections: where each one's centre lies along the truck (metres) and how big a ball stands in for it */
 const SECTIONS = {
@@ -192,6 +193,11 @@ export class TruckUnit implements Enemy {
 
   update(dt: number): void {
     const g = this.group.position;
+    // the engine runs until it is blown up: a throb that quickens with its speed, and ticks over while it unloads
+    if (this.state !== 'dead') {
+      const v = Math.min(1, this.vel.length() / TRUCK.speed);
+      sfx.hold(this, 'truckEngine', { x: g.x, gain: 0.55 + 0.45 * v, rate: 0.85 + 0.35 * v }, 0.15);
+    }
     switch (this.state) {
       case 'drive':
         g.x += this.dirX * TRUCK.speed * dt;
