@@ -84,6 +84,8 @@ export class Mech {
   /** set by the game: guns are firing this frame (drives the muzzle fire) */
   firing = false;
   private flames: Flame[] = [];
+  /** the cockpit pod with its guns (it turns to face the reticle) */
+  get cockpitModel(): THREE.Object3D { return this.cockpit; }
   /** world-space cockpit pivot, used for aiming */
   readonly pivotWorld = new THREE.Vector3();
 

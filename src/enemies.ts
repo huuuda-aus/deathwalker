@@ -84,6 +84,8 @@ export interface Enemy {
   /** how a bullet strike on it looks */
   readonly impact: ImpactFx;
   readonly alive: boolean;
+  /** the target lock holds on to it even when it is off the screen (a missile that has climbed out of view) */
+  readonly lockAnywhere?: boolean;
   readonly x: number;
   /** seconds since it died (0 while alive) */
   readonly deadTime: number;

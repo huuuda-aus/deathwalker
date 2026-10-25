@@ -7,6 +7,19 @@ export type SpawnEvent =
   | { type: 'truck'; at: number; troops: number }
   | { type: 'aircraft'; at: number; count: number };
 
+/**
+ * The scene's boss: two missile silos. The scene has no kill count: it ends when the boss is destroyed (or the player
+ * is), and its infantry never runs out. The silos stay shut until `opensAfter` infantry have been sent in; a truck
+ * of troops arrives every `truckEvery` seconds, give or take `truckJitter`.
+ */
+export interface BossDef {
+  type: 'silos';
+  opensAfter: number;
+  truckEvery: number;
+  truckJitter: number;
+  truckTroops: number;
+}
+
 export interface InfantryDef {
   count: number;
   waveMin: number;
@@ -24,7 +37,8 @@ export interface SceneDef {
   infantry: InfantryDef;
   /** sorted by `at` */
   events: SpawnEvent[];
-  /** everything the scene sends in; every one of them must be killed to clear it */
+  boss: BossDef | null;
+  /** everything the scene sends in; every one of them must be killed to clear it (Infinity for a boss scene, which ends with the boss) */
   spawnBudget: number;
 }
 
@@ -75,7 +89,19 @@ export function parseLevel(data: unknown): SceneDef[] {
       }
     });
     events.sort((a, b) => a.at - b.at);
-    return { name: String(sc.name ?? w), widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, spawnBudget: budget };
+    let boss: BossDef | null = null;
+    if (sc.boss) {
+      const b = sc.boss as Record<string, unknown>;
+      if (b.type !== 'silos') fail(`${w} boss type`, `unknown type ${JSON.stringify(b.type)} (silos)`);
+      boss = {
+        type: 'silos',
+        opensAfter: num(`${w} boss.opensAfter`, b.opensAfter ?? 12, 0),
+        truckEvery: num(`${w} boss.truckEvery`, b.truckEvery ?? 30, 5),
+        truckJitter: num(`${w} boss.truckJitter`, b.truckJitter ?? 10, 0),
+        truckTroops: Math.round(num(`${w} boss.truckTroops`, b.truckTroops ?? 10, 1)),
+      };
+    }
+    return { name: String(sc.name ?? w), widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, boss, spawnBudget: boss ? Infinity : budget };
   });
 }
 

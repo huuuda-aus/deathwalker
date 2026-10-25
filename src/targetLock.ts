@@ -25,6 +25,9 @@ export class TargetLock {
     this.target = aimed.kind === 'enemy' && aimed.enemy?.alive ? aimed.enemy : this.nearest(enemies, camera, mousePx);
   }
 
+  /** The locked target turned into something else (a silo's missile leaving it): keep the lock, on the new one. */
+  handOff(from: Enemy, to: Enemy): void { if (this.target === from) this.target = to; }
+
   /** Lock button let go (or the game restarted). */
   release(): void { this.target = null; }
 
@@ -36,16 +39,20 @@ export class TargetLock {
     const t = this.target;
     if (!t) return null;
     if (!t.alive || t.gone || !enemies.includes(t) || !this.project(t, camera) ||
-        Math.abs(this.ndc.x) > LOSE_BEYOND || Math.abs(this.ndc.y) > LOSE_BEYOND) {
+        (!t.lockAnywhere && (Math.abs(this.ndc.x) > LOSE_BEYOND || Math.abs(this.ndc.y) > LOSE_BEYOND))) {
       this.target = null;
       return null;
     }
     return this.ndc;
   }
 
-  /** the locked reticle in CSS pixels (valid after `update` returned a position) */
+  /** the locked reticle in CSS pixels (valid after `update` returned a position); a target off the screen shows it at the edge */
   get reticlePx(): { x: number; y: number } {
-    this.px.set((this.ndc.x + 1) / 2 * innerWidth, (1 - this.ndc.y) / 2 * innerHeight);
+    const edge = 12;
+    this.px.set(
+      THREE.MathUtils.clamp((this.ndc.x + 1) / 2 * innerWidth, edge, innerWidth - edge),
+      THREE.MathUtils.clamp((1 - this.ndc.y) / 2 * innerHeight, edge, innerHeight - edge),
+    );
     return this.px;
   }
 

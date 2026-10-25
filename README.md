@@ -32,7 +32,7 @@ The game opens on a main menu over the first level's skyline (rain, fires and al
 | **Hold right mouse button** | Lock on: the reticle sticks to the middle of the enemy under it (or nearest to it) for as long as you hold the button, or until it dies. Hold both buttons to keep the lock and fire |
 | **Q** | Toggle post-processing (bloom, motion blur, vignette, haze) |
 | **H** | Toggle the volumetric haze only |
-| **R** | Restart after game over |
+| **Esc** | Pause menu: resume, or back to the main menu |
 
 The mech never turns around: its body always faces left. Only the cockpit and its two rigid guns rotate, and only within the forward hemisphere, so you cannot shoot behind you. The guns overheat; release to cool down, and a full overheat locks them out until they cool.
 
@@ -42,7 +42,8 @@ The mech never turns around: its body always faces left. Only the cockpit and it
 - Enemies arrive in waves. Most spawn **inside the buildings**, walk to a ledge and shoot from there; the rest walk in from off-screen. Soldiers on the street steer around rubble and only fire when they have a clear line of fire.
 - **Buildings are destructible ruins** built from floor slabs, pillars, walls, glazing and stairwells. A load-path solver collapses whatever loses its support, and shooting out the base of a building brings the whole thing down, crushing everyone inside. A collapsed building spawns no more enemies.
 - **Rubble is physical and persistent.** It piles up, blocks soldiers and bullets, is kicked aside by the mech's legs, and slows the mech down when it is dense.
-- Your shield is your health; you have three lives.
+- **Level 1 boss: the missile silos** (last scene). Two silos sit in the ground side by side on the left of the view, shut and unhurtable while the infantry wave is on. Once enough of it has been sent in they open together; only an open silo can be damaged (shut doors just spark). Each launches a slow missile that climbs, then arcs down onto where you were standing, so keep moving. Missiles can be shot down, and loop up well off the top of the screen before they come back, so you have a few seconds to walk away. They close and reopen in unison, but each has its own countdown, so shooting one does not hold up the other; with one gone the survivor works faster. The scene has no kill count: infantry keeps coming, with a truck of troops every 30 seconds or so, until both silos are destroyed (or you die).
+- Your shield is your health; you have a single life: when the shield is gone the mech blows up and the game is over.
 
 ## How the shooting works
 
@@ -58,6 +59,9 @@ src/
   weapon.ts     hitscan guns, heat, jitter
   targeting.ts  ray casts against enemies / walls / ground
   enemies.ts    soldiers: steering, line of fire, ledges, corpses
+  boss.ts       level boss: opens the two silos in unison, enrages the survivor
+  silo.ts       one silo: closed/opening/exposed/firing/closing, hit box, wreck
+  missiles.ts   the silos' missiles: slow climb off-screen, then a lob onto the mech; shootable
   building.ts   destructible buildings, ruin generation, collapse solver
   world.ts      sky, ground, parallax city, chunk streaming
   debris.ts     rubble physics (sleeping bodies, spatial hash), dust

@@ -10,7 +10,7 @@ export const PLAYER = {
   /** how quickly the slowdown eases in and out (1/s) */
   rubbleSlowEase: 6,
   maxShield: 100,
-  lives: 3,
+  lives: 1,
   /** shield lost per enemy hit */
   hitDamage: 4,
 } as const;
@@ -66,9 +66,9 @@ export const ENEMY_FIRE = {
    */
   bulletSpeed: 6,
   /** each shot is aimed at the mech's chest as it is right then (no allowance for movement), off by up to this far... */
-  spreadBase: 0.5,
+  spreadBase: 0.4,
   /** ...plus this much per unit of distance to the mech */
-  spreadPerUnit: 0.07,
+  spreadPerUnit: 0.055,
   /** vertical and depth misses are this share of the sideways one */
   spreadVertical: 0.6,
   spreadDepth: 0.5,
@@ -97,7 +97,7 @@ export const STALL = {
 export const WEAPON = {
   /** shots / second (machine gun) */
   fireRate: 20,
-  heatPerShot: 0.02 / 6,
+  heatPerShot: 0.02 / 4,
   /** heat lost per second while idle / while locked out */
   coolRate: 0.25,
   lockCoolRate: 0.4,
@@ -240,4 +240,97 @@ export const BOMB = {
   blastScale: 2,
   /** shield lost when it lands within the blast radius or hits the mech */
   damage: 20,
+} as const;
+
+/**
+ * Level 1 boss: two missile silos set into the ground. They stay shut and unhurtable while the infantry wave
+ * is on; once enough of it has been sent in they open together, and each arms and launches a slow ballistic
+ * missile at the mech before closing again. Only an open silo can be damaged.
+ */
+export const SILO = {
+  /** the missile inside is the weak point: far tougher than a gun, so it takes more than one opening to bring down */
+  hp: SOLDIER.hp * 40,
+  /** where they sit relative to the view's centre (units): side by side on the left half, a little apart, and the depth they are in */
+  offsetsX: [-9, -4],
+  z: -2.5,
+  /** seconds the doors take to slide open / shut */
+  openTime: 1.2,
+  closeTime: 1.2,
+  /** seconds both stay shut before they open again (counted from the moment both are shut) */
+  closedTime: 3,
+  /** seconds a silo sits open before it launches; the second one's countdown is this much longer */
+  armTime: 4.5,
+  armStagger: 0.9,
+  /** seconds the missile takes to leave the silo, still a target while it does */
+  fireTime: 0.8,
+  /** with only one silo left it runs its whole cycle this much faster */
+  enrageSpeed: 1.6,
+  /** destroyed: the blast (it hurts whoever is near, as a wrecked gun's does) */
+  wreckBlastRadius: 2.2,
+  wreckBlastScale: 4,
+} as const;
+
+/** The silos' missile: climbs straight up, slowly, far above the view, then arcs down toward where the mech was when it turned over. */
+export const MISSILE = {
+  /** a missile is a target all the way: tougher than a bomb, but a second or so of sustained fire brings it down */
+  hp: SOLDIER.hp * 3,
+  /** climb: starting speed and acceleration (units/s, units/s²) */
+  climbSpeed: 2,
+  climbAccel: 3,
+  /** the height it turns over at (units): well off the top of the view, so the descent is what the mech has to dodge */
+  apexMin: 16,
+  apexMax: 24,
+  /** seconds the descent takes from the top of the climb to the aim point: slow enough to walk out from under */
+  flightMin: 3,
+  flightMax: 5,
+  gravity: 3.2,
+  /** how far from the mech's position at the turn-over the aim point may lie */
+  spreadX: 2,
+  spreadZ: 1,
+  blastRadius: 3,
+  blastScale: 5,
+  /** shield lost when it lands within the blast radius: strips most of the shield at once */
+  damage: 45,
+  /** screen shake (world units of camera movement) for a blast on screen */
+  shake: 0.45,
+} as const;
+
+/** The mech's death: a huge fireball, a mushroom cloud, and the mech's parts flung about. */
+export const MECH_DEATH = {
+  /** how long the screen is the mech's funeral before the next life starts or the game over screen comes up (s) */
+  time: 3.8,
+  /** a new mech cannot be hurt for this long (s) */
+  invulnerable: 2.5,
+  /** the middle of the blast, above the ground; it kills infantry and hurts vehicles within the radius */
+  height: 1.2,
+  blastRadius: 7,
+  blastScale: 6,
+  /** the biggest lobe of the fireball (diameter, units) and how many smaller lobes boil round it */
+  fireballSize: 16,
+  lobes: 9,
+  ringLife: 1,
+  /** screen shake (units of camera movement), mild, for each of the two blasts */
+  shake: 0.5,
+  podShake: 0.35,
+  /** the blast tears buildings apart this far out (units), flinging the rubble away at up to this speed (units/s) */
+  buildingRadius: 9,
+  buildingSpeed: 14,
+  /** smoke: the stem climbs at this speed for this long; the cap starts then and spreads this fast for capTime */
+  stemSpeed: 7,
+  stemTime: 3,
+  capStart: 1.3,
+  capTime: 1.8,
+  capSpread: 4,
+  /** the cockpit is launched straight up to the height the game gives it, tilting up to this much (degrees) about each axis on the way, and blows up there */
+  podGravity: 6,
+  podTiltDeg: 15,
+  podBlastRadius: 4.5,
+  podBlastScale: 4,
+  podFireballSize: 9,
+  podBuildingRadius: 5,
+  podBuildingSpeed: 8,
+  /** parts: how hard they are thrown, the share that burn, and for how long (s) */
+  partSpeed: 5,
+  burnShare: 0.25,
+  burnTime: 8,
 } as const;

@@ -7,7 +7,7 @@
     "event types: 'cannon' (count guns, each with a crew of 2), 'truck' (troops soldiers aboard), 'aircraft' (count planes, each at its own height).",
     "kills needed to clear a scene = infantry.count + 3 per cannon + (1 + troops) per truck + 1 per plane.",
     "widthScreens: how wide the scene is, in screens (the camera scrolls through scenes wider than 1).",
-    "boss: reserved for later (null = none)."
+    "boss: null for none, or { \"type\": \"silos\", \"opensAfter\": n, \"truckEvery\": s, \"truckJitter\": s, \"truckTroops\": n }: two missile silos that stay shut and unhurtable until n infantry have been sent in, then open together and launch missiles at the mech. A boss scene has no kill count: it ends when both silos are destroyed, and its infantry (infantry.count is ignored) keeps coming, with a truck of troops every truckEvery +- truckJitter seconds."
   ],
   "scenes": [
     {
@@ -60,6 +60,13 @@
       "infantry": { "count": 130, "waveMin": 4, "waveExtra": 5, "intervalMin": 2, "intervalExtra": 2, "maxAlive": 18 },
       "events": [],
       "boss": null
+    },
+    {
+      "name": "Missile silos",
+      "widthScreens": 1,
+      "infantry": { "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 14 },
+      "events": [],
+      "boss": { "type": "silos", "opensAfter": 15, "truckEvery": 30, "truckJitter": 10, "truckTroops": 10 }
     }
   ]
 }

@@ -67,6 +67,15 @@ export class Dust {
     });
   }
 
+  /** One puff thrown with a velocity of the caller's choosing: the pieces of a mushroom cloud. @param drag how fast it slows (1/s) */
+  billow(at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number, drag: number, dark: number): void {
+    if (this.pool.full) return;
+    this.pool.push({
+      pos: at.clone(), vel: vel.clone(),
+      life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag, alpha: 0.7, dark, windK: 0.6,
+    });
+  }
+
   /** A column of black smoke from a fire: climbs steadily, widens, and is carried off by the wind as it thins. */
   plume(at: THREE.Vector3, size: number, life: number): void {
     if (this.pool.full) return;

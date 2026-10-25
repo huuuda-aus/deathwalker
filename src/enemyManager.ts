@@ -5,6 +5,10 @@ import { Horse } from './horse';
 import { TruckUnit } from './truck';
 import { AircraftUnit } from './aircraft';
 import { Bomb } from './bomb';
+import { SiloUnit } from './silo';
+import { SiloBoss } from './boss';
+import type { BossDef } from './level';
+import type { Missiles } from './missiles';
 import type { Explosions } from './explosions';
 import type { Bullets } from './bullets';
 import type { Shells } from './shells';
@@ -13,7 +17,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -33,6 +37,7 @@ export interface EnemyDeps {
   /** how soldiers query rubble and surfaces */
   env: SoldierEnv;
   shells: Shells;
+  missiles: Missiles;
   dust: Dust;
   explosions: Explosions;
   bullets: Bullets;
@@ -51,6 +56,11 @@ export class EnemyManager {
   private stallMark = '';
   private clock = 0;
   private rubbleHit = new WeakMap<Enemy, number>();
+  /** the scene's boss, once it is in place, and the scene it belongs to */
+  boss: SiloBoss | null = null;
+  private bossScene = -1;
+  /** seconds until the boss scene sends its next truck */
+  private truckT = 0;
 
   constructor(private readonly deps: EnemyDeps) {
     const { debris, fx } = deps;
@@ -82,9 +92,17 @@ export class EnemyManager {
     }
   }
 
+  /** put an enemy made mid-fight (a missile) into the scene and the fight */
+  add(e: Enemy): void {
+    this.deps.scene.add(e.group);
+    this.list.push(e);
+  }
+
   reset(): void {
     for (const e of this.list) this.discard(e);
     this.list.length = 0;
+    this.boss = null;
+    this.bossScene = -1;
   }
 
   /** the current scene is over: whoever is left runs away */
@@ -221,6 +239,34 @@ export class EnemyManager {
     return lanes;
   }
 
+  /**
+   * The scene's boss: two silos set into the ground side by side on the left of the view, there from the start of the scene
+   * (shut, so just scenery until the boss opens them). Both come out of the scene's spawn budget.
+   */
+  private spawnBoss(camX: number): void {
+    const { scene, level, world, debris, dust, explosions, missiles } = this.deps;
+    const def = level.scene.boss;
+    if (!def || this.bossScene === level.index) return;
+    this.bossScene = level.index;
+    const deps = { explosions, debris, dust, missiles, floor: (x: number, z: number, y: number) => world.surfaceTop(x, z, y) };
+    const silos = SILO.offsetsX.map((dx, i) => new SiloUnit(camX + dx, SILO.z, SILO.armTime + i * SILO.armStagger, deps));
+    for (const s of silos) { scene.add(s.group); this.list.push(s); }
+    this.boss = new SiloBoss(silos, def.opensAfter);
+    this.truckT = this.nextTruck(def);
+  }
+
+  /** seconds to the next truck: the boss's interval, give or take its jitter */
+  private nextTruck(def: BossDef): number { return def.truckEvery + (Math.random() * 2 - 1) * def.truckJitter; }
+
+  /** A truck of troops every so often while the boss lives; if one is still unloading, the next waits for it. */
+  private runBossTrucks(dt: number, camX: number, spawning: boolean): void {
+    const { level } = this.deps;
+    const def = level.scene.boss;
+    if (!def || !spawning || !level.canSpawn || this.boss?.phase === 'down') return;
+    this.truckT -= dt;
+    if (this.truckT <= 0 && this.spawnTruck(def.truckTroops, camX)) this.truckT = this.nextTruck(def);
+  }
+
   /** waves of 3-6 from the scene budget; most come out of buildings, the rest walk in from off-screen */
   private spawn(dt: number, camX: number): void {
     const { scene, world, level, mech, env } = this.deps;
@@ -229,7 +275,8 @@ export class EnemyManager {
     let alive = 0;
     for (const e of this.list) if (e.alive && !(e instanceof Bomb)) alive++;
     const inf = level.scene.infantry;
-    const left = inf.count - level.infantrySpawned;
+    // a boss scene never runs out of infantry
+    const left = level.scene.boss ? Infinity : inf.count - level.infantrySpawned;
     if (this.spawnTimer > 0 || !level.canSpawn || left <= 0 || alive >= inf.maxAlive) return;
     const half = SCREEN_W / 2;
     // a bay only qualifies if a soldier standing in it could actually hit the mech: no wall or rubble in the way
@@ -280,7 +327,8 @@ export class EnemyManager {
    */
   private failsafe(dt: number, camX: number): void {
     const { level, fx } = this.deps;
-    if (level.phase !== 'active' || level.kills >= level.scene.spawnBudget) { this.stallT = 0; return; }
+    // a boss scene ends with the boss, whatever else is alive
+    if (level.phase !== 'active' || level.scene.boss || level.kills >= level.scene.spawnBudget) { this.stallT = 0; return; }
     const mark = `${level.index}:${level.kills}:${level.spawned}`;
     if (mark !== this.stallMark) { this.stallMark = mark; this.stallT = 0; return; }
     this.stallT += dt;
@@ -289,7 +337,7 @@ export class EnemyManager {
     let left = 0;
     for (const e of this.list) {
       if (!e.alive || e.retreating) continue;
-      if (e instanceof AircraftUnit || e instanceof Bomb) { left++; continue; }   // they patrol in and out of view
+      if (e instanceof AircraftUnit || e instanceof Bomb || e instanceof SiloUnit) { left++; continue; }   // they patrol in and out of view / cannot be hurt until they open
       const seen = Math.abs(e.x - camX) < half;
       if (seen && this.stallT < STALL.anyoneAfter) { left++; continue; }
       e.damage(9999, fx);
@@ -306,6 +354,13 @@ export class EnemyManager {
     if (spawning) this.failsafe(dt, camX);
     this.camX = camX;
     if (spawning) { this.spawn(dt, camX); this.runEvents(camX); }
+    if (level.canSpawn) this.spawnBoss(camX);
+    if (level.index !== this.bossScene) this.boss = null;
+    if (this.boss) {
+      this.boss.update(level.infantrySpawned);
+      if (this.boss.phase === 'down') level.bossDown = true;
+      this.runBossTrucks(dt, camX, spawning);
+    }
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];
