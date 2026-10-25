@@ -28,5 +28,6 @@
  "thunderNormal": 2,
  "thunderDistant": 2,
  "buildingRumble": 2,
- "buildingCrash": 3
+ "buildingCrash": 3,
+ "gunnerShot": 4
 }

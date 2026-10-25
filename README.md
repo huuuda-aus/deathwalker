@@ -41,6 +41,7 @@ The mech never turns around: its body always faces left. Only the cockpit and it
 - The camera is on rails. A level is a list of **scenes**, each one or more screens wide, with a spawn budget and a kill goal. The camera will not advance until the goal is met; then the scroll unlocks and you walk on to the next scene.
 - Enemies arrive in waves. Most spawn **inside the buildings**, walk to a ledge and shoot from there; the rest walk in from off-screen. Soldiers on the street steer around rubble and only fire when they have a clear line of fire.
 - **Buildings are destructible ruins** built from floor slabs, pillars, walls, glazing and stairwells. A load-path solver collapses whatever loses its support, and shooting out the base of a building brings the whole thing down, crushing everyone inside. A collapsed building spawns no more enemies.
+- **Heavy machine gunners** run in from the left with their gun over their shoulder, pick a spot with a clear line of fire, drop to the ground, set the gun up and fire long bursts at the mech, much more accurately than the riflemen and with faster bullets. They take twice the hits of a rifleman and are worth six times the points. If rubble blocks their line of fire they pick the gun up and move.
 - **A thunderstorm** rolls over the city while it rains (the harder, the more often): a bolt far behind the skyline, a flash that lights the clouds and throws a hard light from above on everything, then the thunder, which arrives later the farther off the strike was: a sharp crack for a near one, a clap and a long roll a few seconds on, or a low rumble well after.
 - **Rubble is physical and persistent.** It piles up, blocks soldiers and bullets, is kicked aside by the mech's legs, and slows the mech down when it is dense.
 - **Level 1 boss: the missile silos** (last scene). Two silos sit in the ground side by side on the left of the view, shut and unhurtable while the infantry wave is on. Once enough of it has been sent in they open together; only an open silo can be damaged (shut doors just spark). Each launches a slow missile that climbs, then arcs down onto where you were standing, so keep moving. Missiles can be shot down, and loop up well off the top of the screen before they come back, so you have a few seconds to walk away. They close and reopen in unison, but each has its own countdown, so shooting one does not hold up the other; with one gone the survivor works faster. The scene has no kill count: infantry keeps coming, with a truck of troops every 30 seconds or so, until both silos are destroyed (or you die).
@@ -52,7 +53,7 @@ Bullets are not projectiles. Each shot is an instant ray cast from the camera th
 
 ## Score and hall of fame
 
-Every enemy is worth points (a soldier 10, a horse 25, a gun 120, a truck 200, a plane 250, a silo 1500), and the level's spawns are fixed, so the points available are the same for everyone. What tells two players who kill everything apart:
+Every enemy is worth points (a soldier 10, a heavy machine gunner 60, a horse 25, a gun 120, a truck 200, a plane 250, a silo 1500), and the level's spawns are fixed, so the points available are the same for everyone. What tells two players who kill everything apart:
 
 - **Combo:** kills less than 1.5 s apart build a multiplier (up to x3). Stomping a soldier (+15) or crushing him under falling rubble (+10) pays extra.
 - **Scene bonuses:** each cleared scene pays for **speed** (up to 1000, against the scene's `parTime` in `level1.json`: full at 60% of it or faster, none at 150%), **shield left** (up to 500), **no damage taken** (500) and **no overheat** (300). The boss scene has no kill count, so its speed bonus is the point of it.
@@ -81,6 +82,7 @@ src/
   weapon.ts     hitscan guns, heat, jitter
   targeting.ts  ray casts against enemies / walls / ground
   enemies.ts    soldiers: steering, line of fire, ledges, corpses
+  gunner.ts     the heavy machine gunner: run in, set up, fire bursts, move
   boss.ts       level boss: opens the two silos in unison, enrages the survivor
   silo.ts       one silo: closed/opening/exposed/firing/closing, hit box, wreck
   missiles.ts   the silos' missiles: slow climb off-screen, then a lob onto the mech; shootable

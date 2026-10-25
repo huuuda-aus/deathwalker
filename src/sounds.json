@@ -19,6 +19,8 @@
       "synth": { "dur": 0.2, "layers": [ { "type": "noise", "lp": 0.3, "decay": 0.03, "amp": 1 }, { "type": "noise", "hp": 0.5, "decay": 0.01, "amp": 0.5, "delay": 0.04 } ] } },
     "enemyShot":    { "bus": "sfx", "priority": 4, "voices": 6, "gap": 0.07, "pitch": 0.1, "gain": 1, "lufs": -26,
       "synth": { "dur": 0.25, "layers": [ { "type": "noise", "lp": 0.6, "decay": 0.04, "amp": 1 }, { "type": "sine", "f0": 220, "f1": 80, "decay": 0.05, "amp": 0.5 } ] } },
+    "gunnerShot":   { "bus": "sfx", "priority": 5, "voices": 6, "gap": 0.06, "pitch": 0.08, "gain": 1, "lufs": -23,
+      "synth": { "dur": 0.3, "layers": [ { "type": "noise", "lp": 0.4, "decay": 0.05, "amp": 1 }, { "type": "sine", "f0": 130, "f1": 55, "decay": 0.08, "amp": 0.9 } ] } },
     "soldierScream":{ "bus": "sfx", "priority": 6, "voices": 3, "gap": 0.15, "pitch": 0.12, "gain": 1, "lufs": -30,
       "synth": { "dur": 0.7, "layers": [ { "type": "saw", "f0": 520, "f1": 380, "decay": 0.5, "attack": 0.03, "vibrato": 9, "amp": 0.7 }, { "type": "noise", "hp": 0.3, "decay": 0.3, "amp": 0.15 } ] } },
     "soldierFall":  { "bus": "sfx", "priority": 6, "voices": 2, "gap": 0.2, "pitch": 0.1, "gain": 1, "lufs": -29,

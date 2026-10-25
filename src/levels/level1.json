@@ -4,8 +4,8 @@
     "Each scene must be cleared by killing everything it sends in: its infantry, plus every vehicle and everyone riding in one.",
     "infantry.count: street infantry sent in over the scene, in waves of waveMin..waveMin+waveExtra-1, every intervalMin..intervalMin+intervalExtra seconds, never more than maxAlive enemies alive at once.",
     "events: vehicles that arrive at set points in the scene. 'at' is how much of the scene's infantry has been sent in by then (0 = at the start, 1 = after the last of them); an event that has to wait (one flight / one truck / one gun at a time) goes as soon as it can.",
-    "event types: 'cannon' (count guns, each with a crew of 2), 'truck' (troops soldiers aboard), 'aircraft' (count planes, each at its own height).",
-    "kills needed to clear a scene = infantry.count + 3 per cannon + (1 + troops) per truck + 1 per plane.",
+    "event types: 'cannon' (count guns, each with a crew of 2), 'truck' (troops soldiers aboard), 'aircraft' (count planes, each at its own height), 'gunner' (count heavy machine gunners: they run in from the left, set up where they have a line of fire and fire long, accurate bursts).",
+    "kills needed to clear a scene = infantry.count + 3 per cannon + (1 + troops) per truck + 1 per plane + 1 per gunner.",
     "widthScreens: how wide the scene is, in screens (the camera scrolls through scenes wider than 1).",
     "parTime: seconds a good player takes to clear the scene; the scene pays a time bonus against it (full at 60% of it or faster, nothing at 150% or slower).",
     "boss: null for none, or { \"type\": \"silos\", \"opensAfter\": n, \"truckEvery\": s, \"truckJitter\": s, \"truckTroops\": n }: two missile silos that stay shut and unhurtable until n infantry have been sent in, then open together and launch missiles at the mech. A boss scene has no kill count: it ends when both silos are destroyed, and its infantry (infantry.count is ignored) keeps coming, with a truck of troops every truckEvery +- truckJitter seconds."
@@ -17,6 +17,7 @@
       "parTime": 75,
       "infantry": { "count": 36, "waveMin": 3, "waveExtra": 3, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
+        { "type": "gunner", "at": 0.35, "count": 2 },
         { "type": "cannon", "at": 0.85, "count": 1 }
       ],
       "boss": null
@@ -28,6 +29,7 @@
       "infantry": { "count": 40, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "truck", "at": 0.15, "troops": 10 },
+        { "type": "gunner", "at": 0.3, "count": 1 },
         { "type": "truck", "at": 0.5, "troops": 10 },
         { "type": "truck", "at": 0.8, "troops": 9 }
       ],
@@ -40,7 +42,9 @@
       "infantry": { "count": 34, "waveMin": 3, "waveExtra": 4, "intervalMin": 3, "intervalExtra": 2.5, "maxAlive": 12 },
       "events": [
         { "type": "cannon", "at": 0.2, "count": 1 },
+        { "type": "gunner", "at": 0.35, "count": 1 },
         { "type": "truck", "at": 0.45, "troops": 10 },
+        { "type": "gunner", "at": 0.6, "count": 2 },
         { "type": "cannon", "at": 0.7, "count": 2 }
       ],
       "boss": null
@@ -53,8 +57,10 @@
       "events": [
         { "type": "aircraft", "at": 0.05, "count": 2 },
         { "type": "cannon", "at": 0.3, "count": 2 },
+        { "type": "gunner", "at": 0.4, "count": 1 },
         { "type": "truck", "at": 0.5, "troops": 10 },
         { "type": "aircraft", "at": 0.65, "count": 2 },
+        { "type": "gunner", "at": 0.75, "count": 2 },
         { "type": "truck", "at": 0.85, "troops": 10 }
       ],
       "boss": null
@@ -64,7 +70,11 @@
       "widthScreens": 2,
       "parTime": 150,
       "infantry": { "count": 130, "waveMin": 4, "waveExtra": 5, "intervalMin": 2, "intervalExtra": 2, "maxAlive": 18 },
-      "events": [],
+      "events": [
+        { "type": "gunner", "at": 0.15, "count": 2 },
+        { "type": "gunner", "at": 0.5, "count": 2 },
+        { "type": "gunner", "at": 0.8, "count": 3 }
+      ],
       "boss": null
     },
     {
