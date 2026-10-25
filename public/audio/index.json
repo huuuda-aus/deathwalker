@@ -29,5 +29,8 @@
  "thunderDistant": 2,
  "buildingRumble": 2,
  "buildingCrash": 3,
- "gunnerShot": 4
+ "gunnerShot": 4,
+ "launcherTracks": 1,
+ "rackMove": 1,
+ "zeppelin": 1
 }

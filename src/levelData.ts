@@ -1,12 +1,14 @@
 import raw from './levels/level1.json';
-import { AIRCRAFT, CANNON, GUNNER } from './config';
+import { AIRCRAFT, CANNON, GUNNER, LAUNCHER } from './config';
 
 /** A vehicle that arrives during a scene. `at` is how much of the scene's infantry has been sent in by then (0..1). */
 export type SpawnEvent =
   | { type: 'cannon'; at: number; count: number }
   | { type: 'truck'; at: number; troops: number }
   | { type: 'aircraft'; at: number; count: number }
-  | { type: 'gunner'; at: number; count: number };
+  | { type: 'gunner'; at: number; count: number }
+  | { type: 'launcher'; at: number; count: number }
+  | { type: 'zeppelin'; at: number; troops: number };
 
 /**
  * The scene's boss: two missile silos. The scene has no kill count: it ends when the boss is destroyed (or the player
@@ -92,8 +94,18 @@ export function parseLevel(data: unknown): SceneDef[] {
           budget += count;
           return { type: 'gunner', at, count };
         }
+        case 'launcher': {
+          const count = num(`${ew} count`, e.count ?? 1, 1, LAUNCHER.packMax);
+          budget += count;
+          return { type: 'launcher', at, count };
+        }
+        case 'zeppelin': {
+          const troops = Math.round(num(`${ew} troops`, e.troops ?? 14, 1, 40));
+          budget += troops;
+          return { type: 'zeppelin', at, troops };
+        }
         default:
-          return fail(`${ew} type`, `unknown type ${JSON.stringify(e.type)} (cannon, truck, aircraft or gunner)`);
+          return fail(`${ew} type`, `unknown type ${JSON.stringify(e.type)} (cannon, truck, aircraft, gunner, launcher or zeppelin)`);
       }
     });
     events.sort((a, b) => a.at - b.at);

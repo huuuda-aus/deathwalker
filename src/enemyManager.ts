@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Soldier, type Enemy, type SoldierEnv } from './enemies';
 import { MachineGunner } from './gunner';
+import { LauncherUnit } from './launcher';
+import { ZeppelinUnit } from './zeppelin';
+import { Paratrooper, ParachuteTarget } from './paratrooper';
 import { CannonUnit } from './cannon';
 import { Horse } from './horse';
 import { TruckUnit } from './truck';
@@ -19,7 +22,7 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO } from './config';
+import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
@@ -46,6 +49,8 @@ export interface EnemyDeps {
   /** shield damage to the player (a bomb going off beside the mech) */
   onPlayerHit: (damage: number) => void;
   score: Score;
+  /** the screen shakes for something big at x */
+  shake: (x: number, amount: number) => void;
 }
 
 export class EnemyManager {
@@ -110,6 +115,8 @@ export class EnemyManager {
     else if (e instanceof Soldier) kind = 'soldier';
     else if (e instanceof Horse) kind = 'horse';
     else if (e instanceof CannonUnit) kind = 'cannon';
+    else if (e instanceof LauncherUnit) kind = 'launcher';
+    else if (e instanceof ZeppelinUnit) kind = 'zeppelin';
     else if (e instanceof TruckUnit) kind = 'truck';
     else if (e instanceof AircraftUnit) kind = 'aircraft';
     else if (e instanceof SiloUnit) kind = 'silo';
@@ -225,6 +232,51 @@ export class EnemyManager {
       const g = new MachineGunner(camX - half - 3 - n * 2.2, LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin), env);
       scene.add(g.group);
       this.list.push(g);
+      level.spawned++;
+    }
+    return true;
+  }
+
+  /**
+   * The zeppelin: a set piece. It hangs over the battlefield dropping `troops` paratroopers, who are what counts toward clearing the
+   * scene (the airship itself does not). One at a time.
+   */
+  private spawnZeppelin(troops: number, camX: number): boolean {
+    const { scene, level, env, explosions, dust, debris, world, shake } = this.deps;
+    if (this.list.some((e) => e instanceof ZeppelinUnit)) return false;
+    void camX;
+    const unit = new ZeppelinUnit(troops, {
+      explosions, dust, debris, floor: (x, z, y) => world.surfaceTop(x, z, y),
+      camX: () => this.camX,
+      spawnTrooper: (x, y, z, laneZ, speed) => {
+        const p = new Paratrooper(x, y, z, laneZ, env, speed);
+        scene.add(p.group);
+        this.list.push(p, new ParachuteTarget(p));          // the man, and his parachute as a target of its own
+      },
+      shake,
+    });
+    scene.add(unit.group);
+    this.list.push(unit);
+    level.spawned += troops;
+    return true;
+  }
+
+  /**
+   * Tracked rocket launchers roll in from off screen on the left and stop a good way from the mech, each in a lane of its own. They
+   * come a few at a time at most: the next group waits until these are destroyed.
+   */
+  private spawnLaunchers(count: number, camX: number): boolean {
+    const { scene, level, mech, missiles, debris, dust, world, explosions } = this.deps;
+    if (this.list.some((e) => e instanceof LauncherUnit && e.alive && !e.retreating)) return false;
+    const half = SCREEN_W / 2;
+    const lanes = this.packLanes(count, mech.root.position.z);
+    for (let n = 0; n < count; n++) {
+      const standoff = LAUNCHER.standoffMin + Math.random() * (LAUNCHER.standoffMax - LAUNCHER.standoffMin);
+      // left of the mech, but on screen
+      const stopX = Math.max(camX - half + 3, mech.root.position.x - standoff - n * 3);
+      const unit = new LauncherUnit(camX - half - 5 - n * 4, lanes[n], stopX, { missiles, explosions, dust, debris, floor: (x, z, y) => world.surfaceTop(x, z, y) });
+      scene.add(unit.group);
+      this.list.push(unit);
       level.spawned++;
     }
     return true;
@@ -351,6 +403,8 @@ export class EnemyManager {
       const sent = ev.type === 'cannon' ? this.spawnCannon(ev.count, camX)
         : ev.type === 'truck' ? this.spawnTruck(ev.troops, camX)
         : ev.type === 'gunner' ? this.spawnGunners(ev.count, camX)
+        : ev.type === 'launcher' ? this.spawnLaunchers(ev.count, camX)
+        : ev.type === 'zeppelin' ? this.spawnZeppelin(ev.troops, camX)
         : this.spawnAircraft(ev.count, camX);
       if (sent) level.fired.add(i);
     });
@@ -373,7 +427,7 @@ export class EnemyManager {
     let left = 0;
     for (const e of this.list) {
       if (!e.alive || e.retreating) continue;
-      if (e instanceof AircraftUnit || e instanceof Bomb || e instanceof SiloUnit) { left++; continue; }   // they patrol in and out of view / cannot be hurt until they open
+      if (e instanceof AircraftUnit || e instanceof Bomb || e instanceof SiloUnit || e instanceof ZeppelinUnit) { left++; continue; }   // they patrol in and out of view / cannot be hurt until they open
       const seen = Math.abs(e.x - camX) < half;
       if (seen && this.stallT < STALL.anyoneAfter) { left++; continue; }
       this.scored.add(e);                               // taken off the field, not shot: no points

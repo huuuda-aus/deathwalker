@@ -76,8 +76,9 @@ export const sfx = {
   gunnerShot(from: THREE.Vector3): void { audio.play('gunnerShot', { x: from.x }); },
 
   /** a soldier is killed; one thrown off a building screams more, and longer */
-  soldierDeath(x: number, plunge: boolean): void {
-    if (plunge) { if (Math.random() < FALL_SCREAM_CHANCE) audio.play('soldierFall', { x }); }
+  soldierDeath(x: number, plunge: boolean, always = false): void {
+    if (always) audio.play(plunge ? 'soldierFall' : 'soldierScream', { x });
+    else if (plunge) { if (Math.random() < FALL_SCREAM_CHANCE) audio.play('soldierFall', { x }); }
     else if (Math.random() < SCREAM_CHANCE) audio.play('soldierScream', { x });
   },
 
@@ -100,10 +101,15 @@ export const sfx = {
     audio.play('buildingCrash', { x, gain: 0.4 + 0.6 * weight, rate: 1.1 - 0.25 * weight });
   },
 
+  /** a very big bang, wherever it is (the zeppelin coming down) */
+  explosionHuge(at: THREE.Vector3): void { audio.play('explosionHuge', { x: at.x }); },
+
   cannon(from: THREE.Vector3): void { audio.play('cannonFire', { x: from.x }); },
   rocketLaunch(from: THREE.Vector3): void { audio.play('rocketLaunch', { x: from.x }); },
   bombDropped(from: THREE.Vector3): void { audio.play('bombWhistle', { x: from.x }); },
   siloDoor(x: number): void { audio.play('siloDoor', { x }); },
+  /** the launcher's rack tips up or down: hydraulics */
+  rack(x: number): void { audio.play('rackMove', { x }); },
 
   step(x: number, strength: number): void { audio.play('step', { x, gain: 0.5 + 0.5 * strength }); },
 

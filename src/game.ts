@@ -203,7 +203,9 @@ export class Game {
       add: (e) => this.enemies.add(e), handOff: (from, to) => this.lock.handOff(from, to), shake: (at, amount) => this.shakeScreen(at, amount),
     });
     this.bullets = new Bullets({ scene, fx: this.fx, world, debris, colliders: this.mech.colliders, onPlayerHit: () => this.hurtPlayer(PLAYER.hitDamage) });
-    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n), score: this.score });
+    this.enemies = new EnemyManager({ scene, world, level: this.level, fx: this.fx, debris, mech: this.mech, env, shells: this.shells, missiles: this.missiles, dust, explosions: this.explosions, bullets: this.bullets, onPlayerHit: (n) => this.hurtPlayer(n), score: this.score,
+      shake: (x, amount) => this.shakeScreen(this.boltShake.set(x, 0, 0), amount),
+    });
     this.casings = new Casings(scene, (x, z, y) => world.surfaceTop(x, z, y));
     this.weapon = new Weapon({ fx: this.fx, world, dust, debris, enemies: this.enemies.list, onShot: (gun) => this.ejectCasings(gun) });
     this.mechDeath = new MechDeath({
@@ -223,7 +225,7 @@ export class Game {
     this.placeCamera();
     // sound: the samples load behind the menu, and the browser wants a click or key press before it will play any
     void audio.load();
-    audio.playMusic('menu');
+    audio.playMusic(this.pickMenuTrack());
     audio.setVolume('ambience', MENU_AMBIENCE);
     new SoundTest(audio);
     new MusicToggle();
@@ -253,6 +255,9 @@ export class Game {
       if (e.code === 'KeyH') this.post.toggleHaze();
     });
   }
+
+  /** one of the main menu's two soundtracks, picked at random each time the page loads */
+  private pickMenuTrack(): string { return Math.random() < 0.5 ? 'menu' : 'menu2'; }
 
   start(): void {
     if (import.meta.env.DEV) Object.assign(window, { __game: this });     // dev: poke at it from the console

@@ -40,6 +40,8 @@ export function nominalScene(scene: SceneDef): number {
     if (e.type === 'cannon') pts += e.count * (p.cannon + CANNON.crew * p.soldier + p.horse);
     else if (e.type === 'truck') pts += p.truck + e.troops * p.soldier;
     else if (e.type === 'gunner') pts += e.count * p.gunner;
+    else if (e.type === 'launcher') pts += e.count * p.launcher;
+    else if (e.type === 'zeppelin') pts += e.troops * p.soldier;
     else pts += e.count * p.aircraft;
   }
   if (scene.boss) pts += 2 * p.silo;
@@ -63,7 +65,7 @@ export class Score {
   total = 0;
   /** seconds of play, over the whole run */
   time = 0;
-  kills: Record<ScoreKind, number> = { soldier: 0, gunner: 0, horse: 0, cannon: 0, truck: 0, aircraft: 0, silo: 0 };
+  kills: Record<ScoreKind, number> = { soldier: 0, gunner: 0, horse: 0, cannon: 0, launcher: 0, truck: 0, aircraft: 0, zeppelin: 0, silo: 0 };
   results: SceneResult[] = [];
   /** kills in a row, and how long until the chain breaks */
   combo = 0;

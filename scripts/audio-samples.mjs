@@ -213,6 +213,26 @@ const RECIPES = {
       fc: `${R},${slow(0.6)},highpass=f=80,lowpass=f=3200,volume=${level},atrim=0:0.3,asetpts=PTS-STARTPTS,afade=t=out:st=0.2:d=0.1[a];` +
         'aevalsrc=0.6*sin(2*PI*(95*t+60*t*t))*min(t*60\\,1)*exp(-6*t):d=0.3:s=48000,volume=0.12[g];[a][g]amix=inputs=2:normalize=0',
     })),
+  // the launcher's tracks: a heavy slowed engine with the grind and clatter of tracks over it, as a loop
+  launcherTracks: [{
+    inputs: [P('engine/engine_sound.mp3'), P('sfx100b/sfx100v2_loop_machine_02.ogg')],
+    fc: `[0:a]aresample=48000,atrim=2:10,asetpts=PTS-STARTPTS,${slow(0.7)},lowpass=f=800[e];` +
+      '[1:a]aresample=48000,aformat=channel_layouts=mono,atrim=1:9,asetpts=PTS-STARTPTS,highpass=f=350,lowpass=f=3200,volume=1.6[t];' +
+      `[e][t]amix=inputs=2:normalize=0,atrim=0:8,asetpts=PTS-STARTPTS[m];${loopify('m', 8, 1.2)}`,
+  }],
+  // the rack tipping up or down: hydraulics straining, with a low growl under them
+  rackMove: [{
+    inputs: [X.owl('Scifi/robotics2')],
+    fc: `${R},${slow(0.45)},highpass=f=90,lowpass=f=2400,volume=10,atrim=0:0.95,asetpts=PTS-STARTPTS,afade=t=in:d=0.1,afade=t=out:st=0.7:d=0.25[a];` +
+      'aevalsrc=0.5*sin(2*PI*(70*t+45*t*t))*min(t*8\\,1)*min((0.95-t)*8\\,1):d=0.95:s=48000[g];[a][g]amix=inputs=2:normalize=0',
+  }],
+  // the zeppelin's engines: a deep, slow throb with a low rumble under it, as a loop
+  zeppelin: [{
+    inputs: [P('engine/engine_sound.mp3'), X.rumble],
+    fc: `[0:a]aresample=48000,atrim=3:14,asetpts=PTS-STARTPTS,${slow(0.45)},lowpass=f=420[e];` +
+      '[1:a]aresample=48000,atrim=2:12,asetpts=PTS-STARTPTS,lowpass=f=260,volume=0.9[r];' +
+      `[e][r]amix=inputs=2:normalize=0,atrim=0:9,asetpts=PTS-STARTPTS[m];${loopify('m', 9, 1.5)}`,
+  }],
   rocketLaunch: [one(X.missile, `${cap(2.7, 0.3)},lowpass=f=7000`)],
   rocketFlight: [{
     inputs: [X.whoosh, P('sfx100b/sfx100v2_loop_machine_01.ogg')],

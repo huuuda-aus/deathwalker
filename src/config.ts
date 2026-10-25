@@ -293,6 +293,8 @@ export const MISSILE = {
   damage: 45,
   /** screen shake (world units of camera movement) for a blast on screen */
   shake: 0.45,
+  /** how big the missile is drawn, flame and all (1 = as modelled) */
+  scale: 1,
 } as const;
 
 /** The mech's death: a huge fireball, a mushroom cloud, and the mech's parts flung about. */
@@ -377,9 +379,9 @@ export const CASING = {
  * never overheating, so two players who kill everything still end up apart.
  */
 export const SCORE = {
-  points: { soldier: 10, gunner: 60, horse: 25, cannon: 120, truck: 200, aircraft: 250, silo: 1500 },
+  points: { soldier: 10, gunner: 60, horse: 25, cannon: 120, launcher: 300, truck: 200, aircraft: 250, zeppelin: 800, silo: 1500 },
   /** extra for killing a soldier in a showier way than shooting him */
-  causeBonus: { bullet: 0, stomp: 15, crush: 10, blast: 5 },
+  causeBonus: { bullet: 0, stomp: 15, crush: 10, blast: 5, air: 20 },
   /** a kill within this many seconds of the last one adds to the combo; the multiplier grows by `comboStep` each time, up to `comboMax` */
   comboWindow: 1.5,
   comboStep: 0.1,
@@ -450,4 +452,95 @@ export const GUNNER = {
   bulletSpeed: 9,
   /** no line of fire for this long (s) and he packs up and finds another spot */
   noSightLimit: 1.2,
+} as const;
+
+/** The tracked rocket launcher: a regular enemy that rolls in, stops, and fires salvos of smaller rockets at the mech. */
+export const LAUNCHER = {
+  /** a good deal tougher than the cannon */
+  hp: CANNON.hp * 1.5,
+  /** how big it is drawn (and hit), against the cannon and truck at 1 */
+  size: 1.2,
+  /** world units / s while it rolls in (and away) */
+  speed: 2,
+  /** it stops this far from the mech (units), on screen */
+  standoffMin: 8,
+  standoffMax: 13,
+  /** most that roll in together */
+  packMax: 2,
+  /** seconds the rack takes to tip up (and down), rockets in a salvo and the gap between them, how long it holds the rack up after the last, and how long it reloads */
+  raiseTime: 0.9,
+  salvo: 3,
+  gap: 0.55,
+  hold: 0.5,
+  reload: [6, 8] as const,
+  firstDelay: 1.4,
+  /** when it is destroyed */
+  wreckBlastRadius: 2.2,
+  wreckBlastScale: 4,
+  /** its rockets: lower, faster, weaker and smaller than the silos' */
+  rocket: {
+    hp: SOLDIER.hp * 2,
+    climbSpeed: 2.5,
+    climbAccel: 5,
+    apexMin: 7,
+    apexMax: 11,
+    flightMin: 1.9,
+    flightMax: 2.6,
+    gravity: 3.2,
+    spreadX: 1.6,
+    spreadZ: 0.9,
+    blastRadius: 2,
+    blastScale: 3,
+    damage: 25,
+    shake: 0.25,
+    scale: 0.3,
+  },
+} as const;
+
+/** Paratroopers: they leave the zeppelin, fall for a moment, open their canopy and float down; once on the ground they fight as infantry. */
+export const PARATROOPER = {
+  /** seconds of free fall before the canopy opens, and the speed he floats down at (units/s) */
+  freeFall: 0.45,
+  descent: 1.9,
+  /** sideways drift (units/s): a little with the wind, and a sway */
+  drift: -0.35,
+  sway: 0.25,
+  /** how long the canopy takes to open (s) */
+  open: 0.35,
+  /** each one floats a little faster or slower than the next, by up to this share, so they do not stay in step */
+  speedSpread: 0.18,
+} as const;
+
+/** The zeppelin set piece: a vast airship over the battlefield, of which only the belly shows, that drops paratroopers and can be shot down. */
+export const ZEPPELIN = {
+  /** much tougher than anything else: it takes a long, sustained effort to bring it down */
+  hp: SOLDIER.hp * 100,
+  /** length and radius of the envelope (world units): longer than the screen is wide, so only its underside shows */
+  length: 90,
+  radius: 9,
+  /** depth (z) it hangs at, in front of the first row of buildings and just behind the street, and the height of the lowest point of its belly when in place (units) */
+  z: -1.5,
+  bellyY: 7.8,
+  /** destroyed, it comes down while sliding back to this depth, behind the city */
+  fallZ: -30,
+  /** how it bobs (height, s) and drifts across the view (units, s) */
+  bob: 0.35,
+  bobPeriod: 12,
+  drift: 3,
+  driftPeriod: 52,
+  /** seconds to come down into view, before the first drop, between drops (random within), and to rise away after the last */
+  arrive: 5,
+  firstDrop: 2.5,
+  /** seconds after the last paratrooper has gone before it starts to leave */
+  exitDelay: 1.5,
+  /** paratroopers go in waves: this many to a wave, this long between one and the next in a wave, and this long (s) from the end of a wave to the start of the next */
+  waveSize: [4, 8] as const,
+  troopGap: 0.5,
+  waveGap: 5,
+  leave: 5,
+  /** the hatches under the belly the paratroopers leave by: their x relative to the airship's middle (five, so a wave is spread along it) */
+  hatches: [-20, -10, 0, 10, 20] as const,
+  /** destroyed: seconds it burns before it comes down, and how long it falls */
+  burnTime: 3.5,
+  fallTime: 4.5,
 } as const;

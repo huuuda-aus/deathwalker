@@ -7,6 +7,12 @@ import type { Collider } from './debris';
 import type { Explosions } from './explosions';
 import { glowTexture } from './fireTextures';
 import { MISSILE } from './config';
+
+/** What sets one kind of rocket apart from another: how tough, how high it climbs, how long it flies, how hard it hits, how big it is. */
+export interface RocketProfile {
+  hp: number; climbSpeed: number; climbAccel: number; apexMin: number; apexMax: number; flightMin: number; flightMax: number; gravity: number;
+  spreadX: number; spreadZ: number; blastRadius: number; blastScale: number; damage: number; shake: number; scale: number;
+}
 import { sfx } from './sfx';
 
 const BODY_LEN = 1.6;
@@ -85,16 +91,23 @@ export class Rocket implements Enemy {
   gone = false;
   deadTime = 0;
   private dead = false;
-  private hp: number = MISSILE.hp;
+  private hp: number;
   private state: 'climb' | 'dive' = 'climb';
-  private readonly vel = new THREE.Vector3(0, MISSILE.climbSpeed, 0);
+  private readonly vel = new THREE.Vector3();
   private readonly flame = new THREE.Group();
   private readonly glow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTexture(), color: new THREE.Color(2.4, 1.2, 0.4), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false,
   }));
   private trail = 0;
+  /** the way it leaves (a unit vector: straight up from a silo, along the tube from a launcher), and keeps accelerating until it turns over */
+  private readonly climbDir = new THREE.Vector3(0, 1, 0);
 
-  constructor(from: THREE.Vector3, private readonly apexY: number, private readonly deps: MissileDeps) {
+  constructor(from: THREE.Vector3, private readonly apexY: number, private readonly deps: MissileDeps, private readonly profile: RocketProfile = MISSILE, launchDir?: THREE.Vector3) {
+    this.hp = profile.hp;
+    if (launchDir) this.climbDir.copy(launchDir).normalize();
+    this.vel.copy(this.climbDir).multiplyScalar(profile.climbSpeed);
+    this.group.quaternion.setFromUnitVectors(UP, this.climbDir);
+    this.group.scale.setScalar(profile.scale);
     this.group.add(makeMissileModel());
     const outer = new THREE.Mesh(GEO.flame, FLAME_OUTER), inner = new THREE.Mesh(GEO.flame, FLAME_INNER);
     inner.scale.set(0.5, 0.7, 0.5);
@@ -106,17 +119,18 @@ export class Rocket implements Enemy {
     this.group.add(this.flame, this.glow);
     this.group.position.copy(from);
     const { fx, dust } = deps;
+    const s = Math.max(0.35, profile.scale);          // the sparks and smoke of a small rocket are small
     sfx.rocketLaunch(from);
-    fx.burst(from, 24, 3.5, SPARK_COLORS, false, 1.2);
+    fx.burst(from, 24, 3.5, SPARK_COLORS, false, 1.2 * s);
     fx.muzzleFlash(from);
-    dust.puff(from, 12, 0.9, 2.5, 0.2);
+    dust.puff(from, 12, 0.9 * s, 2.5 * s, 0.2);
   }
 
   get alive(): boolean { return !this.dead; }
   get x(): number { return this.group.position.x; }
 
   getBox(out: THREE.Box3): THREE.Box3 {
-    const p = this.group.position, r = 0.9;       // generous: it is thin and moving
+    const p = this.group.position, r = 0.9 * Math.max(0.5, this.profile.scale);       // generous: it is thin and moving
     out.min.set(p.x - r, p.y - r, p.z - r);
     out.max.set(p.x + r, p.y + r, p.z + r);
     return out;
@@ -141,10 +155,10 @@ export class Rocket implements Enemy {
     const { world, colliders } = this.deps;
     const p = this.group.position;
     if (this.state === 'climb') {
-      this.vel.y += MISSILE.climbAccel * dt;
+      this.vel.addScaledVector(this.climbDir, this.profile.climbAccel * dt);
       if (p.y >= this.apexY) this.turnOver(mech);
     } else {
-      this.vel.y -= MISSILE.gravity * dt;
+      this.vel.y -= this.profile.gravity * dt;
     }
     p.addScaledVector(this.vel, dt);
     this.group.quaternion.setFromUnitVectors(UP, dir.copy(this.vel).normalize());
@@ -159,11 +173,11 @@ export class Rocket implements Enemy {
   /** at the top of the climb: aim at the mech where it is now (plus a miss) and start the lob down */
   private turnOver(mech: THREE.Vector3): void {
     const p = this.group.position;
-    const flight = MISSILE.flightMin + Math.random() * (MISSILE.flightMax - MISSILE.flightMin);
-    const ax = mech.x + (Math.random() - 0.5) * 2 * MISSILE.spreadX;
-    const az = mech.z + (Math.random() - 0.5) * 2 * MISSILE.spreadZ;
+    const flight = this.profile.flightMin + Math.random() * (this.profile.flightMax - this.profile.flightMin);
+    const ax = mech.x + (Math.random() - 0.5) * 2 * this.profile.spreadX;
+    const az = mech.z + (Math.random() - 0.5) * 2 * this.profile.spreadZ;
     this.state = 'dive';
-    this.vel.set((ax - p.x) / flight, (0.3 - p.y) / flight + 0.5 * MISSILE.gravity * flight, (az - p.z) / flight);
+    this.vel.set((ax - p.x) / flight, (0.3 - p.y) / flight + 0.5 * this.profile.gravity * flight, (az - p.z) / flight);
   }
 
   /** a flickering flame from the tail, sparks thrown off it, and a thick smoke trail behind */
@@ -175,10 +189,11 @@ export class Rocket implements Enemy {
     this.trail -= dt;
     if (this.trail > 0) return;
     this.trail = TRAIL_STEP;
-    tail.copy(this.group.position).addScaledVector(dir, -(BODY_LEN * 0.5 + BELL_LEN + 0.1));
-    fx.burst(tail, 2, 2.5, SPARK_COLORS, false, 0.9);
-    dust.puff(tail, 3, 0.55, 0.7, 0.3);
-    if (Math.random() < 0.5) dust.plume(puffAt.copy(tail).addScaledVector(dir, -0.6), 0.55, 2.2);
+    const s = this.profile.scale, ps = Math.max(0.4, s);
+    tail.copy(this.group.position).addScaledVector(dir, -(BODY_LEN * 0.5 + BELL_LEN + 0.1) * s);
+    fx.burst(tail, 2, 2.5, SPARK_COLORS, false, 0.9 * ps);
+    dust.puff(tail, 3, 0.55 * ps, 0.7 * ps, 0.3);
+    if (Math.random() < 0.5) dust.plume(puffAt.copy(tail).addScaledVector(dir, -0.6 * s), 0.55 * ps, 2.2);
   }
 
   /** a big fireball with a column of smoke, and the screen shakes */
@@ -188,17 +203,17 @@ export class Rocket implements Enemy {
     this.dead = true;
     this.gone = true;
     this.group.visible = false;
-    const R = MISSILE.blastRadius;
-    explosions.detonate(at, R, MISSILE.blastScale, 1.5);
+    const R = this.profile.blastRadius;
+    explosions.detonate(at, R, this.profile.blastScale, 1.5);
     dust.puff(at, 16, 1.8, 3.5, 0.5);
     for (let i = 0; i < 8; i++) {
       puffAt.set(at.x + (Math.random() - 0.5) * R, at.y + Math.random() * 0.5, at.z + (Math.random() - 0.5) * R * 0.6);
       dust.plume(puffAt, 1.5, 3.5 + Math.random() * 2.5);
     }
-    shake(at, MISSILE.shake);
+    shake(at, this.profile.shake);
     world.forEachBuilding(at.x - R, at.x + R, (b) => b.damage(at.x, at.y, at.z, R));
     for (const c of colliders) {
-      if (at.distanceTo(c.pos) < R + c.r) { onPlayerHit(MISSILE.damage); break; }
+      if (at.distanceTo(c.pos) < R + c.r) { onPlayerHit(this.profile.damage); break; }
     }
   }
 }
@@ -208,9 +223,9 @@ export class Missiles {
   constructor(private readonly deps: MissileDeps) {}
 
   /** Send a missile up from `from`, out of `by`; it climbs to a random height well above the view before it turns over. */
-  launch(from: THREE.Vector3, by: Enemy): void {
-    const apex = MISSILE.apexMin + Math.random() * (MISSILE.apexMax - MISSILE.apexMin);
-    const rocket = new Rocket(from, apex, this.deps);
+  launch(from: THREE.Vector3, by: Enemy, profile: RocketProfile = MISSILE, dir?: THREE.Vector3): void {
+    const apex = profile.apexMin + Math.random() * (profile.apexMax - profile.apexMin);
+    const rocket = new Rocket(from, apex, this.deps, profile, dir);
     this.deps.add(rocket);
     this.deps.handOff(by, rocket);
   }

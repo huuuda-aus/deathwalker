@@ -114,7 +114,7 @@ export class Soldier implements Enemy {
   hp: number = SOLDIER.hp;
   state: SoldierState = 'walk';
   /** what killed him, for the score: set by whatever does it (a bullet unless said otherwise) */
-  cause: 'bullet' | 'stomp' | 'crush' | 'blast' = 'bullet';
+  cause: 'bullet' | 'stomp' | 'crush' | 'blast' | 'air' = 'bullet';
   /** hitbox half extents (padded for forgiveness) */
   readonly half = new THREE.Vector3(0.345, 0.2875, 0.345).multiplyScalar(SOLDIER_SCALE);
   centerY = (SOLDIER_HEIGHT / 2) * SOLDIER_SCALE;
@@ -122,6 +122,8 @@ export class Soldier implements Enemy {
   protected k = K;
   protected body = new THREE.Group();
   /** the head and the helmet on it (the machine gunner keeps them upright when he lies down) */
+  /** whatever kills him from a height makes him plunge, screaming (a paratrooper whose canopy is shot away) */
+  protected forcePlunge = false;
   protected head: THREE.Mesh;
   protected helmet: THREE.Mesh;
   protected timer = 0;
@@ -366,8 +368,8 @@ export class Soldier implements Enemy {
     this.state = 'dead';
     this.deadTime = 0;
     this.resetPose();
-    const plunges = this.group.position.y > SOLDIER.highFloorY && Math.random() < SOLDIER.plungeChance;
-    sfx.soldierDeath(this.x, plunges);
+    const plunges = this.group.position.y > SOLDIER.highFloorY && (this.forcePlunge || Math.random() < SOLDIER.plungeChance);
+    sfx.soldierDeath(this.x, plunges, this.forcePlunge);
     if (push) {
       // the bullet's momentum carries him along its path, and he falls the way he is thrown
       this.fling.copy(push).multiplyScalar(WEAPON.pushShare.soldier);
