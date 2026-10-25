@@ -4,6 +4,7 @@ import type { World } from './world';
 import type { Collider, Debris } from './debris';
 import { ENEMY_FIRE } from './config';
 import { PointPool } from './pointpool';
+import { sfx } from './sfx';
 
 const MAX = 96;
 const BULLET_R = 0.03;
@@ -61,6 +62,7 @@ export class Bullets {
   /** Send a bullet from `from` toward `aim`. */
   fire(from: THREE.Vector3, aim: THREE.Vector3): void {
     if (this.pool.full) return;
+    sfx.enemyShot(from);
     const vel = new THREE.Vector3().subVectors(aim, from).normalize().multiplyScalar(ENEMY_FIRE.bulletSpeed);
     this.pool.push({ pos: from.clone(), vel, age: 0 });
   }
@@ -94,6 +96,7 @@ export class Bullets {
       hitAt.copy(a).addScaledVector(seg, t);
       if (hitAt.distanceTo(c.pos) < c.r + BULLET_R) {
         fx.sparks(hitAt, 3, 2.5, [0xffa040, 0xffffff]);
+        sfx.impact('metal', hitAt);
         onPlayerHit();
         return true;
       }
@@ -103,7 +106,7 @@ export class Bullets {
     ray.set(a, seg.divideScalar(len));
     if (world.raycast(ray, hitAt) < len) return this.impact(hitAt);
     // the ground, or a floor
-    if (b.y <= Math.max(0, world.surfaceTop(b.x, b.z, b.y + 0.1))) return this.impact(b);
+    if (b.y <= world.surfaceTop(b.x, b.z, b.y + 0.1)) return this.impact(b);
     return false;
   }
 

@@ -5,6 +5,7 @@ import type { Carrier } from './building';
 import { MECH_SCALE, LANE } from './mech';
 import { CAM_DIST } from './level';
 import { WEAPON, SOLDIER } from './config';
+import { sfx } from './sfx';
 
 const BODY = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.8 });
 const SKIN = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
@@ -67,13 +68,13 @@ export interface Perch {
 }
 
 /** What a bullet strike throws up: pixel sparks of these colours, plus glowing embers that bounce and cool. */
-export interface ImpactFx { colors: number[]; sparks: number; embers: number }
+export interface ImpactFx { colors: number[]; sparks: number; embers: number; sound: 'flesh' | 'metal' }
 
 /** flesh: a couple of red-orange specks */
-export const FLESH_IMPACT: ImpactFx = { colors: [0xff3020, 0xff8040], sparks: 2, embers: 0 };
+export const FLESH_IMPACT: ImpactFx = { colors: [0xff3020, 0xff8040], sparks: 2, embers: 0, sound: 'flesh' };
 
 /** metal: a shower of white-hot sparks and a few embers that bounce off */
-export const METAL_IMPACT: ImpactFx = { colors: [0xffe080, 0xffa030, 0xffffff], sparks: 7, embers: 2 };
+export const METAL_IMPACT: ImpactFx = { colors: [0xffe080, 0xffa030, 0xffffff], sparks: 7, embers: 2, sound: 'metal' };
 
 /** A shot being fired: where the barrel is, and a random miss in -1..1 on each axis. */
 export type ShotFn = (from: THREE.Vector3, miss: THREE.Vector3) => void;
@@ -303,6 +304,7 @@ export class Soldier implements Enemy {
     this.deadTime = 0;
     this.deadVy = 0;
     this.resetPose();
+    sfx.impact('flesh', this.group.position);
     this.flatten(fx);
   }
 
@@ -355,12 +357,14 @@ export class Soldier implements Enemy {
     this.state = 'dead';
     this.deadTime = 0;
     this.resetPose();
+    const plunges = this.group.position.y > SOLDIER.highFloorY && Math.random() < SOLDIER.plungeChance;
+    sfx.soldierDeath(this.x, plunges);
     if (push) {
       // the bullet's momentum carries him along its path, and he falls the way he is thrown
       this.fling.copy(push).multiplyScalar(WEAPON.pushShare.soldier);
       if (Math.abs(push.x) > 0.5) this.fallDir = Math.sign(push.x);
     }
-    if (this.group.position.y > SOLDIER.highFloorY && Math.random() < SOLDIER.plungeChance) {
+    if (plunges) {
       this.plunge();
       return true;
     }
@@ -661,7 +665,7 @@ export class Soldier implements Enemy {
         this.fling.multiplyScalar(Math.exp(-(g.position.y > 0.05 ? 0.4 : 5) * dt));   // little drag in the air, a lot on the ground
       }
       // corpses obey gravity too: fall until a floor (or the ground) is under them
-      const ground = Math.max(0, this.env.surface(this.x, this.z, g.position.y + 0.05));
+      const ground = this.env.surface(this.x, this.z, g.position.y + 0.05);
       this.deadVy -= 16 * dt;
       g.position.y = Math.max(ground, g.position.y + this.deadVy * dt);
       if (g.position.y <= ground) {

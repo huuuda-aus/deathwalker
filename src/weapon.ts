@@ -6,6 +6,7 @@ import type { World } from './world';
 import type { Debris } from './debris';
 import type { Dust } from './dust';
 import { WEAPON } from './config';
+import { sfx } from './sfx';
 
 /** Everything a shot can hit or leave marks on. */
 export interface WeaponDeps {
@@ -47,6 +48,7 @@ export class Weapon {
   update(dt: number, firing: boolean, muzzles: THREE.Vector3[], aim: THREE.Ray): void {
     this.cooldown -= dt;
     this.sinceShot += dt;
+    if (this.firing) sfx.gun(this.heat);
 
     // the cooldown only counts down to "ready": left to run on while idle, the first press would fire every round it
     // had "missed" in one frame (a tap after two idle seconds is forty bullets in the same spot)
@@ -103,22 +105,26 @@ export class Weapon {
     if (debris.segmentHit(muzzle, hit.point, this.cover)) {
       fx.sparks(this.cover, 2, 2.5, [0xffd080, 0xffffff]);
       debris.kick(this.cover, this.dir.subVectors(hit.point, muzzle).normalize(), 1.5);
+      sfx.impact('rubble', this.cover);
       return;
     }
     if (hit.kind === 'barrel' && hit.barrel) {
       // knocked over along the bullet's path (gun to impact), spilling hot coals
       hit.barrel.shoot(this.dir.subVectors(hit.point, muzzle).normalize(), { coals: world.coals, fx, dust, solid: (x, y, z) => world.solidAt(x, y, z) });
       fx.sparks(hit.point, 3, 3, [0xffd080, 0xffffff]);
+      sfx.impact('metal', hit.point);
       return;
     }
     if (hit.kind === 'explosive' && hit.explosive) {
       hit.explosive.ignite();
       fx.sparks(hit.point, 6, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+      sfx.impact('metal', hit.point);
       return;
     }
     if (hit.kind === 'enemy' && hit.enemy) {
       const { colors, sparks, embers } = hit.enemy.impact;
       fx.sparks(hit.point, sparks, 2.5 + 0.4 * sparks, colors);
+      sfx.impact(hit.enemy.impact.sound, hit.point);
       for (let i = 0; i < embers; i++) {
         // thrown back toward the viewer and up, then they fall, bounce and cool on whatever is below
         EMBER_VEL.set((Math.random() - 0.5) * 3, 1 + Math.random() * 2.5, 0.5 + Math.random() * 2);
@@ -133,11 +139,13 @@ export class Weapon {
       fx.burst(hit.point, 9, 2.8, MUD, true, 0.7);
       if (Math.random() < 0.35) fx.sparks(hit.point, 3, 3.5, [0xffd080, 0xffa040, 0xffffff]);
       if (Math.random() < 0.4) dust.puff(hit.point, 1, 0.35, 0.6);
+      sfx.impact('ground', hit.point);
       return;
     }
     fx.sparks(hit.point, 2, 2.5, [0xffd080, 0xffa040, 0xffffff]);
     if (hit.kind === 'wall') {
       hit.building?.damage(hit.point.x, hit.point.y, hit.point.z, WALL_RADIUS);
+      sfx.impact('wall', hit.point);
       if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.6);
     }
   }

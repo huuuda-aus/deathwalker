@@ -3,6 +3,7 @@ import { Building, type Ledge, type LedgeSpawn } from './building';
 import type { Debris } from './debris';
 import type { Dust } from './dust';
 import { GROUND_TILE, makeGroundTextures } from './ground';
+import { Craters } from './craters';
 import { Coals } from './coals';
 import { FireBarrel, FireLights, type BarrelContext } from './fire';
 import { ExplosiveBarrel } from './explosiveBarrel';
@@ -46,6 +47,8 @@ export class World {
   private fx: Fx | null = null;
   private explosions: Explosions | null = null;
   private groundMaps: THREE.Texture[] = [];
+  /** scorch marks and real craters in the ground */
+  readonly craters: Craters;
   /** the building hit by the last raycast() */
   lastBuilding: Building | null = null;
   private takeSeq = 0;
@@ -62,14 +65,14 @@ export class World {
       t.anisotropy = 8;
     }
     this.groundMaps = [tex.albedo, tex.normal];
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(GW, GD),
-      new THREE.MeshStandardMaterial({ map: tex.albedo, normalMap: tex.normal, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.95, metalness: 0 }),
-    );
+    const groundMaterial = new THREE.MeshStandardMaterial({ map: tex.albedo, normalMap: tex.normal, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.95, metalness: 0 });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(GW, GD), groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.z = -80;
     ground.receiveShadow = true;
     this.group.add(ground);
+    this.craters = new Craters(scene, tex);     // not in `group`: its meshes follow the camera
+    this.craters.cutHoles(groundMaterial);
 
     this.fireLights = new FireLights(scene, 3);
     this.coals = new Coals(scene);
@@ -150,7 +153,7 @@ export class World {
     }
   }
 
-  /** Highest solid building surface under (x, z) at or below y; 0 = ground. */
+  /** Highest solid building surface under (x, z) at or below y; else the ground, which is 0 unless a crater has been dug there. */
   surfaceTop(x: number, z: number, y: number): number {
     let best = 0;
     for (const c of this.chunks.values()) {
@@ -160,8 +163,11 @@ export class World {
         if (h > best) best = h;
       }
     }
-    return best;
+    return best > 0 ? best : this.craters.heightAt(x, z);
   }
+
+  /** the bare ground's height at (x, z): 0, or the crater's floor or lip */
+  groundHeight(x: number, z: number): number { return this.craters.heightAt(x, z); }
 
   /** Is the point inside any intact building member? */
   solidAt(x: number, y: number, z: number): boolean {
@@ -341,6 +347,7 @@ export class World {
         if (e.step(dt, (x, y, z) => this.surfaceTop(x, z, y)) === 'boom') this.explosions?.barrelBlast(e.blastPoint);
       }
     }
+    this.craters.update(dt);
     this.fireLights.update(dt, live, cameraX);
     this.coals.update(dt);
     // the ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world

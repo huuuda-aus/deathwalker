@@ -1,2 +1,5 @@
 node_modules
 dist
+
+# raw recordings; the game uses what `npm run audio` makes of them in public/audio
+audio-src

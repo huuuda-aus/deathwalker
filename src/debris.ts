@@ -289,12 +289,21 @@ export class Debris {
     for (const batch of this.batches) batch.flush();
   }
 
+  /** the height of the bare ground at (x, z): 0, or lower where a crater has been dug (set by the game) */
+  ground: (x: number, z: number) => number = () => 0;
+
+  /** what a chunk rests on: whatever its floor function says is solid below `y`, else the ground itself */
+  private surfaceUnder(c: Chunk, y: number): number {
+    const s = c.floor ? c.floor(c.pos.x, c.pos.z, y) : 0;
+    return s > 0 ? s : this.ground(c.pos.x, c.pos.z);
+  }
+
   // ---- simulation ------------------------------------------------------------------------
 
   /** @returns true if the chunk should go to sleep */
   private step(c: Chunk, dt: number): boolean {
     const r = c.r;
-    const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, c.pos.y - r) : 0);
+    const surface = this.surfaceUnder(c, c.pos.y - r);
     c.vel.y -= GRAVITY * dt;
     c.pos.addScaledVector(c.vel, dt);
     if (c.body) { c.angVel.set(0, 0, 0); c.rot.x = c.rot.z = 0; }   // wrecks stay upright
@@ -429,7 +438,7 @@ export class Debris {
     swapRemove(this.awake, awakeIndex);
     c.rot.set(0, c.rot.y, 0); // lie flat
     // resting on the ground or the structure: sit at the piece's real half-height, not its bounding sphere's
-    const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, c.pos.y - c.r + 0.02) : 0);
+    const surface = this.surfaceUnder(c, c.pos.y - c.r + 0.02);
     if (c.pos.y - c.r <= surface + 0.06) c.pos.y = surface + Math.min((c.size * c.dims.y) / 2, c.r + 0.04);
     c.vel.set(0, 0, 0);
     c.asleep = true;
@@ -475,7 +484,7 @@ export class Debris {
 
   private supported(c: Chunk): boolean {
     const bottom = c.pos.y - c.r;
-    const surface = Math.max(0, c.floor ? c.floor(c.pos.x, c.pos.z, bottom + 0.02) : 0);
+    const surface = this.surfaceUnder(c, bottom + 0.02);
     if (bottom <= surface + 0.06) return true;
     let held = false;
     this.forEachNear(this.sleepGrid, c.pos.x, c.pos.y, c.pos.z, c.r * 2 + 0.1, (o) => {

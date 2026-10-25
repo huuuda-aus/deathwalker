@@ -5,6 +5,7 @@ import type { World } from './world';
 import type { Collider, Debris } from './debris';
 import { CANNON } from './config';
 import type { Explosions } from './explosions';
+import { sfx } from './sfx';
 
 const SHELL_R = 0.045;
 const GEO = new THREE.SphereGeometry(SHELL_R, 10, 8);
@@ -45,6 +46,7 @@ export class Shells {
       (aim.z - from.z) / flight,
     );
     this.live.push({ mesh, vel, trail: 0 });
+    sfx.cannon(from);
     fx.burst(from, 14, 3, FIRE_COLORS, false);
     fx.muzzleFlash(from);
     dust.puff(from, 4, 0.35, 1);
@@ -60,7 +62,7 @@ export class Shells {
       s.trail -= dt;
       if (s.trail <= 0) { s.trail = TRAIL_STEP; dust.puff(p, 1, 0.14, 0.15); }
 
-      let hit = world.solidAt(p.x, p.y, p.z) || p.y <= Math.max(0, world.surfaceTop(p.x, p.z, p.y + 0.1));
+      let hit = world.solidAt(p.x, p.y, p.z) || p.y <= world.surfaceTop(p.x, p.z, p.y + 0.1);
       if (!hit) for (const c of colliders) if (p.distanceTo(c.pos) < c.r + SHELL_R) { hit = true; break; }
       if (hit) { this.explode(p); this.remove(i); }
     }

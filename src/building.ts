@@ -520,8 +520,10 @@ export class Building {
    * blast, hardest nearest it; layers farther out, up to `radius`, are only weakened by one hit. What is left
    * without support then comes down as usual, but the blast itself does not simply drop the building.
    * @param speed how fast the nearest rubble is thrown (units/s)
+   * @param depthWeight how much the depth (z) counts in how far a layer is from the blast: the street is deep, and a
+   *   blast reaches the buildings behind the front row (a plain distance would stop short of them)
    */
-  blast(px: number, py: number, pz: number, radius: number, speed: number, wreckShare = 0.65): DamageResult {
+  blast(px: number, py: number, pz: number, radius: number, speed: number, depthWeight = 0.45, wreckShare = 0.65): DamageResult {
     const res = { hit: false, destroyed: 0 };
     if (px < this.x0 - radius || px > this.x0 + this.width + radius || py - radius > this.height) return res;
     const cMin = Math.max(0, Math.floor((px - radius - this.x0) / CELL));
@@ -543,7 +545,7 @@ export class Building {
           const li = i * MAXL + k;
           if (this.lhp[li] === 0) continue;
           const zf = this.z0 + spec.front - k * lt, zb = zf - lt;
-          const dz = Math.max(zb - pz, 0, pz - zf);
+          const dz = Math.max(zb - pz, 0, pz - zf) * depthWeight;
           const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (d > radius) continue;
           res.hit = changed = true;

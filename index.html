@@ -61,6 +61,15 @@
       #pause h2 { margin: 0 0 32px; font-size: 40px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
       #menu-note { min-height: 20px; margin: 18px 0 0; font-size: 14px; opacity: 0; transition: opacity 0.25s; color: #ffd9a0; }
       #menu-note.on { opacity: 0.9; }
+      #music-toggle { position: absolute; right: 24px; top: 24px; width: 44px; height: 44px; padding: 8px; box-sizing: border-box; cursor: pointer;
+        color: #ffb347; background: rgba(2,6,10,0.5); border: 2px solid transparent; }
+      #music-toggle:hover { border-color: #ffb347; background: rgba(255,179,71,0.12); }
+      #music-toggle svg { width: 100%; height: 100%; fill: currentColor; stroke: currentColor; stroke-width: 2; stroke-linecap: round; fill-rule: evenodd; }
+      #music-toggle svg path:first-child { stroke: none; }
+      #music-toggle svg .w { fill: none; }
+      #soundhint { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: none; font-size: 14px;
+        letter-spacing: 0.2em; color: #ffd9a0; animation: blink 1.6s steps(2) infinite; pointer-events: none; }
+      body.menu.audio-locked #soundhint { display: block; }
       #kofi { position: absolute; right: 24px; bottom: 24px; width: 148px; text-align: center; text-decoration: none; color: #ffd9a0;
         font-size: 12px; line-height: 1.35; letter-spacing: 0.03em; }
       #kofi img { display: block; width: 148px; height: 148px; image-rendering: pixelated; background: #fff; }
@@ -106,6 +115,8 @@
         </ul>
         <p id="menu-note"></p>
       </div>
+      <button id="music-toggle" type="button" tabindex="-1"></button>
+      <div id="soundhint">CLICK OR PRESS ANY KEY FOR SOUND</div>
       <a id="kofi" href="https://ko-fi.com/huuuda" target="_blank" rel="noopener">
         <img src="kofi-qr.svg" alt="QR code for ko-fi.com/huuuda" />
         <span>Enjoying this remake? Help me make more!</span>

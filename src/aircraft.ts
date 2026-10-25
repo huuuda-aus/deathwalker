@@ -1,3 +1,4 @@
+import { sfx } from './sfx';
 import * as THREE from 'three';
 import type { Fx } from './fx';
 import { METAL_IMPACT, type Enemy } from './enemies';
@@ -224,6 +225,7 @@ export class AircraftUnit implements Enemy {
       return;
     }
     const g = this.group;
+    sfx.hold(this, 'aircraft', { x: g.position.x }, 0.15);
     this.clock += dt;
     g.position.x += this.dir * AIRCRAFT.speed * dt;
     // a gentle bob and bank, and the propeller a blur
