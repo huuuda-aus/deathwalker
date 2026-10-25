@@ -5,9 +5,10 @@ import type { Explosions } from './explosions';
 import type { Dust } from './dust';
 import type { Debris, FloorFn } from './debris';
 import { LANE } from './mech';
-import { ZEPPELIN } from './config';
+import { ZEPPELIN, PARATROOPER } from './config';
 import { box } from './cannonParts';
 import { sfx } from './sfx';
+import { glowTexture } from './fireTextures';
 
 // it hangs far up in the dark with nothing to light its belly: a faint glow of its own, and no fog, keeps it a pale shape against the sky
 const SKIN = new THREE.MeshStandardMaterial({ color: 0xdde2e7, roughness: 0.75, metalness: 0.1, emissive: 0x2c343c, emissiveIntensity: 1.8, fog: false });
@@ -22,7 +23,6 @@ const FIRE = [0xfff2c0, 0xffa030, 0xff5a10, 0x553311];
 type State = 'arrive' | 'drop' | 'leave' | 'burn' | 'fall' | 'down';
 
 const ease = (t: number): number => t * t * (3 - 2 * t);
-const range = (r: readonly [number, number]): number => r[0] + Math.random() * (r[1] - r[0]);
 const tmp = new THREE.Vector3();
 
 export interface ZeppelinDeps {
@@ -30,11 +30,10 @@ export interface ZeppelinDeps {
   dust: Dust;
   debris: Debris;
   floor: FloorFn;
-  /** where the camera is (x), and the height of the top of the view at depth z */
+  /** where the camera is (x) */
   camX: () => number;
-  viewTop: (z: number) => number;
   /** a paratrooper leaves the hatch: from (x, y, z), heading for lane z `laneZ` */
-  spawnTrooper: (x: number, y: number, z: number, laneZ: number) => void;
+  spawnTrooper: (x: number, y: number, z: number, laneZ: number, speed: number) => void;
   /** the screen shakes for something happening at x */
   shake: (x: number, amount: number) => void;
 }
@@ -61,6 +60,9 @@ export class ZeppelinUnit implements Enemy {
   private clock = Math.random() * 20;
   private troopsLeft: number;
   private dropT: number = ZEPPELIN.firstDrop;
+  /** the wave being dropped: the hatches and lanes its paratroopers still to go use, in the order they go */
+  private wave: { hatch: number; lane: number }[] = [];
+  private lastHatch = -1;
   private dropped = 0;
   private readonly envelope: THREE.Mesh;
   private readonly props: THREE.Mesh[] = [];
@@ -73,6 +75,10 @@ export class ZeppelinUnit implements Enemy {
   private fireT = 0;
   private heat = 0;
   private slump = 0;
+  /** how far it has drifted off to the side while leaving */
+  private exitX = 0;
+  /** the tongues of fire along the belly: glowing sprites that swell, rise and fade */
+  private readonly fires: { s: THREE.Sprite; age: number; life: number; vy: number; size: number }[] = [];
   /** blasts yet to go off along it as it hits the ground: their delay (s) and where (x) */
   private chain: { t: number; x: number }[] = [];
 
@@ -135,8 +141,8 @@ export class ZeppelinUnit implements Enemy {
   /** the belly and what hangs from it: the part of it that is on screen, and the only part that can be hit */
   getBox(out: THREE.Box3): THREE.Box3 {
     const p = this.group.position;
-    out.min.set(p.x - 36, p.y - 2.6, p.z - 3.8);
-    out.max.set(p.x + 36, p.y + 3.4, p.z + 3.8);
+    out.min.set(p.x - 36, p.y - 0.6, p.z - 3);
+    out.max.set(p.x + 36, p.y + 3.4, p.z + 3);
     return out;
   }
 
@@ -161,15 +167,31 @@ export class ZeppelinUnit implements Enemy {
     for (const m of [this.envelope]) m.geometry.dispose();
   }
 
-  /** a paratrooper leaves a hatch (one of them, opened for the purpose) */
-  private drop(): void {
-    const i = Math.floor(Math.random() * this.hatches.length);
+  /**
+   * Plan a wave of `n` paratroopers so they are spread out: each from a different hatch from the one before, and in lanes (depths)
+   * spread evenly across the street and shuffled, so a wave never falls in a line.
+   */
+  private planWave(n: number): void {
+    const shuffle = <T>(a: T[]): T[] => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const lanes = shuffle(Array.from({ length: n }, (_, k) => LANE.zMin + ((k + 0.15 + Math.random() * 0.7) / n) * (LANE.zMax - LANE.zMin)));
+    this.wave = [];
+    for (let k = 0; k < n; k++) {
+      let h = Math.floor(Math.random() * this.hatches.length);
+      if (h === this.lastHatch) h = (h + 1 + Math.floor(Math.random() * (this.hatches.length - 1))) % this.hatches.length;
+      this.lastHatch = h;
+      this.wave.push({ hatch: h, lane: lanes[k] });
+    }
+  }
+
+  /** a paratrooper leaves a hatch (one of them, opened for the purpose); `slot` says which and where he is bound, or he picks at random */
+  private drop(slot?: { hatch: number; lane: number }): void {
+    const i = slot ? slot.hatch : Math.floor(Math.random() * this.hatches.length);
     this.hatches[i].openFor = 1.1;
     const p = this.group.position;
-    const laneZ = LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin);
-    // he appears at the top edge of the view above his lane (the view is higher the deeper the lane): he comes out of the hatch, as it looks
-    const top = this.deps.viewTop(laneZ);
-    this.deps.spawnTrooper(p.x + ZEPPELIN.hatches[i] + (Math.random() - 0.5) * 1.2, top + 0.8 + Math.random() * 0.5, laneZ, laneZ);
+    const laneZ = slot ? slot.lane : LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin);
+    const speed = 1 + (Math.random() * 2 - 1) * PARATROOPER.speedSpread;
+    // out of the hatch, from the belly, and drifting across to his lane as he falls
+    this.deps.spawnTrooper(p.x + ZEPPELIN.hatches[i] + (Math.random() - 0.5) * 3, p.y - 0.5, p.z, laneZ, speed);
     this.troopsLeft--;
     this.dropped++;
   }
@@ -181,10 +203,11 @@ export class ZeppelinUnit implements Enemy {
     this.t += dt;
     this.clock += dt;
     for (const p of this.props) p.rotation.x += dt * 38;
+    this.updateFires(dt);
     // it hangs where the view is, drifting a little across it and bobbing
     this.xBase += (this.deps.camX() - this.xBase) * Math.min(1, dt * 0.6);
     const bob = ZEPPELIN.bob * Math.sin((this.clock / ZEPPELIN.bobPeriod) * Math.PI * 2) + ZEPPELIN.bob * 0.35 * Math.sin(this.clock * 1.3);
-    g.x = this.xBase + ZEPPELIN.drift * Math.sin((this.clock / ZEPPELIN.driftPeriod) * Math.PI * 2);
+    g.x = this.xBase + ZEPPELIN.drift * Math.sin((this.clock / ZEPPELIN.driftPeriod) * Math.PI * 2) + this.exitX;
 
     switch (this.state) {
       case 'arrive':
@@ -194,11 +217,19 @@ export class ZeppelinUnit implements Enemy {
       case 'drop':
         this.y = ZEPPELIN.bellyY;
         this.dropT -= dt;
-        if (this.dropT <= 0 && this.troopsLeft > 0 && !this.retreating) { this.drop(); this.dropT = range(ZEPPELIN.dropGap); }
-        if ((this.troopsLeft <= 0 && this.dropT < -2.5) || this.retreating) { this.state = 'leave'; this.t = 0; }
+        if (this.dropT <= 0 && this.troopsLeft > 0 && !this.retreating) {
+          // a wave: 4-8 paratroopers, half a second apart, then a pause before the next wave
+          if (this.wave.length === 0) this.planWave(Math.min(this.troopsLeft, ZEPPELIN.waveSize[0] + Math.floor(Math.random() * (ZEPPELIN.waveSize[1] - ZEPPELIN.waveSize[0] + 1))));
+          this.drop(this.wave.shift());
+          this.dropT = this.wave.length > 0 ? ZEPPELIN.troopGap : this.troopsLeft > 0 ? ZEPPELIN.waveGap : 0;
+        }
+        // the last one is out: it goes (it also goes if the scene is over)
+        if ((this.troopsLeft <= 0 && this.dropT < -ZEPPELIN.exitDelay) || this.retreating) { this.state = 'leave'; this.t = 0; }
         break;
       case 'leave':
-        this.y = ZEPPELIN.bellyY + 11 * ease(Math.min(1, this.t / ZEPPELIN.leave));
+        // it rises out of the top of the view, drifting on a little, and is gone
+        this.y = ZEPPELIN.bellyY + 14 * ease(Math.min(1, this.t / ZEPPELIN.leave));
+        this.exitX = 10 * ease(Math.min(1, this.t / ZEPPELIN.leave)) ** 2;
         if (this.t >= ZEPPELIN.leave) this.gone = true;
         break;
       case 'burn': {
@@ -218,6 +249,7 @@ export class ZeppelinUnit implements Enemy {
         // it comes down behind the city, nose first and burning, faster and faster
         const k = Math.min(1, this.t / ZEPPELIN.fallTime);
         this.y = this.fallFrom - (this.fallFrom + 4) * k * k;
+        g.z = ZEPPELIN.z + (ZEPPELIN.fallZ - ZEPPELIN.z) * k * k;             // it slides back behind the city as it falls
         this.slump = 0.16 * k;
         this.flames(fx, dt, 3);
         this.blastT -= dt;
@@ -232,14 +264,14 @@ export class ZeppelinUnit implements Enemy {
         for (let i = this.chain.length - 1; i >= 0; i--) {
           if (this.chain[i].t > 0) continue;
           const c = this.chain.splice(i, 1)[0];
-          explosions.wreckBlast(tmp.set(c.x, 1.5, ZEPPELIN.z), 5 + Math.random() * 2, 6, 1.2, false);
+          explosions.wreckBlast(tmp.set(c.x, 1.5, g.z), 5 + Math.random() * 2, 6, 1.2, false);
           this.deps.shake(c.x, 0.5);
         }
         this.fireT -= dt;
         if (this.fireT <= 0 && this.deadTime < 6) {
           this.fireT = 0.1;
           const x = g.x + (Math.random() - 0.5) * 60;
-          tmp.set(x, 0.5 + Math.random() * 3, ZEPPELIN.z + (Math.random() - 0.5) * 6);
+          tmp.set(x, 0.5 + Math.random() * 3, g.z + (Math.random() - 0.5) * 6);
           dust.plume(tmp, 2.2, 5);
           fx.burst(tmp, 3, 2, FIRE, false, 1.6);
         }
@@ -267,7 +299,7 @@ export class ZeppelinUnit implements Enemy {
   /** a blast somewhere along the belly (in view), a shake with it */
   private blastAlong(power: number): void {
     const p = this.group.position;
-    tmp.set(p.x + (Math.random() - 0.5) * 50, p.y + Math.random() * 3.2, ZEPPELIN.z + (Math.random() - 0.5) * 2);
+    tmp.set(p.x + (Math.random() - 0.5) * 50, p.y + Math.random() * 3.2, p.z + (Math.random() - 0.5) * 2);
     this.deps.explosions.detonate(tmp, 2.5 * power + 1, 3 * power + 1, 1, false);
     this.deps.shake(tmp.x, 0.12 * power);
   }
@@ -278,9 +310,35 @@ export class ZeppelinUnit implements Enemy {
     this.fireT -= dt;
     if (this.fireT > 0) return;
     this.fireT = 0.07 / Math.max(0.2, rate);
-    tmp.set(p.x + (Math.random() - 0.5) * 55, p.y + Math.random() * 2.6, ZEPPELIN.z + (Math.random() - 0.5) * 3);
-    fx.burst(tmp, 4, 2.2, FIRE, false, 1.5);
-    this.deps.dust.plume(tmp, 1.6, 4);
+    tmp.set(p.x + (Math.random() - 0.5) * 55, p.y + Math.random() * 2.6, p.z + (Math.random() - 0.5) * 3);
+    // big, bright tongues of fire (the airship is far away, so everything about it is drawn large)
+    fx.burst(tmp, 10, 3, FIRE, false, 4.5);
+    this.deps.dust.plume(tmp, 3.2, 5);
+    this.addFire();
+  }
+
+  /** one more tongue of fire: a bright glow on the belly, in front of it */
+  private addFire(): void {
+    if (this.fires.length > 40 || this.state === 'down') return;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(), color: new THREE.Color(3.4, 1.6, 0.45), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, fog: false,
+    }));
+    s.renderOrder = 7;
+    s.position.set((Math.random() - 0.5) * 56, 0.2 + Math.random() * 2.4, 2 + Math.random() * 1.5);
+    this.group.add(s);
+    this.fires.push({ s, age: 0, life: 0.5 + Math.random() * 0.5, vy: 1 + Math.random() * 1.5, size: 3.5 + Math.random() * 4 });
+  }
+
+  private updateFires(dt: number): void {
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i];
+      f.age += dt;
+      if (f.age >= f.life || this.state === 'down') { this.group.remove(f.s); (f.s.material as THREE.Material).dispose(); this.fires.splice(i, 1); continue; }
+      const k = f.age / f.life;
+      f.s.position.y += f.vy * dt;
+      f.s.scale.setScalar(f.size * (0.6 + 0.8 * k));
+      (f.s.material as THREE.SpriteMaterial).opacity = Math.min(1, k * 8) * (1 - k);
+    }
   }
 
   /** the skin scorches as it burns */
@@ -303,11 +361,11 @@ export class ZeppelinUnit implements Enemy {
     for (const c of this.group.children) c.visible = false;
     for (let i = 0; i < 7; i++) this.chain.push({ t: i * 0.22 + Math.random() * 0.1, x: p.x - 30 + i * 10 + (Math.random() - 0.5) * 5 });
     for (let i = 0; i < 46; i++) {
-      tmp.set(p.x + (Math.random() - 0.5) * 70, 1 + Math.random() * 3, ZEPPELIN.z + (Math.random() - 0.5) * 5);
+      tmp.set(p.x + (Math.random() - 0.5) * 70, 1 + Math.random() * 3, p.z + (Math.random() - 0.5) * 5);
       const v = new THREE.Vector3((Math.random() - 0.5) * 8, 4 + Math.random() * 8, (Math.random() - 0.3) * 5);
       debris.spawn(tmp, new THREE.Color(i % 2 ? 0xe2e6ea : 0x3a3d40), 0.1 + Math.random() * 0.2, v, floor);
     }
-    explosions.wreckBlast(tmp.set(p.x, 2, ZEPPELIN.z), 9, 9, 1.5, false);
+    explosions.wreckBlast(tmp.set(p.x, 2, p.z), 9, 9, 1.5, false);
     this.deps.shake(p.x, 1.0);
     fx.muzzleFlash(tmp);
   }

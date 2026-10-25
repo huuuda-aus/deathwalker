@@ -225,7 +225,7 @@ export class Game {
     this.placeCamera();
     // sound: the samples load behind the menu, and the browser wants a click or key press before it will play any
     void audio.load();
-    audio.playMusic('menu');
+    audio.playMusic(this.pickMenuTrack());
     audio.setVolume('ambience', MENU_AMBIENCE);
     new SoundTest(audio);
     new MusicToggle();
@@ -255,6 +255,9 @@ export class Game {
       if (e.code === 'KeyH') this.post.toggleHaze();
     });
   }
+
+  /** one of the main menu's two soundtracks, picked at random each time the page loads */
+  private pickMenuTrack(): string { return Math.random() < 0.5 ? 'menu' : 'menu2'; }
 
   start(): void {
     if (import.meta.env.DEV) Object.assign(window, { __game: this });     // dev: poke at it from the console

@@ -28,4 +28,4 @@ The noise under the machine gun is a high-passed slice of [a worn two-stroke cha
 **Needs credit (CC BY 3.0):** the aeroplane's engine is [Airplane Prop Loop](https://opengameart.org/content/airplane-prop-loop) by jakobthiesen, licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The credits screen must name him if the game ships.
 
 
-The falling-bomb whistle is synthesized. The menu soundtrack (`music_menu.opus`) was supplied by the project owner.
+The falling-bomb whistle is synthesized. The menu soundtracks (`music_menu.opus` and `music_menu2.opus`) were supplied by the project owner; one of them is picked at random each time the menu opens.

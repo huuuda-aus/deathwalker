@@ -3,7 +3,7 @@ import { Soldier, type Enemy, type SoldierEnv } from './enemies';
 import { MachineGunner } from './gunner';
 import { LauncherUnit } from './launcher';
 import { ZeppelinUnit } from './zeppelin';
-import { Paratrooper } from './paratrooper';
+import { Paratrooper, ParachuteTarget } from './paratrooper';
 import { CannonUnit } from './cannon';
 import { Horse } from './horse';
 import { TruckUnit } from './truck';
@@ -22,8 +22,8 @@ import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER, CAMERA } from './config';
-import { CAM_DIST, SCREEN_W, type LevelRunner } from './level';
+import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER } from './config';
+import { SCREEN_W, type LevelRunner } from './level';
 
 const chest = new THREE.Vector3();
 const shotAt = new THREE.Vector3();
@@ -248,12 +248,10 @@ export class EnemyManager {
     const unit = new ZeppelinUnit(troops, {
       explosions, dust, debris, floor: (x, z, y) => world.surfaceTop(x, z, y),
       camX: () => this.camX,
-      // the top of the view is higher the farther away the lane: it scales about the height the camera looks at
-      viewTop: (z) => CAMERA.height + (this.viewTop - CAMERA.height) * ((CAM_DIST - z) / CAM_DIST),
-      spawnTrooper: (x, y, z, laneZ) => {
-        const p = new Paratrooper(x, y, z, laneZ, env);
+      spawnTrooper: (x, y, z, laneZ, speed) => {
+        const p = new Paratrooper(x, y, z, laneZ, env, speed);
         scene.add(p.group);
-        this.list.push(p);
+        this.list.push(p, new ParachuteTarget(p));          // the man, and his parachute as a target of its own
       },
       shake,
     });

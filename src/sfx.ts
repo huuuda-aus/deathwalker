@@ -76,8 +76,9 @@ export const sfx = {
   gunnerShot(from: THREE.Vector3): void { audio.play('gunnerShot', { x: from.x }); },
 
   /** a soldier is killed; one thrown off a building screams more, and longer */
-  soldierDeath(x: number, plunge: boolean): void {
-    if (plunge) { if (Math.random() < FALL_SCREAM_CHANCE) audio.play('soldierFall', { x }); }
+  soldierDeath(x: number, plunge: boolean, always = false): void {
+    if (always) audio.play(plunge ? 'soldierFall' : 'soldierScream', { x });
+    else if (plunge) { if (Math.random() < FALL_SCREAM_CHANCE) audio.play('soldierFall', { x }); }
     else if (Math.random() < SCREAM_CHANCE) audio.play('soldierScream', { x });
   },
 

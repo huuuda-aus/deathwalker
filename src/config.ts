@@ -507,6 +507,8 @@ export const PARATROOPER = {
   sway: 0.25,
   /** how long the canopy takes to open (s) */
   open: 0.35,
+  /** each one floats a little faster or slower than the next, by up to this share, so they do not stay in step */
+  speedSpread: 0.18,
 } as const;
 
 /** The zeppelin set piece: a vast airship over the battlefield, of which only the belly shows, that drops paratroopers and can be shot down. */
@@ -516,9 +518,11 @@ export const ZEPPELIN = {
   /** length and radius of the envelope (world units): longer than the screen is wide, so only its underside shows */
   length: 90,
   radius: 9,
-  /** depth (z) it hangs at, and the height of the lowest point of its belly when in place (units) */
-  z: -22,
-  bellyY: 12.2,
+  /** depth (z) it hangs at, in front of the first row of buildings and just behind the street, and the height of the lowest point of its belly when in place (units) */
+  z: -1.5,
+  bellyY: 7.8,
+  /** destroyed, it comes down while sliding back to this depth, behind the city */
+  fallZ: -30,
   /** how it bobs (height, s) and drifts across the view (units, s) */
   bob: 0.35,
   bobPeriod: 12,
@@ -527,10 +531,15 @@ export const ZEPPELIN = {
   /** seconds to come down into view, before the first drop, between drops (random within), and to rise away after the last */
   arrive: 5,
   firstDrop: 2.5,
-  dropGap: [0.6, 1.3] as const,
-  leave: 6,
-  /** the hatches under the belly the paratroopers leave by: their x relative to the airship's middle */
-  hatches: [-13, 0, 13] as const,
+  /** seconds after the last paratrooper has gone before it starts to leave */
+  exitDelay: 1.5,
+  /** paratroopers go in waves: this many to a wave, this long between one and the next in a wave, and this long (s) from the end of a wave to the start of the next */
+  waveSize: [4, 8] as const,
+  troopGap: 0.5,
+  waveGap: 5,
+  leave: 5,
+  /** the hatches under the belly the paratroopers leave by: their x relative to the airship's middle (five, so a wave is spread along it) */
+  hatches: [-20, -10, 0, 10, 20] as const,
   /** destroyed: seconds it burns before it comes down, and how long it falls */
   burnTime: 3.5,
   fallTime: 4.5,
