@@ -72,6 +72,8 @@ export class AudioEngine {
   private readonly buses: Record<BusName, GainNode> = { sfx: this.ctx.createGain(), ambience: this.ctx.createGain(), music: this.ctx.createGain() };
   /** the music playing (streamed from a file, not decoded whole), and whether it is wanted: it starts as soon as the browser allows */
   private music: { el: HTMLAudioElement; gain: GainNode; fade: number } | null = null;
+  /** settles once the track chosen last has buffered enough to play right through (or failed to: sound is never worth hanging the game for) */
+  musicReady: Promise<void> = Promise.resolve();
   private readonly buffers = new Map<SoundId, AudioBuffer[]>();
   /** which sounds are real recordings and which are placeholders (for the test panel) */
   readonly fromFile = new Set<SoundId>();
@@ -134,6 +136,10 @@ export class AudioEngine {
     const el = new Audio(`${import.meta.env.BASE_URL}audio/music_${name}.opus`);
     el.loop = true;
     el.preload = 'auto';
+    this.musicReady = new Promise((done) => {
+      el.addEventListener('canplaythrough', () => done(), { once: true });
+      el.addEventListener('error', () => done(), { once: true });
+    });
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
     this.ctx.createMediaElementSource(el).connect(gain);

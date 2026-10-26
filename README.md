@@ -19,7 +19,7 @@ Needs a browser with WebGL2.
 
 ## Main menu
 
-The game opens on a main menu over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. The corner has a stack of named soundtrack buttons (or the keys 1, 2, 3; the last choice is remembered) with the music on/off switch (M) under them. **Start game** begins the level; **Enter level code**, **Hall of fame** shows the best runs, **Settings** is described below, and **Credits** is a placeholder for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
+The page opens on a plain loading screen while the game builds itself (the city, the shaders, the sounds, the menu's soundtrack); only when all of it is ready does the main menu fade in, with every button working. The menu is over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. The corner has a stack of named soundtrack buttons (or the keys 1, 2, 3; the last choice is remembered) with the music on/off switch (M) under them. **Start game** begins the level; **Enter level code**, **Hall of fame** shows the best runs, **Settings** is described below, and **Credits** is a placeholder for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
 
 ## Settings
 

@@ -22,7 +22,7 @@ export class Menu {
       li.addEventListener('click', () => { this.select(i); this.activate(); });
     });
     addEventListener('keydown', (e) => {
-      if (!this.visible || document.body.classList.contains('fame') || document.body.classList.contains('settings')) return;
+      if (!this.visible || document.body.classList.contains('booting') || document.body.classList.contains('fame') || document.body.classList.contains('settings')) return;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') this.select((this.selected + 1) % this.items.length);
       else if (e.code === 'ArrowUp' || e.code === 'KeyW') this.select((this.selected + this.items.length - 1) % this.items.length);
       else if (e.code === 'Enter' || e.code === 'Space') this.activate();
