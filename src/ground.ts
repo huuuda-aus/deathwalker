@@ -31,9 +31,10 @@ interface Textures { albedo: THREE.CanvasTexture; normal: THREE.CanvasTexture }
 /**
  * Procedural war-zone ground: packed dirt, broken concrete slabs and bricks, pebbles, sticks and rebar,
  * cracks, shallow craters and soot. The same height field produces both the albedo and the normal map,
- * so the relief and the colour always agree.
+ * so the relief and the colour always agree. `style` 'sand' is the desert: a bright sand with wind ripples and a few stones.
  */
-export function makeGroundTextures(seed = 7): Textures {
+export function makeGroundTextures(seed = 7, style: 'ruins' | 'sand' = 'ruins'): Textures {
+  const sand = style === 'sand';
   const rnd = mulberry32(seed);
   const N = SIZE;
   const wrap = (v: number) => ((v % N) + N) % N;
@@ -57,7 +58,7 @@ export function makeGroundTextures(seed = 7): Textures {
   };
 
   // craters first so debris lands in and around them
-  for (let n = 0; n < 14; n++) {
+  for (let n = 0; n < (sand ? 0 : 14); n++) {
     const cx = (rnd() * N) | 0, cy = (rnd() * N) | 0, r = 26 + ((rnd() * 40) | 0);
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       const d2 = (dx * dx + dy * dy) / (r * r);
@@ -68,13 +69,13 @@ export function makeGroundTextures(seed = 7): Textures {
   }
 
   // pebbles and gravel
-  for (let n = 0; n < 2600; n++) {
+  for (let n = 0; n < (sand ? 420 : 2600); n++) {
     const r = 1 + ((rnd() * 4) | 0);
-    bump((rnd() * N) | 0, (rnd() * N) | 0, r, 0.08 + rnd() * 0.22, rnd() < 0.7 ? 3 : 1, 0.7 + rnd() * 0.6);
+    bump((rnd() * N) | 0, (rnd() * N) | 0, r, 0.08 + rnd() * 0.22, sand || rnd() < 0.7 ? 3 : 1, 0.7 + rnd() * 0.6);
   }
 
   // broken slabs and bricks: convex polygons with bevelled edges and a tilt
-  const slabs = 95;
+  const slabs = sand ? 0 : 95;
   for (let n = 0; n < slabs; n++) {
     const cx = rnd() * N, cy = rnd() * N, size = 12 + rnd() * 50;
     const sides = 4 + ((rnd() * 4) | 0);
@@ -112,7 +113,7 @@ export function makeGroundTextures(seed = 7): Textures {
   }
 
   // sticks, rebar and planks: thin rotated ridges
-  for (let n = 0; n < 70; n++) {
+  for (let n = 0; n < (sand ? 0 : 70); n++) {
     const cx = rnd() * N, cy = rnd() * N, len = 30 + rnd() * 90, wid = 1.5 + rnd() * 3, a = rnd() * Math.PI;
     const ca = Math.cos(a), sa = Math.sin(a), metal = rnd() < 0.35;
     for (let t = -len / 2; t <= len / 2; t += 0.7) {
@@ -127,7 +128,7 @@ export function makeGroundTextures(seed = 7): Textures {
   }
 
   // cracks: random walks that cut the surface
-  for (let n = 0; n < 34; n++) {
+  for (let n = 0; n < (sand ? 0 : 34); n++) {
     let x = rnd() * N, y = rnd() * N, a = rnd() * Math.PI * 2;
     const steps = 80 + ((rnd() * 140) | 0);
     for (let s = 0; s < steps; s++) {
@@ -141,6 +142,15 @@ export function makeGroundTextures(seed = 7): Textures {
     }
   }
 
+  // ---- the desert: long wind ripples across the sand, bent by a slow noise so they never run straight
+  if (sand) {
+    const warp = tileableFbm(N, [2, 4], rnd);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const i = y * N + x;
+      if (kind[i] === 0) h[i] += 0.035 * Math.sin(((x + warp[i] * 90) / N) * Math.PI * 2 * 22) + 0.012 * Math.sin(((y + warp[i] * 60) / N) * Math.PI * 2 * 9);
+    }
+  }
+
   // ---- soot / ash patches darken the colour only
   const soot = tileableFbm(N, [4, 8, 16], rnd);
 
@@ -149,8 +159,8 @@ export function makeGroundTextures(seed = 7): Textures {
   albedo.width = albedo.height = N;
   const ag = albedo.getContext('2d')!;
   const img = ag.createImageData(N, N);
-  const dirtA = [30, 26, 24], dirtB = [46, 40, 36];
-  const palette: Record<number, number[]> = { 1: [58, 58, 60], 2: [70, 38, 32], 3: [46, 47, 50] };
+  const dirtA = sand ? [150, 118, 78] : [30, 26, 24], dirtB = sand ? [214, 182, 132] : [46, 40, 36];
+  const palette: Record<number, number[]> = sand ? { 1: [150, 140, 125], 2: [140, 100, 70], 3: [104, 88, 68] } : { 1: [58, 58, 60], 2: [70, 38, 32], 3: [46, 47, 50] };
   for (let i = 0; i < N * N; i++) {
     const hv = h[i];
     let r: number, g: number, b: number;
@@ -161,11 +171,11 @@ export function makeGroundTextures(seed = 7): Textures {
       const c = palette[kind[i]];
       r = c[0]; g = c[1]; b = c[2];
     }
-    const sootK = 0.55 + 0.65 * Math.min(1, Math.max(0, (soot[i] - 0.25) * 2.2)); // dark where the soot is thick
+    const sootK = sand ? 0.9 + 0.2 * soot[i] : 0.55 + 0.65 * Math.min(1, Math.max(0, (soot[i] - 0.25) * 2.2)); // dark where the soot is thick
     const k = shade[i] * sootK * (0.9 + 0.2 * (rnd() - 0.5) * 2 * 0.5);
-    img.data[i * 4] = Math.min(255, r * k * 0.96);
-    img.data[i * 4 + 1] = Math.min(255, g * k * 0.99);
-    img.data[i * 4 + 2] = Math.min(255, b * k * 1.05);
+    img.data[i * 4] = Math.min(255, r * k * (sand ? 1 : 0.96));
+    img.data[i * 4 + 1] = Math.min(255, g * k * (sand ? 0.98 : 0.99));
+    img.data[i * 4 + 2] = Math.min(255, b * k * (sand ? 0.92 : 1.05));
     img.data[i * 4 + 3] = 255;
   }
   ag.putImageData(img, 0, 0);
@@ -175,7 +185,7 @@ export function makeGroundTextures(seed = 7): Textures {
   normal.width = normal.height = N;
   const ng = normal.getContext('2d')!;
   const nimg = ng.createImageData(N, N);
-  const strength = 14;
+  const strength = sand ? 9 : 14;
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const dhdu = (h[y * N + wrap(x + 1)] - h[y * N + wrap(x - 1)]) * 0.5;

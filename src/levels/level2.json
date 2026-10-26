@@ -1,6 +1,7 @@
 {
   "name": "Level 2: Glass Dunes",
   "code": "SCORCHED",
+  "world": "desert",
   "notes": [
     "Placeholder scenes for the multi-level plumbing: same format as level1.json (see its notes). The real Glass Dunes scenes come later."
   ],
@@ -34,7 +35,8 @@
           "count": 1
         }
       ],
-      "boss": null
+      "boss": null,
+      "environment": "dunes"
     },
     {
       "name": "Oil field",
@@ -65,7 +67,8 @@
           "troops": 10
         }
       ],
-      "boss": null
+      "boss": null,
+      "environment": "dunes"
     }
   ]
 }

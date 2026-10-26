@@ -25,6 +25,10 @@ The page opens on a plain loading screen while the game builds itself (the city,
 
 The game has several levels, each a JSON file in `src/levels/` (`level1.json`, `level2.json`; the format is described in the notes of `level1.json`) listed in order in `src/levelData.ts`. A page plays one level: **Next level** on the level complete screen (when there is one) reloads the page into the next level and starts it at once (the world cannot be put back, so a fresh page is the clean way), and `?level=2` in the address opens a given one. Each level is its own run, with its own score, grade and hall of fame entry (which records the level it was). Each level has a themed password (`code` in its level file: `IRONWINT`, `SCORCHED`): the level complete screen shows the next level's, and **Enter level code** on the main menu takes it and goes straight there. The levels reached are remembered in `localStorage`. Level 2 is a placeholder for now.
 
+## Environments
+
+Each scene names a look (`"environment"` in the level file; the presets are in `src/environment.ts`): fog, sky, sun and sky light, the backlight, haze, how much it rains, and the ground colour. The game fades from one scene's look to the next as the scene begins, so a level can change from a harsh white day to a dark interior. `night` is the wet city night; `dunes` is a dry desert day (a bright sky with a sun, no rain, no lightning, dusty haze). A level's `"world"` (`city` or `desert`) says what the world is made of: the desert has no buildings, sand ground and ranks of dunes on the horizon.
+
 ## Settings
 
 **Settings** (main menu) holds the scroll direction, remembered between visits. *Right to left* is the classic way: the mech faces left and the level scrolls to the left. *Left to right* mirrors the whole picture: the mech faces right, the level scrolls to the right, and the gauges move to the top left corner, and the mouse, the A/D keys and the stereo pan are flipped to match (`src/view.ts`; the game itself always runs the classic way).

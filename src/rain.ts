@@ -139,6 +139,8 @@ export class Rain {
   intensity = 0;
   /** debug: pin the intensity (null = follow the sine) */
   override: number | null = null;
+  /** how much of the rain there is (the scene's environment): 0 = none at all, 1 = as it falls */
+  scale = 1;
 
   constructor(scene: THREE.Scene, private world: World) {
     this.heightTex = new THREE.DataTexture(this.heightData, MAP_W, MAP_D, THREE.RedFormat, THREE.FloatType);
@@ -226,7 +228,8 @@ export class Rain {
    */
   update(dt: number, camX: number, mechX: number, mechZ: number, windSpeed: number, lights: THREE.Vector4[]): void {
     this.t += dt;
-    this.intensity = this.override ?? this.waveAt(this.t);
+    this.intensity = (this.override ?? this.waveAt(this.t)) * this.scale;
+    for (const m of this.meshes) m.visible = this.scale > 0.02;
     this.refreshHeightMap(camX);
     const u = this.uniforms;
     // drops fall a little faster in heavy rain; accumulate the clock so speed changes never make drops jump

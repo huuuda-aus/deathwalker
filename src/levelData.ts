@@ -1,6 +1,7 @@
 import level1 from './levels/level1.json';
 import level2 from './levels/level2.json';
 import { pickLevel } from './levelSelect';
+import { ENVIRONMENTS } from './environment';
 import { AIRCRAFT, CANNON, GUNNER, LAUNCHER } from './config';
 
 /** A vehicle that arrives during a scene. `at` is how much of the scene's infantry has been sent in by then (0..1). */
@@ -37,6 +38,8 @@ export interface InfantryDef {
 
 export interface SceneDef {
   name: string;
+  /** the look of the scene (a key of ENVIRONMENTS): the game fades to it as the scene begins */
+  environment: string;
   /** 1 = locked single screen; >1 = scrolls, camera range grows by (width - 1) screens */
   widthScreens: number;
   infantry: InfantryDef;
@@ -123,18 +126,23 @@ export function parseLevel(data: unknown): SceneDef[] {
         truckTroops: Math.round(num(`${w} boss.truckTroops`, b.truckTroops ?? 10, 1)),
       };
     }
-    return { name: String(sc.name ?? w), widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, boss, parTime: num(`${w} parTime`, sc.parTime ?? 90, 10), spawnBudget: boss ? Infinity : budget };
+    const environment = String(sc.environment ?? 'night');
+    if (!(environment in ENVIRONMENTS)) fail(`${w} environment`, `unknown environment ${JSON.stringify(environment)} (${Object.keys(ENVIRONMENTS).join(', ')})`);
+    return { name: String(sc.name ?? w), environment, widthScreens: num(`${w} widthScreens`, sc.widthScreens ?? 1, 1), infantry, events, boss, parTime: num(`${w} parTime`, sc.parTime ?? 90, 10), spawnBudget: boss ? Infinity : budget };
   });
 }
 
 /** `code` is the level's password: typed at the main menu, shown on the win screen of the level before it */
-export interface LevelDef { name: string; code: string; scenes: SceneDef[] }
+export interface LevelDef { name: string; code: string; /** what the world is made of: a ruined city, or open desert */ world: WorldStyle; scenes: SceneDef[] }
+
+export type WorldStyle = 'city' | 'desert';
 
 /** Every level of the game, in play order. */
 export const LEVELS: LevelDef[] = [level1, level2].map((raw, i) => {
-  const { name, code } = raw as { name?: unknown; code?: unknown };
+  const { name, code, world } = raw as { name?: unknown; code?: unknown; world?: unknown };
+  if (world !== undefined && world !== 'city' && world !== 'desert') fail(`level ${i + 1}`, `world must be "city" or "desert", got ${JSON.stringify(world)}`);
   if (typeof code !== 'string' || !/^[A-Z]{4,10}$/.test(code)) fail(`level ${i + 1}`, `code must be 4 to 10 capital letters, got ${JSON.stringify(code)}`);
-  return { name: String(name ?? `Level ${i + 1}`), code: code as string, scenes: parseLevel(raw) };
+  return { name: String(name ?? `Level ${i + 1}`), code: code as string, world: (world as WorldStyle | undefined) ?? 'city', scenes: parseLevel(raw) };
 });
 
 /** The number (1-based) of the level a password opens, or 0 if it opens none. */

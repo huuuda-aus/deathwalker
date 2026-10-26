@@ -12,6 +12,7 @@ import { EXPLOSIVE_BARREL } from './config';
 import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
 import { mulberry32 } from './util';
+import type { WorldStyle } from './levelData';
 
 /** height of a soldier's gun above the floor he stands on (world units), for line-of-fire checks from a bay */
 const SHOOTER_CHEST = 0.25;
@@ -26,6 +27,43 @@ const FAR_ROWS: [z: number, scale: number, color: number, dense: boolean][] = [
   [-105, 3.6, 0x010407, true],
   [-140, 4.5, 0x010204, true],
 ];
+
+/** the desert's dune ranks, nearest first: depth (z), height, wavelength and a phase */
+const DUNE_ROWS: [z: number, amp: number, wave: number, phase: number][] = [
+  [-24, 1.5, 31, 0.4],
+  [-40, 2.8, 46, 1.9],
+  [-62, 4.4, 64, 3.1],
+  [-92, 6.5, 88, 0.8],
+  [-135, 9, 120, 2.4],
+];
+const DUNE_TOP = new THREE.Color(0xe8c48a);
+const DUNE_BASE = new THREE.Color(0x8a6238);
+
+/** a dune's height at x: lopsided crests (a long gentle slope and a steeper far side), never the same twice, continuous across chunks */
+const duneHeight = (x: number, amp: number, wave: number, phase: number): number => {
+  const a = (x / wave) * Math.PI * 2 + phase;
+  return amp * (0.55 + 0.3 * Math.sin(a + 0.5 * Math.sin(a)) + 0.15 * Math.sin(a * 2.3 + phase * 3));
+};
+
+/** one rank of dunes across a chunk: a ribbon with a light crest and a darker foot */
+function duneRidge(x0: number, width: number, z: number, amp: number, wave: number, phase: number): THREE.Mesh {
+  const N = 80;
+  const pos = new Float32Array((N + 1) * 6), col = new Float32Array((N + 1) * 6);
+  const idx: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const x = x0 + (width * i) / N;
+    pos.set([x, duneHeight(x, amp, wave, phase), z, x, -1, z], i * 6);
+    col.set([DUNE_TOP.r, DUNE_TOP.g, DUNE_TOP.b, DUNE_BASE.r, DUNE_BASE.g, DUNE_BASE.b], i * 6);
+    if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  mesh.frustumCulled = false;
+  return mesh;
+}
 
 /**
  * Procedural city in four rows, generated in chunks around the camera:
@@ -54,18 +92,21 @@ export class World {
   private takeSeq = 0;
   private fireSpot = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust) {
+  private readonly groundMaterial: THREE.MeshStandardMaterial;
+
+  /** @param style what the world is made of: the ruined city, or open desert (no buildings: far dunes on the horizon) */
+  constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust, private readonly style: WorldStyle = 'city') {
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
 
     // textured ground: dirt, rubble and debris, with a normal map from the same height field
-    const tex = makeGroundTextures();
+    const tex = makeGroundTextures(7, style === 'desert' ? 'sand' : 'ruins');
     const GW = 4000, GD = 260;
     for (const t of [tex.albedo, tex.normal]) {
       t.repeat.set(GW / GROUND_TILE, GD / GROUND_TILE);
       t.anisotropy = 8;
     }
     this.groundMaps = [tex.albedo, tex.normal];
-    const groundMaterial = new THREE.MeshStandardMaterial({ map: tex.albedo, normalMap: tex.normal, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.95, metalness: 0 });
+    const groundMaterial = this.groundMaterial = new THREE.MeshStandardMaterial({ map: tex.albedo, normalMap: tex.normal, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.95, metalness: 0 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(GW, GD), groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.z = -80;
@@ -81,7 +122,19 @@ export class World {
     scene.add(this.group);
   }
 
+  /** what the ground colour is multiplied by: a bright scene lifts the dark texture */
+  setGroundTint(c: THREE.Color): void { this.groundMaterial.color.copy(c); }
+
+  /** The desert: no buildings, only ranks of dunes on the horizon, each fainter in the haze than the one before. */
+  private buildDesertChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
+    const g = new THREE.Group();
+    const x0 = index * this.chunkSize;
+    DUNE_ROWS.forEach(([z, amp, wave, phase], row) => g.add(duneRidge(x0, this.chunkSize, z, amp, wave, phase + row * 1.7)));
+    return { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [] };
+  }
+
   private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
+    if (this.style === 'desert') return this.buildDesertChunk(index);
     const rng = mulberry32(index * 7919 + 13);
     const g = new THREE.Group();
     const buildings: Building[] = [];

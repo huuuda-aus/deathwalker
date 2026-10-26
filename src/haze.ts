@@ -118,6 +118,8 @@ void main() {
 export class HazePass extends Pass {
   /** multiplies the haze density (heavy rain thickens the air) */
   densityScale = 1;
+  setColor(c: THREE.Color): void { this.march.uniforms.uColor.value.copy(c); }
+
   /** haze buffer resolution relative to the screen */
   scale = 0.3;
   private rt: THREE.WebGLRenderTarget;

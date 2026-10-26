@@ -3,7 +3,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { Input } from './input';
 import { Mech, setMechEnvironment, LANE } from './mech';
 import { castRay, newHit } from './targeting';
-import { World, FOG_COLOR } from './world';
+import { World } from './world';
+import { Environment } from './environment';
 import { Sky } from './sky';
 import { Wind } from './wind';
 import { Litter } from './litter';
@@ -46,6 +47,10 @@ const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10,
 
 /** seconds for the scene to fade in from black once it is first drawn */
 const FADE_IN = 1.8;
+/** where the sun hangs in the day sky (a direction from the camera: low, a little to the left, ahead); the light itself comes from the environment's `sun.offset` */
+const SKY_SUN = new THREE.Vector3(-0.28, 0.2, -0.94).normalize();
+/** seconds the light, fog and sky take to change over from one scene's environment to the next */
+const ENV_FADE = 3;
 
 /** the weather and the far-off war are turned down on the menu, so the soundtrack stands out (share of full volume) */
 const MENU_AMBIENCE = 0.2;
@@ -56,10 +61,10 @@ const WIN_DELAY = 3;
 const FOOTFALL_SHAKE = 0.02;
 /** the colours of the dirt a footfall throws up (the ground texture's, a touch lifted: these specks are unlit) */
 const GROUND_CLODS = [0x3e3c3a, 0x333432, 0x4a4947, 0x2a2927];
+/** and the desert's: sand */
+const SAND_CLODS = [0xb89864, 0xa08350, 0xcaa874, 0x8a7044];
 
 /** the lights' usual strength, which the lightning adds to; the flash's colour (the moonlight's is the sun's own) */
-const HEMI_BASE = 0.75;
-const SUN_BASE = 1.15;
 const FLASH_COLOR = new THREE.Color(0.85, 0.92, 1);
 
 const newPlayer = (): Player => ({ shield: PLAYER.maxShield, lives: PLAYER.lives, over: false, hitFlash: 0 });
@@ -98,7 +103,9 @@ export class Game {
   private readonly mechDeath: MechDeath;
   private readonly casings: Casings;
   private readonly lightning: Lightning;
-  private readonly hemi = new THREE.HemisphereLight(0x34447a, 0x0a2a22, HEMI_BASE);
+  private readonly hemi = new THREE.HemisphereLight();
+  /** the look of the scene being played: light, fog, sky, haze, rain (fades from scene to scene) */
+  private readonly env = new Environment(LEVEL[0].environment);
   private readonly score = new Score();
   private readonly endScreen: EndScreen;
   /** the level is cleared: the mech cannot be hurt, and the level complete screen is on its way (seconds) */
@@ -164,9 +171,10 @@ export class Game {
     renderer.shadowMap.enabled = true;
     document.body.prepend(renderer.domElement);
     renderer.domElement.after(this.foreground.canvas);       // the frontmost layer, over the 3D view and under the HUD
+    if (LEVELS[LEVEL_NO - 1].world === 'desert') this.foreground.canvas.style.display = 'none';     // its black heaps of wreckage belong to the city
     for (const c of [renderer.domElement, this.foreground.canvas]) Object.assign(c.style, { opacity: '0', transition: `opacity ${FADE_IN}s ease-out` });
 
-    scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
+    scene.fog = new THREE.Fog(this.env.now.fogColor, this.env.now.fogNear, this.env.now.fogFar);
     this.applyAspect();
 
     // neutral studio reflections on the mech only, so silver/black reads as metal under coloured light
@@ -181,7 +189,7 @@ export class Game {
 
     this.dust = new Dust(scene);
     this.debris = new Debris(scene, this.dust);
-    this.world = new World(scene, this.debris, this.dust);
+    this.world = new World(scene, this.debris, this.dust, LEVELS[LEVEL_NO - 1].world);
     this.sky = new Sky(scene);
     this.litter = new Litter(scene, this.wind);
     this.rain = new Rain(scene, this.world);
@@ -195,7 +203,7 @@ export class Game {
       this.shakeScreen(at, (FOOTFALL_SHAKE * strength) / 2);
       if (this.world.puddleDepth(at.x, at.z) > 0.2) return;
       this.footDust.set(at.x, this.mech.root.position.y + 0.03, at.z);
-      this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, GROUND_CLODS, true, 1.5);
+      this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, LEVELS[LEVEL_NO - 1].world === 'desert' ? SAND_CLODS : GROUND_CLODS, true, 1.5);
       this.dust.puff(this.footDust, 1, 0.3 * strength, 1.2);
     };
     scene.add(this.mech.root);
@@ -412,6 +420,7 @@ export class Game {
     this.won = this.winShown = false;
     this.winT = 0;
     this.card.show(0);
+    this.env.snap(LEVEL[0].environment);
   }
 
   private hurtPlayer(n: number): void {
@@ -531,7 +540,10 @@ export class Game {
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
     if (levelEvent === 'arrived') {
       this.score.beginScene();
-      if (this.level.index > 0) this.card.show(this.level.index);          // the first scene's card came up with the level
+      if (this.level.index > 0) {
+        this.card.show(this.level.index);          // the first scene's card came up with the level
+        this.env.fadeTo(this.level.scene.environment, ENV_FADE);
+      }
     }
     if (levelEvent === 'cleared' || levelEvent === 'complete') {
       this.score.endScene(this.level.index, LEVEL[this.level.index].parTime, this.player.shield, PLAYER.maxShield);
@@ -546,16 +558,27 @@ export class Game {
   /** lights, weather, atmosphere and everything that is just scenery */
   private updateEnvironment(dt: number, now: number): void {
     const { sun, rim, camX, mech, rain, post, hazeLights, muzzlePos, weapon, world } = this;
+    // the look of the scene: fades from one scene's environment to the next
+    this.env.update(dt);
+    const look = this.env.now;
+    rain.scale = look.rain;
     // lightning: the sun and the sky's light jump up for a moment and the scene is lit hard from above
     const flash = this.lightning.level;
     this.lightning.update(dt, camX, rain.intensity);
-    this.hemi.intensity = HEMI_BASE + STORM.hemiBoost * flash;
-    sun.intensity = SUN_BASE + STORM.sunBoost * flash;
-    sun.color.setHex(0x98a6d8).lerp(FLASH_COLOR, Math.min(1, flash * 1.5));
+    this.hemi.color.copy(look.hemiSky);
+    this.hemi.groundColor.copy(look.hemiGround);
+    this.hemi.intensity = look.hemiIntensity + STORM.hemiBoost * flash;
+    sun.intensity = look.sunIntensity + STORM.sunBoost * flash;
+    sun.color.copy(look.sunColor).lerp(FLASH_COLOR, Math.min(1, flash * 1.5));
     if (flash > 0.12) sun.position.set(camX + (this.lightning.boltAt.x - camX) * 0.3, 55, 20);
-    else sun.position.set(camX - 30, 25, 20);
+    else sun.position.set(camX + look.sunOffset.x, look.sunOffset.y, look.sunOffset.z);
     sun.target.position.set(camX, 0, 0);
     this.sky.setFlash(flash, this.boltDir.copy(this.lightning.boltAt).sub(this.camera.position));
+    this.sky.setLook(look.day, SKY_SUN, look.fogColor);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(look.fogColor); fog.near = look.fogNear; fog.far = look.fogFar;
+    rim.color.copy(look.rimColor); rim.intensity = look.rimIntensity;
+    world.setGroundTint(look.groundTint);
     rim.position.set(camX + 10, 6, -40);
     rim.target.position.set(camX, 2, 0);
     world.update(camX, dt);
@@ -569,7 +592,8 @@ export class Game {
     this.sky.update(this.camera, now / 1000);
     // the muzzle fire lights the smoke around the barrels
     hazeLights.forEach((v, i) => v.set(muzzlePos[i].x, muzzlePos[i].y, muzzlePos[i].z, weapon.firing ? 0.35 + Math.random() * 0.5 : 0));
-    post.setHazeDensityScale(1 + 0.1 * rain.intensity); // a downpour thickens the air only a touch
+    post.setHazeDensityScale(look.hazeDensity * (1 + 0.1 * rain.intensity)); // a downpour thickens the air only a touch
+    post.setHazeColor(look.hazeColor);
     post.updateHaze(now / 1000, this.wind.travelled, hazeLights);
     world.setWeather(now / 1000, rain.intensity, hazeLights);
     this.footSplasher.update(dt, mech.colliders, (x, z) => world.puddleDepth(x, z), this.splashFx);

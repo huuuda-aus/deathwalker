@@ -23,8 +23,8 @@
       #reticle.locked { border-color: #ff3030; }
       #reticle.locked::after { opacity: 1; transform: rotate(45deg) scale(1); animation: lockpulse 0.6s ease-in-out infinite alternate; }
       @keyframes lockpulse { to { transform: rotate(45deg) scale(0.82); } }
-      #hud { position: fixed; right: 16px; top: 44px; text-align: right; font: 12px monospace; color: #ffb347; pointer-events: none; }
-      #fps { position: fixed; right: 16px; top: 16px; font: 12px monospace; color: #ffb347; pointer-events: none; text-align: right; }
+      #hud { position: fixed; right: 16px; top: 44px; text-align: right; font: 12px monospace; color: #ffb347; pointer-events: none; text-shadow: 0 0 3px #000, 0 0 6px rgba(0,0,0,0.6); }
+      #fps { position: fixed; right: 16px; top: 16px; font: 12px monospace; color: #ffb347; pointer-events: none; text-align: right; text-shadow: 0 0 3px #000, 0 0 6px rgba(0,0,0,0.6); }
       .bar { width: 240px; height: 20px; border: 1px solid #ffb347; padding: 1px; margin: 2px 0 8px auto; }
       #lives { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
       #lives i { width: 10px; height: 10px; background: #ffb347; }
