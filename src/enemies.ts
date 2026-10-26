@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Fx } from './fx';
 import type { Blocker } from './debris';
 import type { Carrier } from './building';
-import { MECH_SCALE, LANE } from './mech';
+import { MECH_SCALE, LANE, clearOfWalls } from './mech';
 import { CAM_DIST } from './level';
 import { WEAPON, SOLDIER } from './config';
 import { sfx } from './sfx';
@@ -25,6 +25,8 @@ export interface SoldierEnv {
   sight(a: THREE.Vector3, b: THREE.Vector3): boolean;
   /** highest solid surface under (x, z) at or below y (0 = ground), so corpses fall until something is under them */
   surface(x: number, z: number, y: number): number;
+  /** like `blockers`, for choosing cover (optional): only what a soldier at (x, z) can really get behind */
+  cover?(x: number, z: number, radius: number, out: Blocker[]): number;
   /** every enemy in the game, so soldiers can keep clear of each other (optional) */
   others?(): readonly Enemy[];
   /** the stretch of the street (x) that is on screen at depth z, inset a little: soldiers have to fight inside it (optional) */
@@ -160,6 +162,10 @@ export class Soldier implements Enemy {
   protected avoid = 0;
   protected avoidT = 0;
   protected blockedT = 0;
+  /** for noticing a soldier who runs without getting anywhere: the clock, and where he was when it began */
+  private stuckT = 0;
+  private stuckX = 0;
+  private stuckZ = 0;
   /** spot to step to when rubble blocks the line of fire */
   protected goal: { x: number; z: number } | null = null;
   protected losT = 0;
@@ -473,7 +479,7 @@ export class Soldier implements Enemy {
     // the next one overshoot back, leaving the soldier shuffling to and fro around it
     const step = Math.min(speed * dt, reach);
     g.position.x += hx * step;
-    g.position.z = THREE.MathUtils.clamp(g.position.z + hz * step, Math.min(LANE.zMin, g.position.z), LANE.zMax);
+    g.position.z = THREE.MathUtils.clamp(g.position.z + hz * step, Math.min(LANE.soldierZMin, g.position.z), LANE.soldierZMax);
     this.pushOut(nb);
     return true;
   }
@@ -498,8 +504,15 @@ export class Soldier implements Enemy {
     }
     const dx = this.post.x - this.x, dz = this.post.z - this.z, d = Math.hypot(dx, dz);
     this.postT += dt;
-    if (d < 0.08 || this.postT > POST_RUN_MAX) { this.holding = true; return false; }
-    return this.walkAround(dt, dx / d, dz / d, SOLDIER.runSpeed, d);
+    if (d < 0.2 || this.postT > POST_RUN_MAX) { this.holding = true; return false; }       // (near enough: the walls and rubble keep him a hair short of the exact spot)
+    const moved = this.walkAround(dt, dx / d, dz / d, SOLDIER.runSpeed, d);
+    // making no headway (against a wall, in a crowd): stop running on the spot and make a stand where he is
+    this.stuckT += dt;
+    if (this.stuckT >= 0.6) {
+      if (Math.hypot(this.x - this.stuckX, this.z - this.stuckZ) < 0.1) this.holding = true;
+      this.stuckT = 0; this.stuckX = this.x; this.stuckZ = this.z;
+    }
+    return moved;
   }
 
   /** A spot of its own: a little way along the street from where it landed, a good firing distance from the mech. */
@@ -510,7 +523,7 @@ export class Soldier implements Enemy {
       let x = this.x + (Math.random() * 2 - 1) * SOLDIER.scatterSpread;
       const side = Math.sign(x - target.x) || (Math.random() < 0.5 ? -1 : 1);
       if (Math.abs(x - target.x) < standoff) x = target.x + side * standoff;       // never closer than the standoff
-      spot = this.onScreenSpot({ x, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) });
+      spot = this.onScreenSpot({ x, z: clearOfWalls(LANE.soldierZMin + Math.random() * (LANE.soldierZMax - LANE.soldierZMin)) });
       if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;                  // someone else is already heading there
     }
     return spot;
@@ -577,13 +590,13 @@ export class Soldier implements Enemy {
     if (px === 0 && pz === 0) return;
     const move = SOLDIER.separateSpeed * dt;
     g.x += px * move;
-    g.z = THREE.MathUtils.clamp(g.z + pz * move, Math.min(LANE.zMin, g.z), LANE.zMax);
+    g.z = THREE.MathUtils.clamp(g.z + pz * move, Math.min(LANE.soldierZMin, g.z), LANE.soldierZMax);
     this.pushOut(this.env.blockers(this.x, this.z, 0.6, BLOCKER_BUF));
   }
 
   /** The spot just behind the nearest big chunk of rubble, as seen from the mech. */
   protected pickCover(target: THREE.Vector3): { x: number; z: number } | null {
-    const n = this.env.blockers(this.x, this.z, COVER_SEARCH, BLOCKER_BUF);
+    const n = (this.env.cover ?? this.env.blockers).call(this.env, this.x, this.z, COVER_SEARCH, BLOCKER_BUF);
     let best = -1, bestD = Infinity;
     for (let i = 0; i < n; i++) {
       const b = BLOCKER_BUF[i];
@@ -599,12 +612,26 @@ export class Soldier implements Enemy {
     const off = b.r + SOLDIER_R + 0.12;
     const swing = Math.random() < 0.5 ? 1 : -1;
     let spot = { x: 0, z: 0 };
+    let found = false;
     for (const turn of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5]) {
       const a = base + turn * swing;
-      spot = { x: b.x + Math.cos(a) * off, z: THREE.MathUtils.clamp(b.z + Math.sin(a) * off, LANE.zMin, LANE.zMax) };
+      spot = { x: b.x + Math.cos(a) * off, z: THREE.MathUtils.clamp(b.z + Math.sin(a) * off, LANE.soldierZMin, LANE.soldierZMax) };
+      if (this.insideBlocker(spot.x, spot.z, n)) continue;                           // a spot in the rubble, or in the wall, is one he could not stand on
+      if (!this.env.sight(this.sightA.set(this.x, 0.2, this.z), this.sightB.set(spot.x, 0.2, spot.z))) continue;   // or one he could not get to (the far side of a wall)
+      found = true;
       if (!this.spotTaken(spot.x, spot.z, SOLDIER.spotGap)) break;
     }
-    return spot;
+    return found ? spot : null;
+  }
+
+  /** Is (x, z) inside any of the first `n` blockers in the buffer (where a soldier cannot stand)? */
+  private insideBlocker(x: number, z: number, n: number): boolean {
+    for (let i = 0; i < n; i++) {
+      const b = BLOCKER_BUF[i];
+      const lim = b.r + SOLDIER_R + 0.03;
+      if ((x - b.x) ** 2 + (z - b.z) ** 2 < lim * lim) return true;
+    }
+    return false;
   }
 
   /** Clear line of fire from standing at (x, z) to the mech's chest? (rubble is cover, for both sides) */
@@ -629,14 +656,16 @@ export class Soldier implements Enemy {
       for (let k = 0; k < 12; k++) {
         const a = start + (k * Math.PI) / 6;
         const cx = this.x + Math.cos(a) * rad;
-        const cz = THREE.MathUtils.clamp(this.z + Math.sin(a) * rad, Math.min(LANE.zMin, this.z), LANE.zMax);
+        const cz = THREE.MathUtils.clamp(this.z + Math.sin(a) * rad, Math.min(LANE.soldierZMin, this.z), LANE.soldierZMax);
         let free = true;
         for (let i = 0; i < nb && free; i++) {
           const b = BLOCKER_BUF[i];
           const lim = b.r + SOLDIER_R + 0.03;
           if ((cx - b.x) ** 2 + (cz - b.z) ** 2 < lim * lim) free = false;
         }
-        if (!free || Math.hypot(target.x - cx, target.z - cz) < 3) continue;
+        if (!free || Math.hypot(target.x - cx, target.z - cz) < 3 || clearOfWalls(cz) !== cz) continue;
+        // a place on the far side of a wall is no good: he could not walk there
+        if (!this.env.sight(this.sightA.set(this.x, 0.2, this.z), this.sightB.set(cx, 0.2, cz))) continue;
         if (this.hasLOS(target, cx, cz)) return { x: cx, z: cz };
       }
     }

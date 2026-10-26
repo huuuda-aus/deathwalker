@@ -27,12 +27,14 @@ export class Hud {
   private shownScore = '';
   private bossBar = $('boss');
   private bossFills = [...this.bossBar.querySelectorAll<HTMLElement>('.seg > div')];
+  private doorBar = $('doorbar');
+  private doorFill = this.doorBar.querySelector<HTMLElement>('.seg > div')!;
   private fpsFrames = 0;
   private fpsTime = 0;
   private fpsWorst = 0;
   private shownLives = -1;
 
-  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null; score: Score }) {}
+  constructor(private readonly deps: { player: Player; level: LevelRunner; weapon: Weapon; boss: () => SiloBoss | null; score: Score; /** how whole the blast doors are (0..1) while they are the thing to destroy, else null */ door: () => number | null }) {}
 
   setQuality(postOn: boolean): void {
     this.quality.textContent = `Q: post-fx ${postOn ? 'on' : 'off'}  |  H: haze`;
@@ -94,6 +96,11 @@ export class Hud {
         this.bossFills[i].parentElement!.classList.toggle('shut', !s.vulnerable);
       });
     }
+
+    // the blast doors' strength, when there are doors to break
+    const door = this.deps.door();
+    this.doorBar.style.display = door !== null && level.phase === 'active' ? 'flex' : 'none';
+    if (door !== null) this.doorFill.style.width = `${door * 100}%`;
 
     this.reticle.style.opacity = canFire ? '1' : '0.35';
     this.reticle.style.transform = `translate(${reticle.x}px, ${reticle.y}px)`;

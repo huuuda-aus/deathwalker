@@ -5,7 +5,7 @@ import { castRay, newHit } from './targeting';
 import type { World } from './world';
 import type { Debris } from './debris';
 import type { Dust } from './dust';
-import { WEAPON } from './config';
+import { WEAPON, BLAST_DOOR } from './config';
 import { sfx } from './sfx';
 import { terrain } from './terrain';
 
@@ -27,6 +27,8 @@ const PUSH = new THREE.Vector3();
 const KILL_PUSH = WEAPON.killPush;
 /** wet earth, dark to light */
 const MUD = [0x3a2c1e, 0x4a3a28, 0x5c4630, 0x6b5a45];
+/** chips off a dry-stone wall */
+const STONE_CHIPS = [0x8a7a66, 0x9c8a70, 0x7a6a58, 0xa89478];
 /** the desert's sand, light to dark */
 const SAND = [0xe5bd86, 0xd7a76a, 0xc4905a, 0xb07c48];
 const GEYSER_VEL = new THREE.Vector3();
@@ -114,6 +116,22 @@ export class Weapon {
       }
     }
     // rubble is cover: if a chunk lies on the line from the gun to the target, the bullet hits that instead
+    // a wall of stones between the gun and what it is aimed at takes the bullet instead
+    if (hit.kind !== 'rockwall' && world.wallSegmentHit(muzzle, hit.point, this.cover)) { hit.kind = 'rockwall'; hit.point.copy(this.cover); hit.enemy = undefined; hit.building = undefined; hit.barrel = undefined; hit.explosive = undefined; hit.scenery = undefined; }
+    if (hit.kind === 'door') {
+      // a vault door: sparks, a ricochet's whine, and a scratch
+      fx.sparks(hit.point, 8, 3.5, [0xffd080, 0xffffff]);
+      sfx.impact('metal', hit.point);
+      world.damageDoor(BLAST_DOOR.bulletDamage, hit.point);
+      return;
+    }
+    if (hit.kind === 'rockwall') {
+      fx.sparks(hit.point, 6, 3, [0xffd080, 0xffffff]);
+      fx.burst(hit.point, 8, 2.2, STONE_CHIPS, true, 0.6);
+      sfx.impact('rubble', hit.point);
+      world.damageWalls(hit.point, DAMAGE);
+      return;
+    }
     if (debris.segmentHit(muzzle, hit.point, this.cover)) {
       fx.sparks(this.cover, 5, 3, [0xffd080, 0xffffff]);
       fx.burst(this.cover, 6, 2.4, CHIPS, true, 0.6);

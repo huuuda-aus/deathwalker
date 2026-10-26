@@ -17,12 +17,19 @@ import { terrain, terrainHeight, applyTerrain, type Road } from './terrain';
 import { roadside, type Scenery, type SceneryEnv } from './scenery';
 import { Wreckage } from './wreckage';
 import { farDunes } from './farDunes';
+import { RockWall } from './rockWall';
+import { BlastDoor, DOOR_OFFSET_Z } from './blastDoor';
+import { LANE } from './mech';
+import type { Blocker } from './debris';
 
 /** height of a soldier's gun above the floor he stands on (world units), for line-of-fire checks from a bay */
 const SHOOTER_CHEST = 0.25;
 
 /** what the world keeps of one chunk of its length: the group of things in it and the lists the game works through */
-interface Chunk { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[]; scenery: Scenery[] }
+interface Chunk { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[]; scenery: Scenery[]; walls: RockWall[] }
+
+/** the dry-stone walls beside the walkway: where its edges lie (z), toward the camera and away from it (the walls stand a little out from there) */
+const WALL_NEAR = 6.4, WALL_FAR = -7.4;
 
 /** Distance haze: the ground and near rows fade to near-black, not green. */
 export const FOG_COLOR = 0x030d0b;
@@ -68,6 +75,11 @@ export class World {
   private readonly sceneryEnv: SceneryEnv;
   /** the roadside prop hit by the last raycastScenery() */
   hitScenery: Scenery | null = null;
+  /** the bunker's blast doors, once their chunk has been built (they keep their state when it is unloaded and built again) */
+  door: BlastDoor | null = null;
+  /** the screen shakes for something big at x (set by the game) */
+  shake: (x: number, amount: number) => void = () => {};
+  private readonly wallB = new THREE.Vector3();
   /** the far dunes' surface: lit like the rest, coloured by vertex */
   private readonly farDuneMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
@@ -76,6 +88,10 @@ export class World {
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
     terrain.on = style === 'desert';
     terrain.road = style === 'desert' ? road : null;
+    if (style === 'desert') {
+      // the mech and the vehicles keep to a walkway between two low walls; the infantry may also stand outside them, behind them
+      Object.assign(LANE, { zMin: -3.2, zMax: 2.6, soldierZMin: -10.2, soldierZMax: 9.6, wallBands: [[6.2, 7.7], [-8.7, -7.1]] });
+    }
     this.wreck = new Wreckage(scene);
     this.sceneryEnv = { wreck: this.wreck, dust, fx: () => this.fx! };
 
@@ -127,14 +143,36 @@ export class World {
     const x0 = index * this.chunkSize;
     g.add(this.groundChunk(x0));
     g.add(farDunes(x0, this.chunkSize, this.farDuneMaterial));
-    const chunk: Chunk = { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [], scenery: [] };
+    const chunk: Chunk = { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [], scenery: [], walls: [] };
+    // a dry-stone wall along each side of the mech's walkway (the near one toward the camera, the mech's left; the far one, its right), leaving the bunker door clear
+    const wx0 = Math.max(x0, (terrain.road?.doorX ?? -Infinity) + 16);
+    if (wx0 < x0 + this.chunkSize - 2) {
+      for (const [side, z, outward] of [[0, WALL_NEAR, 1], [1, WALL_FAR, -1]] as const) {
+        const wall = new RockWall(wx0, x0 + this.chunkSize, z, outward, side, this.debris, this.dust);
+        g.add(wall.mesh);
+        chunk.walls.push(wall);
+      }
+    }
     const r = terrain.road;
+    if (r && r.doorX >= x0 && r.doorX < x0 + this.chunkSize) {
+      // the bunker's blast doors, at the end of the street, facing the mech as he comes (he walks left, so they face right)
+      if (!this.door) {
+        this.door = new BlastDoor({
+          wreck: this.wreck, dust: this.dust, debris: this.debris, fx: () => this.fx!,
+          blast: (at, radius, scale) => this.explosions?.wreckBlast(at, radius, scale),
+          shake: (x, amount) => this.shake(x, amount),
+        });
+        this.door.place(r.doorX, terrainHeight(r.doorX, r.zc + DOOR_OFFSET_Z), r.zc + DOOR_OFFSET_Z);        // a little toward the back, so more of it shows
+      }
+      g.add(this.door.group);
+    }
     if (r) {
       // the military roadside to the bunker door
       const side = roadside(x0, x0 + this.chunkSize, { doorX: r.doorX, zc: r.zc, halfWidth: r.halfWidth, reach: r.to - 6 }, this.sceneryEnv);
       for (const s of side.scenery) { g.add(s.group); chunk.scenery.push(s); }
+      let k = 0;
       for (const p of side.drums) {
-        const barrel = new ExplosiveBarrel(p.setY(terrainHeight(p.x, p.z)), null);
+        const barrel = new ExplosiveBarrel(p.setY(terrainHeight(p.x, p.z)), null, k++ % 2 ? 'crate' : 'drum');
         g.add(barrel.group);
         chunk.explosives.push(barrel);
       }
@@ -200,12 +238,12 @@ export class World {
         const pos = street ? b.streetSpot(brng) : b.bayFloorSpots(1, brng)[0];
         // it must stand on a floor that is really there
         if (!pos || (!street && b.floorTop(pos.x, pos.z, pos.y + 0.05) < pos.y - 0.01)) continue;
-        const barrel = new ExplosiveBarrel(pos, street ? null : b);
+        const barrel = new ExplosiveBarrel(pos, street ? null : b, brng() < 0.35 ? 'crate' : 'drum');
         g.add(barrel.group);
         explosives.push(barrel);
       }
     }
-    return { group: g, buildings, props, barrels, explosives, puddles: water.list, scenery: [] };
+    return { group: g, buildings, props, barrels, explosives, puddles: water.list, scenery: [], walls: [] };
   }
 
   /** Visit every destructible building whose x-range overlaps [minX, maxX]. */
@@ -307,6 +345,50 @@ export class World {
     return best;
   }
 
+  // ---- the dry-stone walls
+
+  /** Does the segment a -> b cross a wall? (the line of fire, for bullets and for the infantry's eyes) */
+  wallSegmentHit(a: THREE.Vector3, b: THREE.Vector3, out: THREE.Vector3): boolean {
+    for (const c of this.chunks.values()) for (const w of c.walls) if (w.segmentHit(a, b, out)) return true;
+    return false;
+  }
+
+  /** Nearest wall stone along a ray (distance t, point in out). */
+  raycastWalls(ray: THREE.Ray, out: THREE.Vector3): number {
+    this.wallB.copy(ray.direction).multiplyScalar(80).add(ray.origin);
+    return this.wallSegmentHit(ray.origin, this.wallB, out) ? out.distanceTo(ray.origin) : Infinity;
+  }
+
+  /** the wall posts near (x, z), added to a list of blockers from index n (see RockWall.blockers); returns the new count. `sideZ`: only those a soldier at that z can shelter behind */
+  wallBlockers(x: number, z: number, radius: number, out: Blocker[], n: number, sideZ?: number): number {
+    for (const c of this.chunks.values()) for (const w of c.walls) n = w.blockers(x, z, radius, out, n, sideZ);
+    return n;
+  }
+
+  /** A blast at `at` reaching `radius` breaches the walls in it. */
+  blastWalls(at: THREE.Vector3, radius: number): void {
+    for (const c of this.chunks.values()) for (const w of c.walls) w.damage(at, radius, 120);
+  }
+
+  /** A bullet into a wall: the stones round the hit take a point each (four dislodge one). */
+  damageWalls(at: THREE.Vector3, amount: number): void {
+    for (const c of this.chunks.values()) for (const w of c.walls) w.damage(at, 0.4, amount);
+  }
+
+  /** The mech wading through a wall: whatever one of its feet or knees touches is shoved off in a moment or two. */
+  crushWalls(colliders: { pos: THREE.Vector3; r: number }[], dt: number): void {
+    for (const c of this.chunks.values()) for (const w of c.walls) for (const k of colliders) w.damage(k.pos, k.r + 0.08, 9 * dt, true);
+  }
+
+  /** Where a ray meets the blast doors (distance, point in out), or Infinity. */
+  raycastDoor(ray: THREE.Ray, out: THREE.Vector3): number { return this.door ? this.door.raycast(ray, out) : Infinity; }
+
+  /** A bullet into the doors. */
+  damageDoor(amount: number, at: THREE.Vector3): void { this.door?.damage(amount, at); }
+
+  /** A blast at `at` reaching `radius`: the blast doors take their share. */
+  blastDoor(at: THREE.Vector3, radius: number): void { this.door?.blast(at, radius); }
+
   /** A blast at `at` reaching `radius`: every roadside prop inside it takes punishment, the nearer ones more. */
   blastScenery(at: THREE.Vector3, radius: number): void {
     for (const c of this.chunks.values()) {
@@ -400,8 +482,10 @@ export class World {
     for (const [i, c] of this.chunks) {
       if (!inRange(i)) {
         this.group.remove(c.group);
+        if (this.door) c.group.remove(this.door.group);                  // the doors outlast their chunk
         c.buildings.forEach((b) => b.dispose());
         c.props.forEach((b) => b.dispose());
+        c.walls.forEach((x) => x.dispose());
         c.group.traverse((o) => {
           if (o instanceof THREE.Mesh && !(o instanceof THREE.InstancedMesh)) {
             o.geometry.dispose();
@@ -443,11 +527,14 @@ export class World {
         const near = Math.abs(e.group.position.x - cameraX) < 40;
         e.group.visible = near;
         if (!near && !e.lit) continue;
-        if (e.step(dt, (x, y, z) => this.surfaceTop(x, z, y)) === 'boom') this.explosions?.barrelBlast(e.blastPoint);
+        const event = e.step(dt, (x, y, z) => this.surfaceTop(x, z, y));
+        if (event === 'boom') this.explosions?.barrelBlast(e.blastPoint);
+        else if (event === 'pop') this.explosions?.ammoPop(e.blastPoint);
       }
     }
     this.craters.update(dt);
     this.wreck.update(dt);
+    this.door?.update(dt);
     this.fireLights.update(dt, live, cameraX);
     this.coals.update(dt);
     // the city's ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world (the desert's ground

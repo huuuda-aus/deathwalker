@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Soldier, type Enemy, type SoldierEnv } from './enemies';
 import { MachineGunner } from './gunner';
 import { LauncherUnit } from './launcher';
+import { TurretUnit } from './turret';
+import { DOOR_OFFSET_Z, DOOR_W } from './blastDoor';
 import { ZeppelinUnit } from './zeppelin';
 import { Paratrooper, ParachuteTarget } from './paratrooper';
 import { CannonUnit } from './cannon';
@@ -21,8 +23,8 @@ import type { Dust } from './dust';
 import type { Fx } from './fx';
 import type { World } from './world';
 import type { Debris } from './debris';
-import { LANE, type Mech } from './mech';
-import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER } from './config';
+import { LANE, clearOfWalls, type Mech } from './mech';
+import { DEBUG, SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
 import { terrain, terrainHeight } from './terrain';
 
@@ -71,6 +73,8 @@ export class EnemyManager {
   /** and how far it has been tipped to lie on the slope (vehicles; the inverse is kept so it can be taken off again) */
   private readonly tilted = new Map<Enemy, THREE.Quaternion>();
   private spawnTimer = 1;
+  /** the bunker's turrets have been posted */
+  private guardsPosted = false;
   /** where the screen is, for the planes: camera x, and the height of the top of the view at the gameplay depth */
   private camX = 0;
   viewTop = 9;
@@ -131,6 +135,7 @@ export class EnemyManager {
     else if (e instanceof Horse) kind = 'horse';
     else if (e instanceof CannonUnit) kind = 'cannon';
     else if (e instanceof LauncherUnit) kind = 'launcher';
+    else if (e instanceof TurretUnit) kind = 'cannon';
     else if (e instanceof ZeppelinUnit) kind = 'zeppelin';
     else if (e instanceof TruckUnit) kind = 'truck';
     else if (e instanceof AircraftUnit) kind = 'aircraft';
@@ -139,6 +144,7 @@ export class EnemyManager {
   }
 
   reset(): void {
+    this.guardsPosted = false;
     for (const e of this.list) this.discard(e);
     this.list.length = 0;
     this.boss = null;
@@ -148,6 +154,21 @@ export class EnemyManager {
   /** the current scene is over: whoever is left runs away */
   retreatAll(): void {
     for (const e of this.list) if (e.alive) e.retreating = true;
+  }
+
+  /** A level that ends at a bunker has a double heavy machine-gun turret either side of the doors, from the start. */
+  private postGuards(): void {
+    this.guardsPosted = true;
+    const r = terrain.road;
+    if (!r || DEBUG.noTurrets) return;
+    const { scene, explosions, dust, debris } = this.deps;
+    const z0 = r.zc + DOOR_OFFSET_Z, x = r.doorX + 4.5;
+    for (const side of [-1, 1]) {
+      const z = z0 + side * (DOOR_W / 2 + 5.4);
+      const t = new TurretUnit(x, terrainHeight(x, z), z, { explosions, dust, debris });
+      scene.add(t.group);
+      this.list.push(t);
+    }
   }
 
   /** lift an enemy that is on the ground onto the dune under it, and lay a vehicle along the slope (or, if it has just left the ground, leave it where it is) */
@@ -274,7 +295,7 @@ export class EnemyManager {
     if (this.list.some((e) => e instanceof MachineGunner && e.alive && !e.retreating)) return false;
     const half = SCREEN_W / 2;
     for (let n = 0; n < count; n++) {
-      const g = new MachineGunner(camX - half - 3 - n * 2.2, LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin), env);
+      const g = new MachineGunner(camX - half - 3 - n * 2.2, clearOfWalls(LANE.soldierZMin + Math.random() * (LANE.soldierZMax - LANE.soldierZMin)), env);
       scene.add(g.group);
       this.list.push(g);
       level.spawned++;
@@ -426,7 +447,9 @@ export class EnemyManager {
         s = new Soldier(bay.pos.x, bay.pos.z, env);
         s.perchAt(bay.pos, { ledgeZ: bay.ledgeZ, backZ: bay.backZ, floorTop: bay.floorTop, carrierAt: bay.carrierAt });
       } else {
-        s = new Soldier(camX - half - 3 - Math.random() * 8, LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin), env);
+        s = new Soldier(camX - half - 3 - Math.random() * 8, clearOfWalls(LANE.soldierZMin + Math.random() * (LANE.soldierZMax - LANE.soldierZMin)), env);
+        // an infantryman who comes in outside the dry-stone walls (beyond the walkway, on either side) makes for the wall to fight from behind it
+        if (terrain.on && LANE.wallBands.length && (s.z > LANE.wallBands[0][1] || s.z < LANE.wallBands[1][0])) s.plan = 'cover';
       }
       scene.add(s.group);
       this.list.push(s);
@@ -487,9 +510,10 @@ export class EnemyManager {
   update(dt: number, camX: number, spawning: boolean): void {
     const { level, fx, mech, bullets } = this.deps;
     this.clock += dt;
+    if (!this.guardsPosted) this.postGuards();
     if (spawning) this.failsafe(dt, camX);
     this.camX = camX;
-    if (spawning) { this.spawn(dt, camX); this.runEvents(camX); }
+    if (spawning && !DEBUG.noResistance) { this.spawn(dt, camX); this.runEvents(camX); }
     if (level.canSpawn) this.spawnBoss(camX);
     if (level.index !== this.bossScene) this.boss = null;
     if (this.boss) {

@@ -20,7 +20,7 @@ const KHAKI = shared(new THREE.MeshStandardMaterial({ color: 0x9a8f6a, roughness
 const BRICKS = [0x9a8f6a, 0x8f8460, 0xa59a74].map((c) => shared(new THREE.MeshStandardMaterial({ color: c, roughness: 0.95 })));
 const ROOF = shared(new THREE.MeshStandardMaterial({ color: 0x4d5240, roughness: 0.85 }));
 const STEEL = shared(new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.55, metalness: 0.6 }));
-const POST = shared(new THREE.MeshStandardMaterial({ color: 0x55575a, roughness: 0.6, metalness: 0.5 }));
+const POST = shared(new THREE.MeshStandardMaterial({ color: 0x3f4a2e, roughness: 0.7, metalness: 0.4 }));       // olive drab
 const SANDBAG = shared(new THREE.MeshStandardMaterial({ color: 0xa8956a, roughness: 1 }));
 const GLASS = shared(new THREE.MeshStandardMaterial({ color: 0x0b0d10, roughness: 0.3, metalness: 0.4 }));
 const LAMP = shared(new THREE.MeshStandardMaterial({ color: 0xffe9b0, emissive: 0xffc860, emissiveIntensity: 1.5 }));
@@ -74,7 +74,7 @@ const signMaterial = (i: number): THREE.MeshBasicMaterial => {
 let fenceMat: THREE.MeshBasicMaterial | null = null;
 const fenceMaterial = (): THREE.MeshBasicMaterial => fenceMat ??= shared(new THREE.MeshBasicMaterial({
   map: canvasTexture(64, (g, s) => {
-    g.strokeStyle = '#9aa0a6'; g.lineWidth = 3;
+    g.strokeStyle = '#4a5733'; g.lineWidth = 3;
     for (let i = -s; i <= s * 2; i += s / 2) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + s, s); g.moveTo(i + s, 0); g.lineTo(i, s); g.stroke(); }
   }, [6, 1]),
   transparent: true, alphaTest: 0.35, side: THREE.DoubleSide,
@@ -113,7 +113,7 @@ export class Scenery {
 
   /**
    * @param half half extents of its hit box (before turning)
-   * @param hp hits it takes; a bullet does 1, a shell much more, the mech walking through it 40 a second
+   * @param hp hits it takes; a bullet does 1 (a fence or a sign falls to one), a shell much more, the mech walking through it 40 a second
    */
   constructor(readonly kind: string, x: number, z: number, rotY: number, half: THREE.Vector3, private hp: number, parts: THREE.Object3D[], private readonly env: SceneryEnv, metal = false, partial = false) {
     this.metal = metal;
@@ -232,7 +232,7 @@ export const fence: Make = (x, z, rotY, env) => {
   mesh.position.y = 0.34;
   mesh.userData.restY = 0.02;
   const rail = box(len, 0.025, 0.025, POST, 0, 0.62, 0);
-  return new Scenery('fence', x, z, rotY, new THREE.Vector3(len / 2, 0.33, 0.1), 2, [
+  return new Scenery('fence', x, z, rotY, new THREE.Vector3(len / 2, 0.33, 0.1), 1, [
     mesh, rail, box(0.05, 0.66, 0.05, POST, -len / 2 + 0.03, 0.33, 0), box(0.05, 0.66, 0.05, POST, len / 2 - 0.03, 0.33, 0), box(0.04, 0.6, 0.04, POST, 0, 0.3, 0),
   ], env, true);
 };
@@ -359,7 +359,7 @@ export function roadside(x0: number, x1: number, road: RoadLayout, env: SceneryE
   const { doorX, zc, halfWidth, reach } = road;
   const from = Math.max(x0, doorX + 6), to = Math.min(x1, doorX + reach);
   if (from >= to) return out;
-  const back = zc - halfWidth + 0.2, front = zc + halfWidth - 0.2;      // the far edge of the road and the near one
+  const back = zc - halfWidth - 1.0, front = zc + halfWidth - 0.2;      // the far edge of the road (behind the dry-stone wall and the infantry's ground) and the near one
   const add = (s: Scenery): void => { out.scenery.push(s); };
   const rngAt = (x: number): (() => number) => mulberry32(Math.floor(x * 13));
 
@@ -376,22 +376,22 @@ export function roadside(x0: number, x1: number, road: RoadLayout, env: SceneryE
   // roadblock chicanes: three barriers staggered across the street, with room between to get through
   for (let x = Math.ceil((from - 5) / 38) * 38 + 5; x < to - 8; x += 38) {
     if (x < doorX + 14) continue;
-    add(jerseyBarrier(x, zc - 3.2, 0.1, env));
-    add(jerseyBarrier(x - 2.6, zc + 0.2, -0.12, env));
-    add(jerseyBarrier(x - 5.2, zc + 3.4, 0.08, env));
-    add(sandbagWall(5)(x + 3, zc - 4.6, 0, env));
+    add(jerseyBarrier(x, zc - 2.4, 0.1, env));
+    add(jerseyBarrier(x - 2.6, zc - 0.2, -0.12, env));
+    add(jerseyBarrier(x - 5.2, zc + 1.9, 0.08, env));
+    add(sandbagWall(5)(x + 3, zc - 9.2, 0, env));
   }
   // guardhouses behind the road, of loose blocks, with sandbags and drums beside them
   for (const gx of [doorX + 52, doorX + 20]) {
     if (gx < from - 3 || gx > to + 3) continue;
-    const gz = zc - halfWidth + 1.4;
+    const gz = zc - halfWidth - 2.4;
     add(guardhouse(gx, gz, 0, env));
-    add(sandbagWall(4)(gx + 2.1, gz + 1.2, 0.15, env));
-    out.drums.push(new THREE.Vector3(gx - 1.9, 0, gz + 1.3), new THREE.Vector3(gx - 2.2, 0, gz + 1.9));
+    add(sandbagWall(4)(gx + 2.4, gz - 0.1, 0.15, env));
+    out.drums.push(new THREE.Vector3(gx - 1.9, 0, gz + 0.6), new THREE.Vector3(gx - 2.2, 0, gz + 0.2));
   }
   // by the door: tank traps, the barrier gate and a last roadblock
   const near = (x: number): boolean => x >= from && x <= to;
-  if (near(doorX + 14)) add(barrierGate(halfWidth * 1.3)(doorX + 14, zc - halfWidth * 0.55, 0, env));
+  if (near(doorX + 14)) add(barrierGate(5.8)(doorX + 14, zc - 1.1, 0, env));
   for (const [dx, dz] of [[9, -2.5], [10.5, 1.8], [8, 4.2]] as const) if (near(doorX + dx)) add(tankTrap(doorX + dx, zc + dz, dx, env));
   if (near(doorX + 7)) add(jerseyBarrier(doorX + 7, zc - 0.6, 0.05, env));
   return out;

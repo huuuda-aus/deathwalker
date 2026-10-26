@@ -14,8 +14,18 @@ export function setMechEnvironment(env: THREE.Texture): void {
 
 /** Uniform scale of the whole mech model (model is authored ~4 units tall). */
 export const MECH_SCALE = 0.5;
-/** Walkable depth range (world z). Front-row buildings stand behind ZMIN. */
-export const LANE = { zMin: -3.5, zMax: 4.5 };
+/**
+ * Walkable depth range (world z) of the mech and the vehicles (zMin/zMax), and of the infantry (soldierZMin/soldierZMax): the same in the
+ * city; in the desert the walkway is bounded by low stone walls and the infantry may also stand outside them, behind them (see rockWall.ts).
+ * Front-row buildings stand behind ZMIN.
+ */
+export const LANE = { zMin: -3.5, zMax: 4.5, soldierZMin: -3.5, soldierZMax: 4.5, wallBands: [] as [number, number][] };
+
+/** a z to stand at, moved out of the stone walls' bands (where the walls may stand) to the nearer side of it */
+export function clearOfWalls(z: number): number {
+  for (const [a, b] of LANE.wallBands) if (z > a && z < b) return z > (a + b) / 2 ? b + 0.1 : a - 0.1;
+  return z;
+}
 /** Distance of reticle from the cockpit pivot (along x) below which the guns can't fire. */
 const MIN_AIM_DX = 1.0 * MECH_SCALE;
 

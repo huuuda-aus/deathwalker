@@ -33,6 +33,10 @@
       #boss .seg { width: 180px; height: 12px; border: 1px solid #ff5a4a; box-sizing: border-box; }
       #boss .seg > div { height: 100%; width: 100%; background: #ff5a4a; }
       #boss .seg.shut { opacity: 0.4; }
+      #doorbar { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; gap: 4px; pointer-events: none;
+        font: 11px monospace; letter-spacing: 0.3em; color: #ffb347; text-shadow: 0 0 3px #000; }
+      #doorbar .seg { width: 320px; height: 12px; border: 1px solid #ffb347; box-sizing: border-box; background: rgba(2,6,10,0.5); }
+      #doorbar .seg > div { height: 100%; width: 100%; background: #ffb347; }
       #flash { position: fixed; inset: 0; background: #fff6d8; opacity: 0; pointer-events: none; }
       #hit { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255,0,0,0.6)); opacity: 0; pointer-events: none; }
       #go { position: fixed; left: 40px; top: 45%; font: bold 40px monospace; color: #ffb347; display: none; pointer-events: none;
@@ -50,7 +54,7 @@
       #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
         font-family: monospace; color: #ffb347; user-select: none; cursor: default;
         background: radial-gradient(ellipse at 50% 50%, rgba(40,0,0,0.45) 0%, rgba(2,6,10,0.8) 100%); }
-      body.gameover #reticle, body.gameover #hud, body.gameover #boss { display: none; }
+      body.gameover #reticle, body.gameover #hud, body.gameover #boss, body.gameover #doorbar { display: none; }
       #over.win h2 { color: #7dff9a; text-shadow: 0 0 22px rgba(60,255,120,0.55), 4px 4px 0 #002a0a; }
       #over-level { margin: -12px 0 20px; font-size: 14px; letter-spacing: 0.3em; color: #ffd9a0; opacity: 0.7; }
       #over-code { margin: -6px 0 16px; font-size: 16px; letter-spacing: 0.2em; color: #7dff9a; min-height: 1.2em; }
@@ -103,7 +107,7 @@
       #menu { position: fixed; inset: 0; display: none; font-family: monospace; color: #ffb347; user-select: none;
         background: radial-gradient(ellipse at 50% 45%, rgba(2,6,10,0.15) 0%, rgba(2,6,10,0.72) 100%); }
       body.menu #menu { display: block; }
-      body.fame #soundhint, body.settings #soundhint, body.code #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
+      body.fame #soundhint, body.settings #soundhint, body.code #soundhint, body.menu #hud, body.menu #boss, body.menu #doorbar, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
       #menu-main { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
       #menu h1 { margin: 0; }
       #menu h1 img { display: block; margin: 0 auto; width: clamp(338px, 41.6vw, 624px); height: auto; filter: drop-shadow(0 0 18px rgba(255,140,0,0.35)); }
@@ -170,6 +174,7 @@
       <div id="quality" style="margin-top:8px;opacity:.6">Q: post-fx on  |  H: haze</div>
     </div>
     <div id="boss"><div class="seg"><div></div></div><div class="seg"><div></div></div></div>
+    <div id="doorbar"><span>BLAST DOORS</span><div class="seg"><div></div></div></div>
     <div id="fps">-- FPS</div>
     <div id="flash"></div>
     <div id="hit"></div>

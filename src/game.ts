@@ -122,6 +122,8 @@ export class Game {
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
   private readonly boltShake = new THREE.Vector3();
   private readonly footDust = new THREE.Vector3();
+  /** how far the camera has risen (or sunk) with the ground */
+  private camLift = 0;
   private readonly stepPuff = new THREE.Vector3();
   private readonly boltDir = new THREE.Vector3();
   private readonly muzzlePos = [new THREE.Vector3(), new THREE.Vector3()];
@@ -195,7 +197,7 @@ export class Game {
 
     this.dust = new Dust(scene);
     this.debris = new Debris(scene, this.dust);
-    const road = LEVELS[LEVEL_NO - 1].approach === 'bunker' ? { doorX: endDoorX(), full: 24, to: 74, zc: 0.5, halfWidth: 7 } : null;
+    const road = LEVELS[LEVEL_NO - 1].approach === 'bunker' ? { doorX: endDoorX(), full: 24, to: 74, zc: 0.5, halfWidth: 10 } : null;
     this.world = new World(scene, this.debris, this.dust, LEVELS[LEVEL_NO - 1].world, road);
     this.sky = new Sky(scene);
     const desert = LEVELS[LEVEL_NO - 1].world === 'desert';
@@ -246,11 +248,13 @@ export class Game {
     this.fx = new Fx(scene);
     this.fx.setSurface((x, z, y) => world.surfaceTop(x, z, y));
     world.setFx(this.fx);
+    world.shake = (x, amount) => this.shakeScreen(this.boltShake.set(x, 0, 0), amount);
 
     const sightTmp = new THREE.Vector3();
     const env: SoldierEnv = {
-      blockers: (x, z, r, out) => debris.collectBlockers(x, z, r, out),
-      sight: (a, b) => !debris.segmentHit(a, b, sightTmp),
+      blockers: (x, z, r, out) => world.wallBlockers(x, z, r, out, debris.collectBlockers(x, z, r, out)),
+      cover: (x, z, r, out) => world.wallBlockers(x, z, r, out, debris.collectBlockers(x, z, r, out), z),
+      sight: (a, b) => !debris.segmentHit(a, b, sightTmp) && !world.wallSegmentHit(a, b, sightTmp),
       surface: (x, z, y) => world.surfaceTop(x, z, y),
       others: () => this.enemies.list,
       arena: (z) => {
@@ -281,7 +285,8 @@ export class Game {
       },
       blastBuildings: (at, radius, speed) => world.forEachBuilding(at.x - radius, at.x + radius, (b) => b.blast(at.x, at.y, at.z, radius, speed)),
     });
-    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss, score: this.score });
+    this.hud = new Hud({ player: this.player, level: this.level, weapon: this.weapon, boss: () => this.enemies.boss, score: this.score,
+      door: () => { const d = this.world.door; return d && !d.breached && Math.abs(this.mech.root.position.x - d.group.position.x) < 50 ? Math.max(0, d.hp) / d.maxHp : null; } });
     this.endScreen = new EndScreen(hof);
 
     // the menu shows the first scene's skyline and weather, without the mech or any fighting
@@ -360,8 +365,8 @@ export class Game {
   /** the camera at the level's current view */
   private placeCamera(dx = 0, dy = 0): void {
     const { camera } = this;
-    camera.position.set(this.camX + dx, CAMERA.height + dy, CAM_DIST);
-    camera.lookAt(this.camX + dx, CAMERA.height - 0.5 + dy, 0);
+    camera.position.set(this.camX + dx, CAMERA.height + this.camLift + dy, CAM_DIST);
+    camera.lookAt(this.camX + dx, CAMERA.height + this.camLift - 0.5 + dy, 0);
     camera.updateMatrixWorld();
   }
 
@@ -430,6 +435,7 @@ export class Game {
   }
 
   private reset(): void {
+    this.camLift = 0;
     this.enemies.reset();
     this.lock.release();
     this.shells.clear();
@@ -521,7 +527,11 @@ export class Game {
     const levelEvent = level.update(dt, mech.root.position.x);
     this.camX = level.camX;
     const halfVis = ((CAM_DIST - mech.root.position.z) / CAM_DIST) * (SCREEN_W / 2) * CAMERA.mechMargin;
-    mech.root.position.x = THREE.MathUtils.clamp(mech.root.position.x, this.camX - halfVis, this.camX + halfVis);
+    // (and never into the tunnel's mouth, until the doors are blown: then as far in as the portal goes)
+    const stop = terrain.road ? terrain.road.doorX + (this.world.door?.breached ? -4.2 : 1.6) : -Infinity;
+    mech.root.position.x = THREE.MathUtils.clamp(mech.root.position.x, Math.max(this.camX - halfVis, stop), this.camX + halfVis);
+    // the camera rides up and down with the ground the mech is on (the road runs downhill into the valley)
+    this.camLift += (mech.root.position.y - this.camLift) * Math.min(1, dt * 2.5);
     this.placeCamera();
     return levelEvent;
   }
@@ -634,6 +644,7 @@ export class Game {
     post.updateHaze(now / 1000, this.wind.travelled, hazeLights);
     world.setWeather(now / 1000, rain.intensity, hazeLights);
     this.world.crushScenery(mech.colliders, dt);
+    this.world.crushWalls(mech.colliders, dt);
     this.footSplasher.update(dt, mech.colliders, (x, z) => world.puddleDepth(x, z), this.splashFx);
     this.splashFx.update(dt);
     rain.update(dt, camX, mech.root.position.x, mech.root.position.z, this.wind.speed, hazeLights);

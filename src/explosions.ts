@@ -62,6 +62,8 @@ export class Explosions {
     // anything explosive caught in it goes up a beat later
     world.igniteBarrels(at, radius);
     world.blastScenery(at, radius);
+    world.blastWalls(at, radius);
+    world.blastDoor(at, radius);
     // the shockwave shoves rubble outwards, and the ground throws up clods
     debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale) * shock);
     const floor = (x: number, z: number, y: number): number => world.surfaceTop(x, z, y);
@@ -86,6 +88,15 @@ export class Explosions {
     for (let i = 0; i < BARREL.buildingPasses; i++) {
       this.deps.world.forEachBuilding(at.x - R, at.x + R, (b) => b.damage(at.x, at.y, at.z, R));
     }
+  }
+
+  /** A round cooking off in a burning ammunition crate: a flash, a spit of sparks and a crack. */
+  ammoPop(at: THREE.Vector3): void {
+    const { fx } = this.deps;
+    fx.sparks(at, 8, 5, [0xffd080, 0xffa040, 0xffffff]);
+    fx.burst(at, 3, 3, [0xffd080, 0xff7020], true, 0.5);
+    fx.muzzleFlash(at);
+    sfx.impact('metal', at);
   }
 
   update(dt: number): void { this.blasts.update(dt); }

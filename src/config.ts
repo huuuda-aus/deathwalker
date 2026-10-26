@@ -1,5 +1,43 @@
 /** Gameplay tuning in one place. Geometry/visual constants stay next to the code that draws them. */
 
+/**
+ * TEMP (testing): `noResistance` turns the enemies off (nothing is sent in) and the scenes clear themselves as soon as they begin (the
+ * camera follows the mech through all of them), and the last scene never ends, so the mech can walk the whole level to the end of it.
+ */
+export const DEBUG = { noResistance: true, noTurrets: false };
+
+/** the bunker's blast doors: what they take. A bullet barely scratches them (it is a vault door); a blast (a shell, a bomb, a barrel or a crate going up) does the real harm. */
+export const BLAST_DOOR = {
+  hp: 700,
+  bulletDamage: 1,
+  /** damage of a blast right against the door, falling to nothing at the edge of its radius */
+  blastPower: 100,
+  /** the breach: how many blasts go off across the door, how long they take (s), and how big each is */
+  breachBlasts: 7,
+  breachTime: 0.9,
+  breachRadius: 3,
+  breachScale: 2.6,
+} as const;
+
+/** a heavy machine-gun turret guarding the bunker: twin barrels on a pad, long accurate bursts at the mech */
+export const TURRET = {
+  hp: 120,
+  /** it opens fire when the mech is this near (units, along the street) */
+  range: 34,
+  /** a burst is this many rounds at this rate (rounds/s); between bursts it rests this long (s) */
+  burst: [18, 30] as const,
+  rate: 12,
+  rest: [0.9, 1.7] as const,
+  firstDelay: 0.8,
+  /** its aim: the share of an ordinary soldier's miss, and how fast its bullets fly */
+  precision: 0.4,
+  bulletSpeed: 7.5,
+  /** how big it is drawn, relative to a soldier's world (a metre of the cannon's model) */
+  size: 1.15,
+  wreckBlastRadius: 2.2,
+  wreckBlastScale: 1.8,
+} as const;
+
 export const PLAYER = {
   /** a heavy machine: a slow, ponderous walk (two footfalls a second at full pace), but it can still step out of a bullet's way; aiming and firing are not slowed */
   walkSpeed: 2.5,

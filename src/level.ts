@@ -1,4 +1,5 @@
 import { LEVEL, type SceneDef } from './levelData';
+import { DEBUG } from './config';
 
 /** Camera distance from the gameplay plane (z = 0). */
 export const CAM_DIST = 24;
@@ -29,11 +30,14 @@ const SCENE_START: number[] = LEVEL.reduce<number[]>(
   [],
 );
 
-/** x of a bunker door at the end of the level: just inside the left edge of the view the camera ends on */
-export function endDoorX(): number {
+/** where the camera comes to rest at the end of the level (x of the middle of the view) */
+export function endCamX(): number {
   const last = LEVEL.length - 1;
-  return camXAt(SCENE_START[last] + LEVEL[last].widthScreens - 1) - SCREEN_W / 2 + 4;
+  return camXAt(SCENE_START[last] + LEVEL[last].widthScreens - 1);
 }
+
+/** x of the end of the road at the end of the level: just inside the left edge of the view the camera ends on */
+export function endDoorX(): number { return endCamX() - SCREEN_W / 2 + 4; }
 
 export type Phase = 'entering' | 'active' | 'cleared' | 'complete';
 export type LevelEvent = 'cleared' | 'arrived' | 'complete' | null;
@@ -104,7 +108,9 @@ export class LevelRunner {
     } else if (this.phase === 'active') {
       const { min, max } = this.range(this.index);
       this.camX += (Math.min(max, Math.max(min, follow)) - this.camX) * Math.min(1, dt * 4);
-      if (this.scene.boss ? this.bossDown : this.kills >= this.scene.spawnBudget) {
+      // (testing, DEBUG.noResistance: every scene but the last is cleared at once, and the last never is)
+      const cleared = DEBUG.noResistance ? this.index < LEVEL.length - 1 : this.scene.boss ? this.bossDown : this.kills >= this.scene.spawnBudget;
+      if (cleared) {
         this.phase = this.index === LEVEL.length - 1 ? 'complete' : 'cleared';
         event = this.phase === 'complete' ? 'complete' : 'cleared';
       }

@@ -7,7 +7,7 @@ import type { FireBarrel } from './fire';
 import type { ExplosiveBarrel } from './explosiveBarrel';
 import type { Scenery } from './scenery';
 
-export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'prop' | 'ground' | 'backdrop';
+export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'prop' | 'rockwall' | 'door' | 'ground' | 'backdrop';
 
 export interface Hit {
   kind: HitKind;
@@ -67,6 +67,12 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   // roadside props
   const st = world.raycastScenery(ray, tmp);
   if (st < bestT) { bestT = st; out.kind = 'prop'; out.point.copy(tmp); out.scenery = world.hitScenery ?? undefined; }
+  // the bunker's blast doors
+  const dt2 = world.raycastDoor(ray, tmp);
+  if (dt2 < bestT) { bestT = dt2; out.kind = 'door'; out.point.copy(tmp); }
+  // the dry-stone walls
+  const rt = world.raycastWalls(ray, tmp);
+  if (rt < bestT) { bestT = rt; out.kind = 'rockwall'; out.point.copy(tmp); }
   // enemies
   for (const e of enemies) {
     if (!e.alive) continue;

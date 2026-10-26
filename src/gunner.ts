@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Fx } from './fx';
 import { Soldier, type ShotFn, type SoldierEnv } from './enemies';
-import { LANE } from './mech';
+import { LANE, clearOfWalls } from './mech';
 import { GUNNER, SOLDIER } from './config';
 
 // the gun is white, like everything else on the enemy side: two close shades of light grey, so its parts still read
@@ -161,7 +161,7 @@ export class MachineGunner extends Soldier {
       const standoff = GUNNER.standoffMin + Math.random() * (GUNNER.standoffMax - GUNNER.standoffMin);
       // the mech can only shoot to the left: set up there, and only if that will not fit on screen, in front of it
       const side = tries < 8 ? -1 : 1;
-      spot = this.onScreenSpot({ x: target.x + side * standoff, z: LANE.zMin + Math.random() * (LANE.zMax - LANE.zMin) });
+      spot = this.onScreenSpot({ x: target.x + side * standoff, z: clearOfWalls(LANE.soldierZMin + Math.random() * (LANE.soldierZMax - LANE.soldierZMin)) });
       if (this.spotTaken(spot.x, spot.z, SOLDIER.spotGap * 2)) continue;
       if (Math.abs(spot.x - target.x) >= 4 && this.hasLOS(target, spot.x, spot.z)) return spot;
     }

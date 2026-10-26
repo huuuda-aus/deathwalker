@@ -8,7 +8,7 @@ const LENGTH = 1.41, WIDTH = 0.69;
 
 /**
  * The mech's sole as it lies on the sand: a crisp rectangle, toe to the left, in three plates (the upturned toe, the long sole and the
- * heel block, as the foot is built), dented dark with a few treads, and a thin lip of pushed-up sand round the outside.
+ * heel block, as the foot is built), dented dark with a few treads: no outline, just the dent.
  */
 function printTexture(): THREE.CanvasTexture {
   const W = 256, H = 125;
@@ -22,13 +22,9 @@ function printTexture(): THREE.CanvasTexture {
   };
   const L = W * 0.06, T = H * 0.1, FW = W * 0.88, FH = H * 0.8;
   g.filter = 'blur(1.5px)';
-  // the lip of sand pushed up round the dent
-  rect(L - 4, T - 4, FW + 8, FH + 8, 9); g.fillStyle = 'rgba(255, 228, 185, 0.5)'; g.fill();
-  // the dent: dark, three plates with a thin ridge of sand between them
-  g.fillStyle = 'rgba(38, 18, 7, 0.9)';
-  rect(L, T, FW * 0.2, FH, 7); g.fill();                                  // the toe
-  rect(L + FW * 0.215, T + 1, FW * 0.52, FH - 2, 4); g.fill();           // the sole
-  rect(L + FW * 0.75, T, FW * 0.25, FH, 7); g.fill();                    // the heel block
+  // the dent: one dark rectangle
+  g.fillStyle = 'rgba(38, 18, 7, 0.85)';
+  rect(L, T, FW, FH, 6); g.fill();
   // treads across the sole
   g.fillStyle = 'rgba(255, 215, 165, 0.3)';
   for (let i = 0; i < 5; i++) g.fillRect(L + FW * (0.26 + i * 0.09), T + 6, 3, FH - 12);

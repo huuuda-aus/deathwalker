@@ -102,7 +102,7 @@ export class Bullets {
       }
     }
     // rubble and walls
-    if (debris.segmentHit(a, b, hitAt)) return this.impact(hitAt);
+    if (debris.segmentHit(a, b, hitAt) || world.wallSegmentHit(a, b, hitAt)) return this.impact(hitAt);
     ray.set(a, seg.divideScalar(len));
     if (world.raycast(ray, hitAt) < len) return this.impact(hitAt);
     // the ground, or a floor
