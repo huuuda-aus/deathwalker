@@ -1,7 +1,15 @@
+import { view } from './view';
+
 export class Input {
   private keys = new Set<string>();
-  /** Mouse position in NDC (-1..1), y up. */
-  readonly mouse = { x: 0, y: 0 };
+  private readonly ndc = { x: 0, y: 0 };
+  private readonly flipped = { x: 0, y: 0 };
+  /** Mouse position in NDC (-1..1), y up, as the game world sees it: mirrored, the picture is flipped and so is this. */
+  get mouse(): { x: number; y: number } {
+    this.flipped.x = view.mirror ? -this.ndc.x : this.ndc.x;
+    this.flipped.y = this.ndc.y;
+    return this.flipped;
+  }
   /** Mouse position in CSS pixels. */
   readonly mousePx = { x: 0, y: 0 };
   fire = false;
@@ -28,8 +36,8 @@ export class Input {
       buttons(e);
       this.mousePx.x = e.clientX;
       this.mousePx.y = e.clientY;
-      this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-      this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      this.ndc.x = (e.clientX / window.innerWidth) * 2 - 1;
+      this.ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
     });
     target.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -51,10 +59,10 @@ export class Input {
     return (down ? 1 : 0) - (up ? 1 : 0);
   }
 
-  /** -1 = left, +1 = right */
+  /** -1 = the way the mech faces (left on the screen, or right when mirrored), +1 = the other way; the keys follow the screen */
   get move(): number {
     const l = this.keys.has('KeyA') || this.keys.has('ArrowLeft');
     const r = this.keys.has('KeyD') || this.keys.has('ArrowRight');
-    return (r ? 1 : 0) - (l ? 1 : 0);
+    return ((r ? 1 : 0) - (l ? 1 : 0)) * (view.mirror ? -1 : 1);
   }
 }

@@ -95,7 +95,7 @@ export class Bullets {
       const t = THREE.MathUtils.clamp(((c.pos.x - a.x) * seg.x + (c.pos.y - a.y) * seg.y + (c.pos.z - a.z) * seg.z) / (len * len), 0, 1);
       hitAt.copy(a).addScaledVector(seg, t);
       if (hitAt.distanceTo(c.pos) < c.r + BULLET_R) {
-        fx.sparks(hitAt, 3, 2.5, [0xffa040, 0xffffff]);
+        fx.sparks(hitAt, 8, 3, [0xffa040, 0xffffff]);
         sfx.impact('metal', hitAt);
         onPlayerHit();
         return true;
@@ -111,7 +111,7 @@ export class Bullets {
   }
 
   private impact(at: THREE.Vector3): boolean {
-    this.deps.fx.sparks(at, 3, 2.5, SPARKS);
+    this.deps.fx.sparks(at, 7, 3, SPARKS);
     return true;
   }
 

@@ -27,6 +27,7 @@ import { audio } from './audio';
 import { sfx } from './sfx';
 import { SoundTest } from './soundTest';
 import { MusicToggle } from './musicToggle';
+import { TrackChooser, MENU_TRACKS, savedTrack } from './trackChooser';
 import { Lightning } from './lightning';
 import { Foreground } from './foreground';
 import { Hud, type Player } from './hud';
@@ -49,6 +50,10 @@ const MENU_AMBIENCE = 0.2;
 
 /** seconds between clearing the level and the level complete screen coming up */
 const WIN_DELAY = 3;
+/** how far the picture is thrown by a full-strength footfall of the mech (world units) */
+const FOOTFALL_SHAKE = 0.02;
+/** the colours of the dirt a footfall throws up (the ground texture's, a touch lifted: these specks are unlit) */
+const GROUND_CLODS = [0x3e3c3a, 0x333432, 0x4a4947, 0x2a2927];
 
 /** the lights' usual strength, which the lightning adds to; the flash's colour (the moonlight's is the sun's own) */
 const HEMI_BASE = 0.75;
@@ -100,6 +105,7 @@ export class Game {
 
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
   private readonly boltShake = new THREE.Vector3();
+  private readonly footDust = new THREE.Vector3();
   private readonly boltDir = new THREE.Vector3();
   private readonly muzzlePos = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly ejectAt = new THREE.Vector3();
@@ -173,6 +179,15 @@ export class Game {
     this.debris.setColliders(this.mech.colliders);
     this.debris.ground = (x, z) => this.world.groundHeight(x, z);
     this.mech.root.position.x = START_MECH_X;
+    // each heavy footfall bursts the ground from under the foot: clods of dirt in the ground's colour, a puff of dust, a faint jolt
+    // (a puddle is splashed instead)
+    this.mech.onStep = (at, strength) => {
+      this.shakeScreen(at, (FOOTFALL_SHAKE * strength) / 2);
+      if (this.world.puddleDepth(at.x, at.z) > 0.2) return;
+      this.footDust.set(at.x, this.mech.root.position.y + 0.03, at.z);
+      this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, GROUND_CLODS, true, 1.5);
+      this.dust.puff(this.footDust, 1, 0.3 * strength, 1.2);
+    };
     scene.add(this.mech.root);
 
     this.input = new Input(renderer.domElement);
@@ -225,10 +240,12 @@ export class Game {
     this.placeCamera();
     // sound: the samples load behind the menu, and the browser wants a click or key press before it will play any
     void audio.load();
-    audio.playMusic(this.pickMenuTrack());
+    const track = this.pickMenuTrack();
+    audio.playMusic(track);
     audio.setVolume('ambience', MENU_AMBIENCE);
     new SoundTest(audio);
     new MusicToggle();
+    new TrackChooser(track);
     // until the browser lets sound start (a first click or key press) the menu says so
     const showLock = (): void => { document.body.classList.toggle('audio-locked', audio.ctx.state !== 'running'); };
     audio.ctx.addEventListener('statechange', showLock);
@@ -242,7 +259,7 @@ export class Game {
     new PauseMenu({
       canPause: () => this.mode === 'play' && !this.player.over && !this.winShown,
       onPause: () => { this.paused = true; this.input.clear(); audio.suspend(); },
-      onResume: () => { this.paused = false; this.last = performance.now(); audio.resume(); },
+      onResume: () => { this.paused = false; this.input.clear(); this.last = performance.now(); audio.resume(); },
       // the world (buildings, rubble) has no way to be put back, so a fresh page is the clean way to a new game
       onQuit: () => location.reload(),
     });
@@ -256,8 +273,8 @@ export class Game {
     });
   }
 
-  /** one of the main menu's two soundtracks, picked at random each time the page loads */
-  private pickMenuTrack(): string { return Math.random() < 0.5 ? 'menu' : 'menu2'; }
+  /** the main menu's soundtrack: the one the player chose last time, else one of them at random */
+  private pickMenuTrack(): string { return savedTrack() ?? MENU_TRACKS[Math.floor(Math.random() * MENU_TRACKS.length)]; }
 
   start(): void {
     if (import.meta.env.DEV) Object.assign(window, { __game: this });     // dev: poke at it from the console

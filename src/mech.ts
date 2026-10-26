@@ -20,20 +20,27 @@ export const LANE = { zMin: -3.5, zMax: 4.5 };
 const MIN_AIM_DX = 1.0 * MECH_SCALE;
 
 // Digitigrade legs with a backward-pointing knee, solved with two-bone IK so feet plant on the ground.
-const L1 = 1.2;            // thigh
-const L2 = 1.3;            // shin
-const STEP = 0.75;         // half stride: foot travels +-STEP about the hip
-const LIFT = 0.45;         // swing foot lift
-const STANCE = 0.55;       // fraction of the gait cycle with the foot on the ground
+// A heavy walker: long, slow strides (a low step rate), a low foot lift, and most of the cycle spent with the foot planted.
+const L1 = 1.25;           // thigh
+const L2 = 1.35;           // shin
+const STEP = 1.5;          // half stride: foot travels +-STEP about the hip
+const LIFT = 0.6;          // swing foot lift
+const STANCE = 0.6;        // fraction of the gait cycle with the foot on the ground
 const STRIDE = (2 * STEP) / STANCE; // body travel per gait cycle (model units)
-const PELVIS_Y = 2.1;
+const PELVIS_Y = 2.4;
 const HIP_DROP = 0.2;      // hip joint below pelvis origin
 const ANKLE_H = 0.2;       // ankle height above ground when planted
-const LEG_Z = 1.0;
+const LEG_Z = 1.15;
+/** the body's give when a foot lands: the impulse it is knocked down with, and the spring that brings it back (stiffness, damping) */
+const SETTLE_KICK = 1.6;
+const SETTLE_K = 150;
+const SETTLE_C = 11;
 /** the lower half turns toward the walking direction: how fast it eases (1/s), its top speed (rad/s), and the speed below which it stops following */
 const TURN_EASE = 9;
 const TURN_RATE = 7;
 const TURN_MIN_SPEED = 0.3;
+/** how fast the cockpit follows the aim (1/s): about a 40 ms lag */
+const AIM_EASE = 25;
 /** standing still this long, it turns back to face left */
 const IDLE_RETURN_DELAY = 0.5;
 
@@ -59,7 +66,7 @@ function cyl(r: number, len: number, mat: THREE.Material, axis: 'x' | 'y' | 'z',
 interface Flame { root: THREE.Group; planes: THREE.Mesh[]; glow: THREE.Sprite; light: THREE.PointLight }
 
 /** Collider radii in world units (the model is scaled by MECH_SCALE). */
-const R_ANKLE = 0.22, R_TOE = 0.22, R_KNEE = 0.2, R_BODY = 0.5;
+const R_ANKLE = 0.3, R_TOE = 0.3, R_KNEE = 0.26, R_BODY = 0.55;
 
 interface Leg {
   hip: THREE.Group;
@@ -88,6 +95,8 @@ export class Mech {
   readonly colliders: Collider[] = [];
   /** set by the game: guns are firing this frame (drives the muzzle fire) */
   firing = false;
+  /** set by the game: a foot has come down; called for the toe and the heel with the world position under each and the strength 0..1 (dust, a small jolt) */
+  onStep: ((at: THREE.Vector3, strength: number) => void) | null = null;
   private flames: Flame[] = [];
   /** the cockpit pod with its guns (it turns to face the reticle) */
   get cockpitModel(): THREE.Object3D { return this.cockpit; }
@@ -104,6 +113,13 @@ export class Mech {
   private legs: Leg[] = [];
   /** gait cycles completed (fractional) */
   private cycle = 0;
+  /** how far the body has been pushed down by a footfall (model units), and how fast it is moving */
+  private settle = 0;
+  /** where the cockpit is actually pointing: it eases toward the aim so a jump in the aim point (the reticle crossing from a near building to a far one) turns it fast but smoothly */
+  private aimYaw = 0;
+  private aimPitch = 0;
+  private aimReady = false;
+  private settleV = 0;
 
   constructor() {
     this.root.scale.setScalar(MECH_SCALE);
@@ -112,8 +128,9 @@ export class Mech {
 
     // pelvis: wide hip frame
     this.pelvis.add(this.lower);
-    this.lower.add(box(1.7, 0.5, 1.9, DARK));
-    this.lower.add(box(1.0, 0.35, 1.2, METAL, 0, -0.3, 0));
+    this.lower.add(box(1.9, 0.6, 2.9, DARK));
+    this.lower.add(box(1.3, 0.4, 1.8, METAL, 0, -0.4, 0));
+    this.lower.add(box(2.1, 0.22, 2.3, METAL, 0, 0.32, 0));       // belly plate under the cockpit
 
     for (const [z, offset] of [[LEG_Z, 0], [-LEG_Z, 0.5]] as const) this.legs.push(this.buildLeg(z, offset));
     for (const r of [R_ANKLE, R_TOE, R_KNEE, R_ANKLE, R_TOE, R_KNEE, R_BODY]) {
@@ -205,33 +222,38 @@ export class Mech {
   }
 
   /**
-   * A stout leg in the style of the original: a bulky thigh and a long shin on cylindrical joint pins (hip, knee,
-   * ankle), with the knee pointing backward, ending in a flat robot foot.
+   * A stout leg: a massive armoured thigh and a thick shin on big cylindrical joint pins (hip, knee, ankle), with the
+   * knee pointing backward, ending in a broad flat foot. Heavy plates, paired hydraulics and a wide stance carry the weight.
    */
   private buildLeg(z: number, offset: number): Leg {
     const hip = new THREE.Group();
     hip.position.set(0, -HIP_DROP, z);
-    hip.add(cyl(0.3, 0.8, DARK, 'z'));                                  // hip joint
-    hip.add(box(0.55, L1, 0.55, METAL, 0, -L1 / 2, 0));                 // thigh
-    hip.add(box(0.2, L1 * 0.7, 0.62, DARK, -0.3, -L1 * 0.5, 0));        // front armour plate
-    hip.add(cyl(0.07, L1 * 0.75, METAL, 'y', 0.33, -L1 * 0.45, 0.34)); // hydraulic piston
+    hip.add(cyl(0.45, 1.15, DARK, 'z'));                                // hip joint
+    hip.add(box(1.1, 0.7, 1.0, DARK, 0, 0.1, 0));                       // hip housing
+    hip.add(box(0.85, L1, 0.8, METAL, 0, -L1 / 2, 0));                  // thigh
+    hip.add(box(1.0, 0.5, 0.9, METAL, 0, -0.35, 0));                    // upper thigh armour
+    hip.add(box(0.25, L1 * 0.75, 0.88, DARK, -0.54, -L1 * 0.5, 0));     // front armour plate
+    for (const dz of [-0.3, 0.3]) hip.add(cyl(0.09, L1 * 0.8, METAL, 'y', 0.5, -L1 * 0.45, dz)); // hydraulic pistons
 
     const knee = new THREE.Group();
     knee.position.y = -L1;
-    knee.add(cyl(0.27, 0.78, DARK, 'z'));                               // knee joint, points backward
-    knee.add(box(0.42, L2, 0.46, METAL, 0, -L2 / 2, 0));                // shin
-    knee.add(box(0.16, L2 * 0.6, 0.52, DARK, 0.26, -L2 * 0.45, 0));     // rear armour plate
+    knee.add(cyl(0.4, 1.0, DARK, 'z'));                                 // knee joint, points backward
+    knee.add(box(0.5, 0.55, 0.9, DARK, 0.4, 0.02, 0));                  // knee guard
+    knee.add(box(0.7, L2, 0.72, METAL, 0, -L2 / 2, 0));                 // shin
+    knee.add(box(0.85, 0.55, 0.8, METAL, 0, -0.45, 0));                 // calf armour
+    knee.add(box(0.22, L2 * 0.65, 0.78, DARK, 0.46, -L2 * 0.5, 0));     // rear armour plate
+    knee.add(box(0.2, L2 * 0.5, 0.76, DARK, -0.43, -L2 * 0.4, 0));      // shin guard
     hip.add(knee);
 
     const foot = new THREE.Group();
     foot.position.y = -L2;
-    foot.add(cyl(0.22, 0.7, DARK, 'z'));                                // ankle joint
-    foot.add(box(0.55, 0.28, 0.6, DARK, 0.02, -0.04, 0));               // ankle housing
-    foot.add(box(1.3, 0.2, 0.66, METAL, -0.22, -0.1, 0));               // flat sole plate
-    const toeCap = box(0.4, 0.14, 0.66, DARK, -0.82, -0.12, 0);         // upturned toe
+    foot.add(cyl(0.3, 0.95, DARK, 'z'));                                // ankle joint
+    foot.add(box(0.85, 0.42, 0.9, DARK, 0.02, -0.02, 0));               // ankle housing
+    foot.add(box(1.9, 0.26, 1.05, METAL, -0.3, -0.07, 0));              // broad sole plate
+    const toeCap = box(0.55, 0.2, 1.05, DARK, -1.3, -0.1, 0);           // upturned toe
     toeCap.rotation.z = 0.3;
     foot.add(toeCap);
-    foot.add(box(0.3, 0.16, 0.7, DARK, 0.46, -0.1, 0));                 // heel block
+    foot.add(box(0.45, 0.22, 1.1, DARK, 0.68, -0.09, 0));               // heel block
     knee.add(foot);
 
     this.lower.add(hip);
@@ -288,8 +310,12 @@ export class Mech {
     const swing = ((1 - STANCE) * dt) / Math.max(1e-4, Math.abs(dCycle));
     const amp = Math.min(1, speed / MECH_SCALE / 1.5);
 
-    const bob = Math.abs(Math.sin(this.cycle * Math.PI * 2)) * 0.06 * amp;
-    this.pelvis.position.y = PELVIS_Y - bob;
+    // the body rides lower and sways deeper than a light machine would, and gives a little each time a foot lands
+    const bob = Math.abs(Math.sin(this.cycle * Math.PI * 2)) * 0.09 * amp;
+    const h = Math.min(dt, 1 / 30);
+    this.settleV += (-SETTLE_K * this.settle - SETTLE_C * this.settleV) * h;
+    this.settle += this.settleV * h;
+    this.pelvis.position.y = PELVIS_Y - bob + this.settle;
     const hipHeight = this.pelvis.position.y - HIP_DROP - ANKLE_H;
 
     for (const leg of this.legs) {
@@ -299,7 +325,15 @@ export class Mech {
       // the foot leaves the ground as the stance ends (forward) or as the cycle comes back round to 0 (reverse): servos whine, then it plants
       const lifted = u > leg.prevU ? Math.floor(u - STANCE) > Math.floor(leg.prevU - STANCE) : Math.floor(u) < Math.floor(leg.prevU);
       if (lifted && amp > 0.15) sfx.servoBurst(this.root.position.x, amp, swing);
-      if (planted && amp > 0.15) sfx.step(this.root.position.x, amp);
+      if (planted && amp > 0.15) {
+        sfx.step(this.root.position.x, amp);
+        this.settleV -= SETTLE_KICK * amp;
+        if (this.onStep) {
+          // under the toe and under the heel
+          this.root.updateMatrixWorld(true);
+          for (const x of [-1.0, 0.6]) this.onStep(leg.foot.localToWorld(this.tmpV.set(x, -ANKLE_H, 0)), amp);
+        }
+      }
       leg.prevU = u;
       const p = (((u % 1) + 1) % 1);
       let fx: number, lift: number;
@@ -325,7 +359,11 @@ export class Mech {
     this.canFire = -dx >= MIN_AIM_DX;
     const yaw = THREE.MathUtils.clamp(Math.atan2(dz, -dx), -Math.PI / 2, Math.PI / 2);
     const pitch = -Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1));
-    this.cockpit.rotation.set(0, yaw, pitch, 'YZX');
+    if (!this.aimReady) { this.aimYaw = yaw; this.aimPitch = pitch; this.aimReady = true; }
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * AIM_EASE);
+    this.aimYaw += (yaw - this.aimYaw) * k;
+    this.aimPitch += (pitch - this.aimPitch) * k;
+    this.cockpit.rotation.set(0, this.aimYaw, this.aimPitch, 'YZX');
 
     this.updateColliders(dt);
     this.updateFlames();
@@ -345,7 +383,7 @@ export class Mech {
     };
     for (const leg of this.legs) {
       put(leg.foot.getWorldPosition(p));
-      put(leg.foot.localToWorld(p.set(-0.5, -0.1, 0)));
+      put(leg.foot.localToWorld(p.set(-0.7, -0.1, 0)));
       put(leg.knee.getWorldPosition(p));
     }
     put(this.pelvis.getWorldPosition(p));

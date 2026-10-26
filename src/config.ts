@@ -1,9 +1,9 @@
 /** Gameplay tuning in one place. Geometry/visual constants stay next to the code that draws them. */
 
 export const PLAYER = {
-  /** nimble enough to dodge grenades */
-  walkSpeed: 4.5,
-  walkAccel: 14,
+  /** a heavy machine: a slow, ponderous walk (two footfalls a second at full pace), but it can still step out of a bullet's way; aiming and firing are not slowed */
+  walkSpeed: 2.5,
+  walkAccel: 10,
   /** rubble underfoot: speed multiplier = 1 - slowPerBulk * density, never below slowMin */
   rubbleSlowPerBulk: 0.07,
   rubbleSlowMin: 0.4,
@@ -61,10 +61,10 @@ export const STOMP = {
 /** soldier fire against the mech: real bullets that fly, miss and can be dodged */
 export const ENEMY_FIRE = {
   /**
-   * world units / s. About what a cannon shell moves at: it covers a typical 12-unit shot in roughly two
-   * seconds, plenty of time for a nimble mech (4.5 units/s) to step out of the way.
+   * world units / s. A typical 12-unit shot takes about three seconds: time for the heavy mech (2.5 units/s) to
+   * lumber out of the way.
    */
-  bulletSpeed: 6,
+  bulletSpeed: 4,
   /** each shot is aimed at the mech's chest as it is right then (no allowance for movement), off by up to this far... */
   spreadBase: 0.4,
   /** ...plus this much per unit of distance to the mech */
@@ -449,7 +449,7 @@ export const GUNNER = {
   firstDelay: 0.6,
   /** his aim: the share of an ordinary soldier's miss (1 = as bad), and how fast his bullets fly (units/s; a rifleman's is `ENEMY_FIRE.bulletSpeed`) */
   precision: 0.45,
-  bulletSpeed: 9,
+  bulletSpeed: 6.5,
   /** no line of fire for this long (s) and he packs up and finds another spot */
   noSightLimit: 1.2,
 } as const;

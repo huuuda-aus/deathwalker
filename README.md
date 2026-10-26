@@ -19,7 +19,11 @@ Needs a browser with WebGL2.
 
 ## Main menu
 
-The game opens on a main menu over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. **Start game** begins the level; **Enter level code**, **Hall of fame** and **Credits** are placeholders for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
+The game opens on a main menu over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. The corner has a stack of named soundtrack buttons (or the keys 1, 2, 3; the last choice is remembered) with the music on/off switch (M) under them. **Start game** begins the level; **Enter level code**, **Hall of fame** shows the best runs, **Settings** is described below, and **Credits** is a placeholder for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
+
+## Settings
+
+**Settings** (main menu) holds the scroll direction, remembered between visits. *Right to left* is the classic way: the mech faces left and the level scrolls to the left. *Left to right* mirrors the whole picture: the mech faces right, the level scrolls to the right, and the gauges move to the top left corner, and the mouse, the A/D keys and the stereo pan are flipped to match (`src/view.ts`; the game itself always runs the classic way).
 
 ## Controls
 

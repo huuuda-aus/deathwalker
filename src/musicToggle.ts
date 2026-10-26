@@ -27,5 +27,6 @@ export class MusicToggle {
     this.btn.innerHTML = this.on ? ICON_ON : ICON_OFF;
     this.btn.title = this.on ? 'Music on (M)' : 'Music off (M)';
     this.btn.setAttribute('aria-pressed', String(this.on));
+    document.getElementById('music-box')?.classList.toggle('off', !this.on);
   }
 }
