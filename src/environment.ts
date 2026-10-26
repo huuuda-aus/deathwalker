@@ -16,6 +16,12 @@ export interface EnvDef {
   haze: { color: [number, number, number]; density: number };
   /** what the ground colour is multiplied by (linear): the ground texture is dark, a bright scene lifts it */
   ground: [number, number, number];
+  /** the day sky: its colour overhead and half way down, and where the sun hangs in it (a direction from the camera; the light itself comes from `sun.offset`) */
+  sky: { zenith: [number, number, number]; mid: [number, number, number]; sun: [number, number, number] };
+  /** how much the air shimmers over the far ground (0 = not at all) */
+  shimmer: number;
+  /** the colour of the dust a blast or a footfall throws up */
+  dust: number;
 }
 
 export const ENVIRONMENTS: Record<string, EnvDef> = {
@@ -29,17 +35,23 @@ export const ENVIRONMENTS: Record<string, EnvDef> = {
     rain: 1,
     haze: { color: [0.02, 0.027, 0.042], density: 1 },
     ground: [1, 1, 1],
+    sky: { zenith: [0, 0, 0], mid: [0, 0, 0], sun: [0, 1, 0] },
+    shimmer: 0,
+    dust: 0x4f5c66,
   },
-  /** a harsh white day in the desert: dry, bright, dusty */
+  /** the desert at sunset: a low red sun behind the mech (the right of the screen), long shadows pointing the way it faces, dust-reddened air */
   dunes: {
-    fog: { color: 0xcdb892, near: 60, far: 240 },
-    hemi: { sky: 0xa9c4ff, ground: 0xa07c4a, intensity: 0.8 },
-    sun: { color: 0xfff1d6, intensity: 3.1, offset: [-30, 16, 10] },
+    fog: { color: 0xdc9468, near: 80, far: 340 },
+    hemi: { sky: 0x8480b8, ground: 0xa87a52, intensity: 0.8 },
+    sun: { color: 0xffa866, intensity: 3.0, offset: [34, 6, 4] },
     rim: { color: 0xffffff, intensity: 0 },
     day: 1,
     rain: 0,
-    haze: { color: [0.5, 0.42, 0.3], density: 0.22 },
-    ground: [1, 1, 1],
+    haze: { color: [0.55, 0.28, 0.14], density: 0.3 },
+    ground: [1, 0.93, 0.82],
+    sky: { zenith: [0.08, 0.12, 0.34], mid: [0.52, 0.33, 0.42], sun: [0.3, 0.11, -0.95] },
+    shimmer: 1,
+    dust: 0xc78a58,
   },
 };
 
@@ -52,6 +64,9 @@ interface State {
   day: number; rain: number;
   hazeColor: THREE.Color; hazeDensity: number;
   groundTint: THREE.Color;
+  skyZenith: THREE.Color; skyMid: THREE.Color; skySun: THREE.Vector3;
+  shimmer: number;
+  dustColor: THREE.Color;
 }
 
 const stateOf = (d: EnvDef): State => ({
@@ -62,6 +77,9 @@ const stateOf = (d: EnvDef): State => ({
   day: d.day, rain: d.rain,
   hazeColor: new THREE.Color(...d.haze.color), hazeDensity: d.haze.density,
   groundTint: new THREE.Color(...d.ground),
+  skyZenith: new THREE.Color(...d.sky.zenith), skyMid: new THREE.Color(...d.sky.mid), skySun: new THREE.Vector3(...d.sky.sun),
+  shimmer: d.shimmer,
+  dustColor: new THREE.Color(d.dust),
 });
 
 const mix = (a: number, b: number, k: number): number => a + (b - a) * k;
@@ -74,6 +92,9 @@ function blend(out: State, a: State, b: State, k: number): void {
   out.day = mix(a.day, b.day, k); out.rain = mix(a.rain, b.rain, k);
   out.hazeColor.lerpColors(a.hazeColor, b.hazeColor, k); out.hazeDensity = mix(a.hazeDensity, b.hazeDensity, k);
   out.groundTint.lerpColors(a.groundTint, b.groundTint, k);
+  out.skyZenith.lerpColors(a.skyZenith, b.skyZenith, k); out.skyMid.lerpColors(a.skyMid, b.skyMid, k); out.skySun.lerpVectors(a.skySun, b.skySun, k);
+  out.shimmer = mix(a.shimmer, b.shimmer, k);
+  out.dustColor.lerpColors(a.dustColor, b.dustColor, k);
 }
 
 /**

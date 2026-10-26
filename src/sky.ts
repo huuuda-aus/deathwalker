@@ -29,6 +29,9 @@ export class Sky {
         uBolt: { value: new THREE.Vector3(0, 1, 0) },
         uDay: { value: 0 },
         uSun: { value: new THREE.Vector3(0, 1, 0) },
+        uZenith: { value: new THREE.Color() },
+        uMid: { value: new THREE.Color() },
+        uSunCol: { value: new THREE.Color() },
       },
       vertexShader: /* glsl */ `
         varying vec2 vNdc;
@@ -47,6 +50,7 @@ export class Sky {
         uniform vec3 uBolt;       // the direction of the lightning
         uniform float uDay;       // 0 = the night sky, 1 = a day sky
         uniform vec3 uSun;        // the direction of the sun
+        uniform vec3 uZenith, uMid, uSunCol;   // the day sky overhead and half way down, and the colour of the sun
 
         float hash(vec2 p) {
           p = fract(p * vec2(123.34, 456.21));
@@ -74,19 +78,19 @@ export class Sky {
           return step(0.9965, h) * smoothstep(0.35, 0.0, length(f)) * tw * (0.4 + 0.6 * fract(h * 91.7));
         }
 
-        // a hot desert day: a dusty pale horizon, a deep blue overhead, thin high streaks of cloud and a blazing sun
+        // a desert evening: the haze at the horizon, dusty rose half way up, deep blue overhead, a few high streaks of cloud
+        // lit by the sun, and a wide red-gold glow round a sun that is low and large
         vec3 daySky(vec3 dir, float e) {
-          vec3 horizon = uFog * 1.15;                                       // meets the distance haze
-          vec3 mid = vec3(0.62, 0.74, 0.95);
-          vec3 zenith = vec3(0.16, 0.34, 0.72);
-          vec3 sky = mix(horizon, mid, smoothstep(0.0, 0.22, e));
-          sky = mix(sky, zenith, smoothstep(0.15, 0.9, e));
-          vec2 uv = dir.xz / max(e, 0.08) * vec2(0.25, 0.9) + vec2(uCamX * 0.0006 + uTime * 0.004, 0.0);
-          float streak = smoothstep(0.5, 0.85, fbm(uv * 2.0)) * smoothstep(0.04, 0.3, e) * 0.35;
-          sky = mix(sky, vec3(1.0, 0.97, 0.92), streak);
+          vec3 horizon = uFog * 1.1;                                       // meets the distance haze
+          vec3 sky = mix(horizon, uMid, smoothstep(0.0, 0.2, e));
+          sky = mix(sky, uZenith, smoothstep(0.12, 0.85, e));
           float s = max(dot(dir, uSun), 0.0);
-          sky += vec3(1.0, 0.85, 0.6) * (pow(s, 5.0) * 0.18 + pow(s, 60.0) * 0.5);     // the glare round it
-          sky += vec3(1.0, 0.95, 0.85) * smoothstep(0.9993, 0.9998, s) * 9.0;            // the disc, bright enough to bloom
+          float low = 1.0 - smoothstep(0.0, 0.55, e);
+          vec2 uv = dir.xz / max(e, 0.08) * vec2(0.25, 0.9) + vec2(uCamX * 0.0006 + uTime * 0.004, 0.0);
+          float streak = smoothstep(0.5, 0.85, fbm(uv * 2.0)) * smoothstep(0.04, 0.3, e) * 0.4;
+          sky = mix(sky, uSunCol * (0.55 + 0.9 * pow(s, 2.0)), streak);
+          sky += uSunCol * (pow(s, 3.0) * 0.32 * low + pow(s, 28.0) * 0.8 + pow(s, 300.0) * 1.2);
+          sky += uSunCol * vec3(1.0, 0.9, 0.7) * smoothstep(0.9988, 0.9995, s) * 10.0;       // the disc, bright enough to bloom
           return sky;
         }
 
@@ -153,12 +157,13 @@ export class Sky {
     this.mat.uniforms.uBolt.value.copy(toward).normalize();
   }
 
-  /** the look of the sky: how much of it is day (0..1), the direction of the sun (from the camera), and the colour of the horizon haze */
-  setLook(day: number, sunDir: THREE.Vector3, fog: THREE.Color): void {
+  /** the look of the sky: how much of it is day (0..1), the direction of the sun (from the camera), the colour of the horizon haze, the sky overhead and half way down, and the sun's colour */
+  setLook(day: number, sunDir: THREE.Vector3, fog: THREE.Color, zenith: THREE.Color, mid: THREE.Color, sunColor: THREE.Color): void {
     const u = this.mat.uniforms;
     u.uDay.value = day;
     u.uSun.value.copy(sunDir).normalize();
     u.uFog.value.copy(fog);
+    u.uZenith.value.copy(zenith); u.uMid.value.copy(mid); u.uSunCol.value.copy(sunColor);
   }
 
   update(camera: THREE.PerspectiveCamera, seconds: number): void {

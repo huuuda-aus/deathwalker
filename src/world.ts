@@ -13,10 +13,16 @@ import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
 import { mulberry32 } from './util';
 import type { WorldStyle } from './levelData';
-import { terrain, terrainHeight, applyTerrain } from './terrain';
+import { terrain, terrainHeight, applyTerrain, type Road } from './terrain';
+import { roadside, type Scenery, type SceneryEnv } from './scenery';
+import { Wreckage } from './wreckage';
+import { farDunes } from './farDunes';
 
 /** height of a soldier's gun above the floor he stands on (world units), for line-of-fire checks from a bay */
 const SHOOTER_CHEST = 0.25;
+
+/** what the world keeps of one chunk of its length: the group of things in it and the lists the game works through */
+interface Chunk { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[]; scenery: Scenery[] }
 
 /** Distance haze: the ground and near rows fade to near-black, not green. */
 export const FOG_COLOR = 0x030d0b;
@@ -29,43 +35,6 @@ const FAR_ROWS: [z: number, scale: number, color: number, dense: boolean][] = [
   [-140, 4.5, 0x010204, true],
 ];
 
-/** the desert's dune ranks, nearest first: depth (z), height, wavelength and a phase */
-const DUNE_ROWS: [z: number, amp: number, wave: number, phase: number][] = [
-  [-24, 1.5, 31, 0.4],
-  [-40, 2.8, 46, 1.9],
-  [-62, 4.4, 64, 3.1],
-  [-92, 6.5, 88, 0.8],
-  [-135, 9, 120, 2.4],
-];
-const DUNE_TOP = new THREE.Color(0xe8c48a);
-const DUNE_BASE = new THREE.Color(0x8a6238);
-
-/** a dune's height at x: lopsided crests (a long gentle slope and a steeper far side), never the same twice, continuous across chunks */
-const duneHeight = (x: number, amp: number, wave: number, phase: number): number => {
-  const a = (x / wave) * Math.PI * 2 + phase;
-  return amp * (0.55 + 0.3 * Math.sin(a + 0.5 * Math.sin(a)) + 0.15 * Math.sin(a * 2.3 + phase * 3));
-};
-
-/** one rank of dunes across a chunk: a ribbon with a light crest and a darker foot */
-function duneRidge(x0: number, width: number, z: number, amp: number, wave: number, phase: number): THREE.Mesh {
-  const N = 80;
-  const pos = new Float32Array((N + 1) * 6), col = new Float32Array((N + 1) * 6);
-  const idx: number[] = [];
-  for (let i = 0; i <= N; i++) {
-    const x = x0 + (width * i) / N;
-    pos.set([x, duneHeight(x, amp, wave, phase), z, x, -1, z], i * 6);
-    col.set([DUNE_TOP.r, DUNE_TOP.g, DUNE_TOP.b, DUNE_BASE.r, DUNE_BASE.g, DUNE_BASE.b], i * 6);
-    if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(idx);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-  mesh.frustumCulled = false;
-  return mesh;
-}
-
 /**
  * Procedural city in four rows, generated in chunks around the camera:
  *  1. front row (z -5): destructible ruins that host enemies,
@@ -77,7 +46,7 @@ export class World {
   readonly group = new THREE.Group();
   private chunkSize = 120;
   private centerChunk = NaN;
-  private chunks = new Map<number, { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] }>();
+  private chunks = new Map<number, Chunk>();
   private fireLights: FireLights;
   /** hot coals from shot barrels */
   readonly coals: Coals;
@@ -94,11 +63,21 @@ export class World {
   private fireSpot = new THREE.Vector3();
 
   private readonly groundMaterial: THREE.MeshStandardMaterial;
+  /** the parts of broken roadside props, flying and settling */
+  private readonly wreck: Wreckage;
+  private readonly sceneryEnv: SceneryEnv;
+  /** the roadside prop hit by the last raycastScenery() */
+  hitScenery: Scenery | null = null;
+  /** the far dunes' surface: lit like the rest, coloured by vertex */
+  private readonly farDuneMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
   /** @param style what the world is made of: the ruined city, or open desert (no buildings: far dunes on the horizon) */
-  constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust, private readonly style: WorldStyle = 'city') {
+  constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust, private readonly style: WorldStyle = 'city', road: Road | null = null) {
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
     terrain.on = style === 'desert';
+    terrain.road = style === 'desert' ? road : null;
+    this.wreck = new Wreckage(scene);
+    this.sceneryEnv = { wreck: this.wreck, dust, fx: () => this.fx! };
 
     // textured ground: dirt, rubble and debris, with a normal map from the same height field
     const tex = makeGroundTextures(7, style === 'desert' ? 'sand' : 'ruins');
@@ -117,6 +96,8 @@ export class World {
     this.craters = new Craters(scene, tex);     // not in `group`: its meshes follow the camera
     this.craters.cutHoles(groundMaterial);
     if (terrain.on) applyTerrain(groundMaterial);
+    groundMaterial.userData.shared = true;
+    this.farDuneMaterial.userData.shared = true;
 
     this.fireLights = new FireLights(scene, 3);
     this.coals = new Coals(scene);
@@ -140,16 +121,28 @@ export class World {
     return mesh;
   }
 
-  /** The desert: no buildings, only ranks of dunes on the horizon, each fainter in the haze than the one before. */
-  private buildDesertChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
+  /** The desert: no buildings, the ground, and the dune sea behind it that runs out to the haze. */
+  private buildDesertChunk(index: number): Chunk {
     const g = new THREE.Group();
     const x0 = index * this.chunkSize;
     g.add(this.groundChunk(x0));
-    DUNE_ROWS.forEach(([z, amp, wave, phase], row) => g.add(duneRidge(x0, this.chunkSize, z, amp, wave, phase + row * 1.7)));
-    return { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [] };
+    g.add(farDunes(x0, this.chunkSize, this.farDuneMaterial));
+    const chunk: Chunk = { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [], scenery: [] };
+    const r = terrain.road;
+    if (r) {
+      // the military roadside to the bunker door
+      const side = roadside(x0, x0 + this.chunkSize, { doorX: r.doorX, zc: r.zc, halfWidth: r.halfWidth, reach: r.to - 6 }, this.sceneryEnv);
+      for (const s of side.scenery) { g.add(s.group); chunk.scenery.push(s); }
+      for (const p of side.drums) {
+        const barrel = new ExplosiveBarrel(p.setY(terrainHeight(p.x, p.z)), null);
+        g.add(barrel.group);
+        chunk.explosives.push(barrel);
+      }
+    }
+    return chunk;
   }
 
-  private buildChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
+  private buildChunk(index: number): Chunk {
     if (this.style === 'desert') return this.buildDesertChunk(index);
     const rng = mulberry32(index * 7919 + 13);
     const g = new THREE.Group();
@@ -212,7 +205,7 @@ export class World {
         explosives.push(barrel);
       }
     }
-    return { group: g, buildings, props, barrels, explosives, puddles: water.list };
+    return { group: g, buildings, props, barrels, explosives, puddles: water.list, scenery: [] };
   }
 
   /** Visit every destructible building whose x-range overlaps [minX, maxX]. */
@@ -300,6 +293,41 @@ export class World {
     return best;
   }
 
+  /** Nearest roadside prop along a ray (distance t, point in out). */
+  raycastScenery(ray: THREE.Ray, out: THREE.Vector3): number {
+    let best = Infinity;
+    const p = new THREE.Vector3();
+    this.hitScenery = null;
+    for (const c of this.chunks.values()) {
+      for (const s of c.scenery) {
+        const t = s.raycast(ray, p);
+        if (t < best) { best = t; out.copy(p); this.hitScenery = s; }
+      }
+    }
+    return best;
+  }
+
+  /** A blast at `at` reaching `radius`: every roadside prop inside it takes punishment, the nearer ones more. */
+  blastScenery(at: THREE.Vector3, radius: number): void {
+    for (const c of this.chunks.values()) {
+      for (const s of c.scenery) {
+        if (s.gone) continue;
+        const d = s.distanceTo(at);
+        if (d <= radius) s.damage(120 * (1 - d / radius), at);
+      }
+    }
+  }
+
+  /** The mech walking through roadside props: whatever one of its feet or knees touches takes `dt` seconds of a heavy shove. */
+  crushScenery(colliders: { pos: THREE.Vector3; r: number }[], dt: number): void {
+    for (const c of this.chunks.values()) {
+      for (const s of c.scenery) {
+        if (s.gone) continue;
+        for (const k of colliders) if (s.distanceTo(k.pos) < k.r) { s.damage(40 * dt, k.pos); break; }
+      }
+    }
+  }
+
   /** A blast at `at` reaching `radius`: every explosive barrel inside it goes up, the nearer ones sooner. */
   igniteBarrels(at: THREE.Vector3, radius: number): void {
     const { chainDelay, chainSpread } = EXPLOSIVE_BARREL;
@@ -376,7 +404,9 @@ export class World {
         c.props.forEach((b) => b.dispose());
         c.group.traverse((o) => {
           if (o instanceof THREE.Mesh && !(o instanceof THREE.InstancedMesh)) {
-            o.geometry.dispose(); (o.material as THREE.Material).dispose();
+            o.geometry.dispose();
+            const m = o.material as THREE.Material;
+            if (!m.userData.shared) m.dispose();
           }
         });
         this.chunks.delete(i);
@@ -417,6 +447,7 @@ export class World {
       }
     }
     this.craters.update(dt);
+    this.wreck.update(dt);
     this.fireLights.update(dt, live, cameraX);
     this.coals.update(dt);
     // the city's ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world (the desert's ground

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Dust } from './dust';
+import { terrainHeight } from './terrain';
 
 const GRAVITY = 8;
 /** sliding along the ground slows a piece at this rate (1/s) */
@@ -46,8 +47,9 @@ export class Wreckage {
       obj.rotation.x += spin.x * dt;
       obj.rotation.y += spin.y * dt;
       obj.rotation.z += spin.z * dt;
-      if (obj.position.y > f.restY) continue;
-      obj.position.y = f.restY;
+      const floor = f.restY + terrainHeight(obj.position.x, obj.position.z);       // the dunes are not flat
+      if (obj.position.y > floor) continue;
+      obj.position.y = floor;
       const impact = -vel.y;
       if (impact > BOUNCE_MIN) {
         // a real bounce: it rebounds a little and loses some speed and spin

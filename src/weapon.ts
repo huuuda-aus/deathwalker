@@ -7,6 +7,7 @@ import type { Debris } from './debris';
 import type { Dust } from './dust';
 import { WEAPON } from './config';
 import { sfx } from './sfx';
+import { terrain } from './terrain';
 
 /** Everything a shot can hit or leave marks on. */
 export interface WeaponDeps {
@@ -26,6 +27,9 @@ const PUSH = new THREE.Vector3();
 const KILL_PUSH = WEAPON.killPush;
 /** wet earth, dark to light */
 const MUD = [0x3a2c1e, 0x4a3a28, 0x5c4630, 0x6b5a45];
+/** the desert's sand, light to dark */
+const SAND = [0xe5bd86, 0xd7a76a, 0xc4905a, 0xb07c48];
+const GEYSER_VEL = new THREE.Vector3();
 /** chips knocked off a wall, concrete grey */
 const CHIPS = [0x8a8f96, 0x6b7077, 0x4a4f55, 0xa8adb2];
 /** how many times the sparks of an enemy's impact are multiplied: every hit throws sparks and a spray of chips in the same colours */
@@ -130,6 +134,14 @@ export class Weapon {
       sfx.impact('metal', hit.point);
       return;
     }
+    if (hit.kind === 'prop' && hit.scenery) {
+      // a fence, a sign, a roadblock: it takes the hit (a bullet does little to concrete, but it chips)
+      fx.sparks(hit.point, 5, 3, [0xffd080, 0xffffff]);
+      fx.burst(hit.point, 5, 2.4, CHIPS, true, 0.6);
+      sfx.impact('metal', hit.point);
+      hit.scenery.damage(DAMAGE, this.dir.subVectors(hit.point, muzzle).normalize().multiplyScalar(-1).add(hit.point));
+      return;
+    }
     if (hit.kind === 'enemy' && hit.enemy) {
       const { colors, sparks, embers } = hit.enemy.impact;
       fx.sparks(hit.point, sparks * HIT_SPARKS, 2.5 + 0.4 * sparks, colors);
@@ -146,9 +158,19 @@ export class Weapon {
     }
     if (hit.kind === 'ground') {
       // a spray of mud that falls back and splatters, now and then a spark off a stone, and some dust
-      fx.burst(hit.point, 20, 3.2, MUD, true, 0.8);
-      if (Math.random() < 0.5) fx.sparks(hit.point, 5, 3.5, [0xffd080, 0xffa040, 0xffffff]);
-      if (Math.random() < 0.7) dust.puff(hit.point, 2, 0.4, 0.8);
+      if (terrain.on) {
+        // loose sand: a tall, narrow spout of grains thrown well above the mech's own height, and a plume of dust climbing with it
+        fx.geyser(hit.point, 22, SAND, 1);
+        for (let i = 0; i < 4; i++) {
+          GEYSER_VEL.set((Math.random() - 0.5) * 0.5, 3 + Math.random() * 3, (Math.random() - 0.5) * 0.4);
+          dust.billow(hit.point, GEYSER_VEL, 0.3 + Math.random() * 0.3, 1.2 + Math.random() * 0.9, 1.5, 0, 0.45);
+        }
+        if (Math.random() < 0.3) fx.sparks(hit.point, 3, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+      } else {
+        fx.burst(hit.point, 20, 3.2, MUD, true, 0.8);
+        if (Math.random() < 0.5) fx.sparks(hit.point, 5, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+        if (Math.random() < 0.7) dust.puff(hit.point, 2, 0.4, 0.8);
+      }
       sfx.impact('ground', hit.point);
       return;
     }

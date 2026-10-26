@@ -29,6 +29,12 @@ const SCENE_START: number[] = LEVEL.reduce<number[]>(
   [],
 );
 
+/** x of a bunker door at the end of the level: just inside the left edge of the view the camera ends on */
+export function endDoorX(): number {
+  const last = LEVEL.length - 1;
+  return camXAt(SCENE_START[last] + LEVEL[last].widthScreens - 1) - SCREEN_W / 2 + 4;
+}
+
 export type Phase = 'entering' | 'active' | 'cleared' | 'complete';
 export type LevelEvent = 'cleared' | 'arrived' | 'complete' | null;
 

@@ -133,16 +133,17 @@ export function parseLevel(data: unknown): SceneDef[] {
 }
 
 /** `code` is the level's password: typed at the main menu, shown on the win screen of the level before it */
-export interface LevelDef { name: string; code: string; /** what the world is made of: a ruined city, or open desert */ world: WorldStyle; scenes: SceneDef[] }
+export interface LevelDef { name: string; code: string; /** what the world is made of: a ruined city, or open desert */ world: WorldStyle; /** what the level ends at: nothing in particular, or the door of a bunker (the desert's road runs up to it) */ approach: 'none' | 'bunker'; scenes: SceneDef[] }
 
 export type WorldStyle = 'city' | 'desert';
 
 /** Every level of the game, in play order. */
 export const LEVELS: LevelDef[] = [level1, level2].map((raw, i) => {
-  const { name, code, world } = raw as { name?: unknown; code?: unknown; world?: unknown };
+  const { name, code, world, approach } = raw as { name?: unknown; code?: unknown; world?: unknown; approach?: unknown };
+  if (approach !== undefined && approach !== 'none' && approach !== 'bunker') fail(`level ${i + 1}`, `approach must be "none" or "bunker", got ${JSON.stringify(approach)}`);
   if (world !== undefined && world !== 'city' && world !== 'desert') fail(`level ${i + 1}`, `world must be "city" or "desert", got ${JSON.stringify(world)}`);
   if (typeof code !== 'string' || !/^[A-Z]{4,10}$/.test(code)) fail(`level ${i + 1}`, `code must be 4 to 10 capital letters, got ${JSON.stringify(code)}`);
-  return { name: String(name ?? `Level ${i + 1}`), code: code as string, world: (world as WorldStyle | undefined) ?? 'city', scenes: parseLevel(raw) };
+  return { name: String(name ?? `Level ${i + 1}`), code: code as string, world: (world as WorldStyle | undefined) ?? 'city', approach: (approach as 'none' | 'bunker' | undefined) ?? 'none', scenes: parseLevel(raw) };
 });
 
 /** The number (1-based) of the level a password opens, or 0 if it opens none. */

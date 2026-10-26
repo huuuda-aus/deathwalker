@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PointPool } from './pointpool';
 
-const MAX_DUST = 1200;
+const MAX_DUST = 1800;
 
 interface Puff { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; size0: number; size1: number; drag: number; alpha: number; dark: number; windK: number }
 
@@ -67,12 +67,15 @@ export class Dust {
     });
   }
 
-  /** One puff thrown with a velocity of the caller's choosing: the pieces of a mushroom cloud. @param drag how fast it slows (1/s) */
-  billow(at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number, drag: number, dark: number): void {
+  /** the colour of the dust (a desert's is sand, a city's grey) */
+  setColor(c: THREE.Color): void { (this.material.uniforms.uColor.value as THREE.Color).copy(c); }
+
+  /** One puff thrown with a velocity of the caller's choosing: the pieces of a mushroom cloud. @param drag how fast it slows (1/s) @param alpha how solid it is */
+  billow(at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number, drag: number, dark: number, alpha = 0.7): void {
     if (this.pool.full) return;
     this.pool.push({
       pos: at.clone(), vel: vel.clone(),
-      life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag, alpha: 0.7, dark, windK: 0.6,
+      life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag, alpha, dark, windK: 0.6,
     });
   }
 

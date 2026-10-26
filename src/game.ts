@@ -8,6 +8,9 @@ import { Environment } from './environment';
 import { Sky } from './sky';
 import { Wind } from './wind';
 import { Litter } from './litter';
+import { SandWind } from './sandWind';
+import { Footprints } from './footprints';
+import { terrain } from './terrain';
 import { Rain } from './rain';
 import { FootSplasher, SplashFx } from './water';
 import { Fx } from './fx';
@@ -38,7 +41,7 @@ import { Weapon } from './weapon';
 import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
-import { CAM_DIST, LEVEL, LEVELS, LEVEL_NO, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
+import { CAM_DIST, LEVEL, LEVELS, LEVEL_NO, LevelRunner, endDoorX, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
 import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING, STORM } from './config';
 import { Casings } from './casings';
 
@@ -47,8 +50,6 @@ const RES = { minRatio: 1, step: 0.25, slowMs: 20, fastMs: 17.5, raiseAfter: 10,
 
 /** seconds for the scene to fade in from black once it is first drawn */
 const FADE_IN = 1.8;
-/** where the sun hangs in the day sky (a direction from the camera: low, a little to the left, ahead); the light itself comes from the environment's `sun.offset` */
-const SKY_SUN = new THREE.Vector3(-0.28, 0.2, -0.94).normalize();
 /** seconds the light, fog and sky take to change over from one scene's environment to the next */
 const ENV_FADE = 3;
 
@@ -85,7 +86,11 @@ export class Game {
   private readonly world: World;
   private readonly sky: Sky;
   private readonly wind = new Wind();
-  private readonly litter: Litter;
+  /** the city's blown scraps of paper and leaves, or the desert's blown sand (a dust of its own, sand-coloured, and what decides where it blows) */
+  private readonly litter: Litter | null;
+  private readonly sand: Dust | null;
+  private readonly sandWind: SandWind | null;
+  private readonly footprints: Footprints;
   private readonly rain: Rain;
   private readonly splashFx: SplashFx;
   private readonly footSplasher = new FootSplasher();
@@ -117,6 +122,7 @@ export class Game {
   private readonly hazeLights = [new THREE.Vector4(), new THREE.Vector4()];
   private readonly boltShake = new THREE.Vector3();
   private readonly footDust = new THREE.Vector3();
+  private readonly stepPuff = new THREE.Vector3();
   private readonly boltDir = new THREE.Vector3();
   private readonly muzzlePos = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly ejectAt = new THREE.Vector3();
@@ -189,9 +195,19 @@ export class Game {
 
     this.dust = new Dust(scene);
     this.debris = new Debris(scene, this.dust);
-    this.world = new World(scene, this.debris, this.dust, LEVELS[LEVEL_NO - 1].world);
+    const road = LEVELS[LEVEL_NO - 1].approach === 'bunker' ? { doorX: endDoorX(), full: 24, to: 74, zc: 0.5, halfWidth: 7 } : null;
+    this.world = new World(scene, this.debris, this.dust, LEVELS[LEVEL_NO - 1].world, road);
     this.sky = new Sky(scene);
-    this.litter = new Litter(scene, this.wind);
+    const desert = LEVELS[LEVEL_NO - 1].world === 'desert';
+    this.litter = desert ? null : new Litter(scene, this.wind);
+    this.sand = desert ? new Dust(scene) : null;
+    this.sandWind = this.sand ? new SandWind(this.sand) : null;
+    this.footprints = new Footprints(scene);
+    if (desert) {
+      // a low sun throws shadows a long way along the ground: the shadow map spans less across and more along the light
+      Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 9, bottom: -9, near: 1, far: 120 });
+      sun.shadow.camera.updateProjectionMatrix();
+    }
     this.rain = new Rain(scene, this.world);
     this.splashFx = new SplashFx(scene);
     this.debris.setColliders(this.mech.colliders);
@@ -205,6 +221,21 @@ export class Game {
       this.footDust.set(at.x, this.mech.root.position.y + 0.03, at.z);
       this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, LEVELS[LEVEL_NO - 1].world === 'desert' ? SAND_CLODS : GROUND_CLODS, true, 1.5);
       this.dust.puff(this.footDust, 1, 0.3 * strength, 1.2);
+    };
+    // in the sand each step leaves a footprint and throws up a cloud of dust: a ring of low puffs rolling out from the foot, and a few that billow up
+    this.mech.onPrint = (at, yaw, strength) => {
+      if (!terrain.on) return;
+      this.footprints.add(at.x, at.z, yaw, strength);
+      this.footDust.set(at.x, at.y + 0.05, at.z);
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + Math.random() * 0.4, speed = (1.1 + Math.random() * 1.7) * (0.5 + 0.5 * strength);
+        this.stepPuff.set(Math.cos(a) * speed, 0.2 + Math.random() * 0.5, Math.sin(a) * speed * 0.6);
+        this.dust.billow(this.footDust, this.stepPuff, 0.3 + Math.random() * 0.3, 0.9 + Math.random() * 0.9, 2.4, 0, 0.42);
+      }
+      for (let i = 0; i < 5; i++) {
+        this.stepPuff.set((Math.random() - 0.5) * 0.8, 0.9 + Math.random() * 0.9, (Math.random() - 0.5) * 0.6);
+        this.dust.billow(this.footDust, this.stepPuff, 0.45 + Math.random() * 0.4, 1.6 + Math.random() * 1.2, 1.1, 0, 0.36);
+      }
     };
     scene.add(this.mech.root);
 
@@ -386,6 +417,7 @@ export class Game {
   private syncViewport(): void {
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.dust.setViewport(size.y, this.camera.fov);
+    this.sand?.setViewport(size.y, this.camera.fov);
     this.rain.setResolution(size.x, size.y);
   }
 
@@ -404,6 +436,7 @@ export class Game {
     this.shake = 0;
     this.mechDeath.clear();
     this.casings.clear();
+    this.footprints.clear();
     this.world.craters.clear();
     this.mech.root.visible = true;
     this.deathT = this.invuln = 0;
@@ -574,7 +607,7 @@ export class Game {
     else sun.position.set(camX + look.sunOffset.x, look.sunOffset.y, look.sunOffset.z);
     sun.target.position.set(camX, 0, 0);
     this.sky.setFlash(flash, this.boltDir.copy(this.lightning.boltAt).sub(this.camera.position));
-    this.sky.setLook(look.day, SKY_SUN, look.fogColor);
+    this.sky.setLook(look.day, look.skySun, look.fogColor, look.skyZenith, look.skyMid, look.sunColor);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(look.fogColor); fog.near = look.fogNear; fog.far = look.fogFar;
     rim.color.copy(look.rimColor); rim.intensity = look.rimIntensity;
@@ -588,14 +621,19 @@ export class Game {
     this.wind.update(dt);
     this.dust.windSpeed = this.wind.speed;
     this.fx.windSpeed = this.wind.speed;
-    this.litter.update(dt, camX);
+    this.litter?.update(dt, camX);
+    this.sandWind?.update(dt, camX);
+    this.dust.setColor(look.dustColor);
+    this.sand?.setColor(look.dustColor);
     this.sky.update(this.camera, now / 1000);
     // the muzzle fire lights the smoke around the barrels
     hazeLights.forEach((v, i) => v.set(muzzlePos[i].x, muzzlePos[i].y, muzzlePos[i].z, weapon.firing ? 0.35 + Math.random() * 0.5 : 0));
     post.setHazeDensityScale(look.hazeDensity * (1 + 0.1 * rain.intensity)); // a downpour thickens the air only a touch
     post.setHazeColor(look.hazeColor);
+    post.setShimmer(look.shimmer);
     post.updateHaze(now / 1000, this.wind.travelled, hazeLights);
     world.setWeather(now / 1000, rain.intensity, hazeLights);
+    this.world.crushScenery(mech.colliders, dt);
     this.footSplasher.update(dt, mech.colliders, (x, z) => world.puddleDepth(x, z), this.splashFx);
     this.splashFx.update(dt);
     rain.update(dt, camX, mech.root.position.x, mech.root.position.z, this.wind.speed, hazeLights);
@@ -646,6 +684,7 @@ export class Game {
       this.debris.cull(this.camX - reach, this.camX + reach);
     }
     this.dust.update(dt);
+    this.sand?.update(dt);
 
     this.hud.update(dt, this.mech.canFire, this.reticlePx, this.lock.target !== null);
     this.updateEnvironment(dt, now);

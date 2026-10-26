@@ -97,6 +97,8 @@ export class Mech {
   firing = false;
   /** set by the game: a foot has come down; called for the toe and the heel with the world position under each and the strength 0..1 (dust, a small jolt) */
   onStep: ((at: THREE.Vector3, strength: number) => void) | null = null;
+  /** set by the game: a foot has come down, once per step: under the middle of the sole (world), which way the foot points (0 = toe to the left), the strength 0..1 (a footprint, a cloud of dust) */
+  onPrint: ((at: THREE.Vector3, yaw: number, strength: number) => void) | null = null;
   private flames: Flame[] = [];
   /** the cockpit pod with its guns (it turns to face the reticle) */
   get cockpitModel(): THREE.Object3D { return this.cockpit; }
@@ -333,6 +335,7 @@ export class Mech {
           this.root.updateMatrixWorld(true);
           for (const x of [-1.0, 0.6]) this.onStep(leg.foot.localToWorld(this.tmpV.set(x, -ANKLE_H, 0)), amp);
         }
+        this.onPrint?.(leg.foot.localToWorld(this.tmpV.set(-0.3, -ANKLE_H, 0)), this.bodyYaw, amp);
       }
       leg.prevU = u;
       const p = (((u % 1) + 1) % 1);

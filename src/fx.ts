@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PointPool } from './pointpool';
 
-const MAX_PARTICLES = 600;
+const MAX_PARTICLES = 900;
 
 interface Particle { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; size: number }
 
@@ -129,6 +129,20 @@ export class Fx {
         pos: at.clone(),
         vel: new THREE.Vector3(Math.cos(a) * s, up * s * 0.9 + (gravity ? 1 : 0), Math.sin(a) * s * 0.6),
         life, maxLife: life, size: (0.05 + Math.random() * 0.1) * size,
+      });
+      this.mesh.setColorAt(this.particles.length - 1, this.tmpColor.setHex(colors[(Math.random() * colors.length) | 0]));
+    }
+  }
+
+  /** A tall spout of grains thrown straight up (a bullet into loose sand): fast, narrow, and slow to come down. `height` scales how high it goes. */
+  geyser(at: THREE.Vector3, count: number, colors: number[], height = 1): void {
+    for (let i = 0; i < count && this.particles.length < MAX_PARTICLES; i++) {
+      const a = Math.random() * Math.PI * 2, out = Math.random() * 0.9;
+      const life = 0.8 + Math.random() * 0.8;
+      this.particles.push({
+        pos: at.clone(),
+        vel: new THREE.Vector3(Math.cos(a) * out, (4.5 + Math.random() * 4.5) * height, Math.sin(a) * out * 0.6),
+        life, maxLife: life, size: 0.06 + Math.random() * 0.1,
       });
       this.mesh.setColorAt(this.particles.length - 1, this.tmpColor.setHex(colors[(Math.random() * colors.length) | 0]));
     }

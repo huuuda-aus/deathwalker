@@ -100,14 +100,29 @@ void main() {
   gl_FragColor = vec4(L, T);
 }`;
 
-/** Full-resolution composite: scene * transmittance + scattered light. */
+/**
+ * Full-resolution composite: scene * transmittance + scattered light. Over the far ground at the horizon the picture also
+ * shimmers: hot air near the ground bends the light, so distant things waver sideways, most just at the horizon line and
+ * fading out above it. Only what is far away (by the depth buffer) shimmers, never the mech or the street.
+ */
 const COMP_FRAG = /* glsl */ `
+#include <packing>
 varying vec2 vUv;
 uniform sampler2D tScene;
 uniform sampler2D tHaze;
+uniform sampler2D tDepth;
+uniform float cameraNear, cameraFar, uTime, uShimmer, uHorizon;
 void main() {
-  vec4 scene = texture2D(tScene, vUv);
-  vec4 haze = texture2D(tHaze, vUv);
+  vec2 uv = vUv;
+  if (uShimmer > 0.001) {
+    float dist = -perspectiveDepthToViewZ(texture2D(tDepth, vUv).r, cameraNear, cameraFar);
+    float far = smoothstep(70.0, 130.0, dist);
+    float band = exp(-pow((vUv.y - uHorizon) / 0.06, 2.0));
+    float w = 0.6 * sin(vUv.y * 260.0 + uTime * 2.6 + sin(vUv.x * 9.0 + uTime) * 1.5) + 0.4 * sin(vUv.y * 110.0 - uTime * 1.7 + vUv.x * 5.0);
+    uv.x += w * 0.0022 * uShimmer * far * band;
+  }
+  vec4 scene = texture2D(tScene, uv);
+  vec4 haze = texture2D(tHaze, uv);
   gl_FragColor = vec4(scene.rgb * haze.a + haze.rgb, scene.a);
 }`;
 
@@ -120,12 +135,16 @@ export class HazePass extends Pass {
   densityScale = 1;
   setColor(c: THREE.Color): void { this.march.uniforms.uColor.value.copy(c); }
 
+  /** how much the far ground shimmers (the scene's environment): 0 = not at all */
+  shimmer = 0;
+
   /** haze buffer resolution relative to the screen */
   scale = 0.3;
   private rt: THREE.WebGLRenderTarget;
   private march: THREE.ShaderMaterial;
   private comp: THREE.ShaderMaterial;
   private noise = makeHazeNoise();
+  private readonly horizon = new THREE.Vector3();
 
   constructor(private sceneCamera: THREE.PerspectiveCamera) {
     super('HazePass');
@@ -150,13 +169,14 @@ export class HazePass extends Pass {
     });
     this.comp = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: COMP_FRAG, depthWrite: false, depthTest: false,
-      uniforms: { tScene: { value: null }, tHaze: { value: this.rt.texture } },
+      uniforms: { tScene: { value: null }, tHaze: { value: this.rt.texture }, tDepth: { value: null }, cameraNear: { value: 0.5 }, cameraFar: { value: 400 }, uTime: { value: 0 }, uShimmer: { value: 0 }, uHorizon: { value: 0.5 } },
     });
     this.fullscreenMaterial = this.comp;
   }
 
   setDepthTexture(depthTexture: THREE.Texture): void {
     this.march.uniforms.tDepth.value = depthTexture;
+    this.comp.uniforms.tDepth.value = depthTexture;
   }
 
   setSize(width: number, height: number): void {
@@ -178,6 +198,10 @@ export class HazePass extends Pass {
     u.uDensity.value = BASE_DENSITY * this.densityScale;
     u.uLight0.value.copy(lights[0]);
     u.uLight1.value.copy(lights[1]);
+    // the composite's shimmer: strongest on the horizon line, which sits where the far end of the ground is on the screen
+    const c = this.comp.uniforms;
+    c.uTime.value = time; c.cameraNear.value = cam.near; c.cameraFar.value = cam.far; c.uShimmer.value = this.shimmer;
+    c.uHorizon.value = this.horizon.set(cam.position.x, 0, cam.position.z - 3000).project(cam).y * 0.5 + 0.5;
   }
 
   render(renderer: THREE.WebGLRenderer, inputBuffer: THREE.WebGLRenderTarget, outputBuffer: THREE.WebGLRenderTarget | null): void {

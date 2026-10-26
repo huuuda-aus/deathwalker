@@ -61,6 +61,7 @@ export class Explosions {
     }
     // anything explosive caught in it goes up a beat later
     world.igniteBarrels(at, radius);
+    world.blastScenery(at, radius);
     // the shockwave shoves rubble outwards, and the ground throws up clods
     debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale) * shock);
     const floor = (x: number, z: number, y: number): number => world.surfaceTop(x, z, y);

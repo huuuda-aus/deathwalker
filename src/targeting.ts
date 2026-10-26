@@ -5,8 +5,9 @@ import { terrain } from './terrain';
 import type { Building } from './building';
 import type { FireBarrel } from './fire';
 import type { ExplosiveBarrel } from './explosiveBarrel';
+import type { Scenery } from './scenery';
 
-export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'ground' | 'backdrop';
+export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'prop' | 'ground' | 'backdrop';
 
 export interface Hit {
   kind: HitKind;
@@ -18,6 +19,8 @@ export interface Hit {
   barrel?: FireBarrel;
   /** the explosive barrel that was hit (kind 'explosive') */
   explosive?: ExplosiveBarrel;
+  /** the roadside prop that was hit (kind 'prop') */
+  scenery?: Scenery;
 }
 
 /** Plane behind the far parallax layers, so skyward shots still resolve to a point. */
@@ -33,6 +36,7 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   out.building = undefined;
   out.barrel = undefined;
   out.explosive = undefined;
+  out.scenery = undefined;
 
   // backdrop (always a fallback)
   if (ray.direction.z < 0) {
@@ -60,6 +64,9 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   // explosive barrels
   const et = world.raycastExplosive(ray, tmp);
   if (et < bestT) { bestT = et; out.kind = 'explosive'; out.point.copy(tmp); out.barrel = undefined; out.explosive = world.hitExplosive ?? undefined; }
+  // roadside props
+  const st = world.raycastScenery(ray, tmp);
+  if (st < bestT) { bestT = st; out.kind = 'prop'; out.point.copy(tmp); out.scenery = world.hitScenery ?? undefined; }
   // enemies
   for (const e of enemies) {
     if (!e.alive) continue;

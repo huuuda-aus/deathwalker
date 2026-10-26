@@ -54,10 +54,13 @@ export interface EnemyDeps {
   shake: (x: number, amount: number) => void;
 }
 
+const UP = new THREE.Vector3(0, 1, 0);
+const slope = new THREE.Vector3();
+
 /** does this enemy walk or roll on the ground right now (so the dunes carry it up and down)? */
 function followsGround(e: Enemy): boolean {
   if (!e.alive) return false;
-  if (e instanceof Soldier) return e.state === 'walk' || e.state === 'aim' || e.state === 'cooldown';
+  if (e instanceof Soldier) return e.state === 'walk' || e.state === 'aim' || e.state === 'cooldown' || e.state === 'ride' || e.state === 'mounted';
   return e instanceof TruckUnit || e instanceof CannonUnit || e instanceof LauncherUnit || e instanceof Horse;
 }
 
@@ -65,6 +68,8 @@ export class EnemyManager {
   readonly list: Enemy[] = [];
   /** how far the dunes have lifted each enemy that is on the ground (the enemy's own logic works on the flat: see `update`) */
   private readonly lifted = new Map<Enemy, number>();
+  /** and how far it has been tipped to lie on the slope (vehicles; the inverse is kept so it can be taken off again) */
+  private readonly tilted = new Map<Enemy, THREE.Quaternion>();
   private spawnTimer = 1;
   /** where the screen is, for the planes: camera x, and the height of the top of the view at the gameplay depth */
   private camX = 0;
@@ -145,17 +150,32 @@ export class EnemyManager {
     for (const e of this.list) if (e.alive) e.retreating = true;
   }
 
-  /** lift an enemy that is on the ground onto the dune under it (or, if it has just left the ground, leave it where it is) */
+  /** lift an enemy that is on the ground onto the dune under it, and lay a vehicle along the slope (or, if it has just left the ground, leave it where it is) */
   private carryOnDunes(e: Enemy): void {
     const was = this.lifted.get(e);
     const p = e.group.position;
-    if (!followsGround(e)) {
+    const follows = followsGround(e);
+    const vehicle = !(e instanceof Soldier) && !(e instanceof Horse);
+    if (!follows) {
       if (was !== undefined) { p.y += was; this.lifted.delete(e); }     // it keeps the height it had; its own physics take over
+      const t = this.tilted.get(e);
+      if (t) { e.group.quaternion.premultiply(t.clone().invert()).normalize(); this.tilted.delete(e); }   // and the tilt it was laid at
       return;
     }
     const to = terrainHeight(p.x, p.z);
-    p.y += to;                                                           // (it was put back on the flat before its turn, or is newly on the ground: either way it is on the flat now)
+    // it was put back on the flat before its turn (so it gets the dune's height), or it is newly on the ground: spawned at 0, or just landed from a
+    // jump, which already stood it on the dune
+    if (was !== undefined || Math.abs(p.y - to) >= 0.06) p.y += to;
     this.lifted.set(e, to);
+    if (vehicle) {
+      // lie along the ground: tip the up of the vehicle to the slope's normal (uphill, downhill, across)
+      const d = 0.4;
+      slope.set(-(terrainHeight(p.x + d, p.z) - terrainHeight(p.x - d, p.z)) / (2 * d), 1, -(terrainHeight(p.x, p.z + d) - terrainHeight(p.x, p.z - d)) / (2 * d)).normalize();
+      const q = (this.tilted.get(e) ?? new THREE.Quaternion()).setFromUnitVectors(UP, slope).invert();
+      // `tilted` keeps the inverse (what to take off before the vehicle's own turn); the tilt itself goes on now
+      this.tilted.set(e, q);
+      e.group.quaternion.premultiply(q.clone().invert()).normalize();
+    }
   }
 
   /** stragglers that fled the previous scene are gone by the time the next one starts */
@@ -216,6 +236,7 @@ export class EnemyManager {
 
   private discard(e: Enemy): void {
     this.lifted.delete(e);
+    this.tilted.delete(e);
     this.deps.scene.remove(e.group);
     e.dispose();
   }
@@ -483,6 +504,8 @@ export class EnemyManager {
       // lifted onto the ground again after it: what it does (its stance, its gun, where it lands) works as it always did.
       const lift = this.lifted.get(e) ?? 0;
       if (lift !== 0) e.group.position.y -= lift;
+      const tilt = this.tilted.get(e);
+      if (tilt) e.group.quaternion.premultiply(tilt).normalize();
       e.update(dt, mech.root.position, fx, (from, miss, opts) => {
         if (!spawning) return;
         from.y += lift;                    // the muzzle is where it is on the dune, not on the flat

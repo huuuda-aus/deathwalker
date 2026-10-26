@@ -85,6 +85,7 @@ export class Post {
 
   setHazeDensityScale(k: number): void { this.hazePass.densityScale = k; }
   setHazeColor(c: THREE.Color): void { this.hazePass.setColor(c); }
+  setShimmer(k: number): void { this.hazePass.shimmer = k; }
 
   /** @param lights two muzzle lights as (x, y, z, intensity) */
   updateHaze(time: number, windTravelled: number, lights: THREE.Vector4[]): void {
