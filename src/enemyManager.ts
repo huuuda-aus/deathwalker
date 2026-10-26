@@ -24,6 +24,7 @@ import type { Debris } from './debris';
 import { LANE, type Mech } from './mech';
 import { SPAWN, ENEMY_FIRE, CANNON, STOMP, STALL, BLAST, AIRCRAFT, SILO, LAUNCHER } from './config';
 import { SCREEN_W, type LevelRunner } from './level';
+import { terrain, terrainHeight } from './terrain';
 
 const chest = new THREE.Vector3();
 const shotAt = new THREE.Vector3();
@@ -53,8 +54,17 @@ export interface EnemyDeps {
   shake: (x: number, amount: number) => void;
 }
 
+/** does this enemy walk or roll on the ground right now (so the dunes carry it up and down)? */
+function followsGround(e: Enemy): boolean {
+  if (!e.alive) return false;
+  if (e instanceof Soldier) return e.state === 'walk' || e.state === 'aim' || e.state === 'cooldown';
+  return e instanceof TruckUnit || e instanceof CannonUnit || e instanceof LauncherUnit || e instanceof Horse;
+}
+
 export class EnemyManager {
   readonly list: Enemy[] = [];
+  /** how far the dunes have lifted each enemy that is on the ground (the enemy's own logic works on the flat: see `update`) */
+  private readonly lifted = new Map<Enemy, number>();
   private spawnTimer = 1;
   /** where the screen is, for the planes: camera x, and the height of the top of the view at the gameplay depth */
   private camX = 0;
@@ -135,6 +145,19 @@ export class EnemyManager {
     for (const e of this.list) if (e.alive) e.retreating = true;
   }
 
+  /** lift an enemy that is on the ground onto the dune under it (or, if it has just left the ground, leave it where it is) */
+  private carryOnDunes(e: Enemy): void {
+    const was = this.lifted.get(e);
+    const p = e.group.position;
+    if (!followsGround(e)) {
+      if (was !== undefined) { p.y += was; this.lifted.delete(e); }     // it keeps the height it had; its own physics take over
+      return;
+    }
+    const to = terrainHeight(p.x, p.z);
+    p.y += to;                                                           // (it was put back on the flat before its turn, or is newly on the ground: either way it is on the flat now)
+    this.lifted.set(e, to);
+  }
+
   /** stragglers that fled the previous scene are gone by the time the next one starts */
   purgeRetreating(): void {
     for (let i = this.list.length - 1; i >= 0; i--) {
@@ -192,6 +215,7 @@ export class EnemyManager {
   }
 
   private discard(e: Enemy): void {
+    this.lifted.delete(e);
     this.deps.scene.remove(e.group);
     e.dispose();
   }
@@ -455,8 +479,13 @@ export class EnemyManager {
     chest.copy(mech.pivotWorld);
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];
+      // The enemies' own logic is written for flat ground (height 0). Over dunes each one is put back on the flat for its turn and
+      // lifted onto the ground again after it: what it does (its stance, its gun, where it lands) works as it always did.
+      const lift = this.lifted.get(e) ?? 0;
+      if (lift !== 0) e.group.position.y -= lift;
       e.update(dt, mech.root.position, fx, (from, miss, opts) => {
         if (!spawning) return;
+        from.y += lift;                    // the muzzle is where it is on the dune, not on the flat
         // aimed at where the mech's chest is right now, off by a random amount that grows with distance: a mech
         // that keeps moving walks out of the way of the bullets
         const spread = (ENEMY_FIRE.spreadBase + ENEMY_FIRE.spreadPerUnit * from.distanceTo(chest)) * (opts?.precision ?? 1);
@@ -467,6 +496,7 @@ export class EnemyManager {
         );
         bullets.fire(from, shotAt, opts?.speed, opts?.heavy);
       });
+      if (terrain.on) this.carryOnDunes(e);
       if (e instanceof Soldier && e.alive && this.underFoot(e)) e.splat(fx);
       if (e instanceof CannonUnit && e.needsCrew) this.recruit(e);
       // a gun with no crew left is out of the fight: it no longer has to be destroyed to clear the scene

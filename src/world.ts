@@ -13,6 +13,7 @@ import type { Fx } from './fx';
 import { Puddles, type Puddle } from './water';
 import { mulberry32 } from './util';
 import type { WorldStyle } from './levelData';
+import { terrain, terrainHeight, applyTerrain } from './terrain';
 
 /** height of a soldier's gun above the floor he stands on (world units), for line-of-fire checks from a bay */
 const SHOOTER_CHEST = 0.25;
@@ -97,6 +98,7 @@ export class World {
   /** @param style what the world is made of: the ruined city, or open desert (no buildings: far dunes on the horizon) */
   constructor(scene: THREE.Scene, private debris: Debris, private dust: Dust, private readonly style: WorldStyle = 'city') {
     scene.fog = new THREE.Fog(FOG_COLOR, 28, 62);
+    terrain.on = style === 'desert';
 
     // textured ground: dirt, rubble and debris, with a normal map from the same height field
     const tex = makeGroundTextures(7, style === 'desert' ? 'sand' : 'ruins');
@@ -111,9 +113,10 @@ export class World {
     ground.rotation.x = -Math.PI / 2;
     ground.position.z = -80;
     ground.receiveShadow = true;
-    this.group.add(ground);
+    if (style !== 'desert') this.group.add(ground);       // the desert's ground is cut into chunks and follows the terrain: see buildDesertChunk
     this.craters = new Craters(scene, tex);     // not in `group`: its meshes follow the camera
     this.craters.cutHoles(groundMaterial);
+    if (terrain.on) applyTerrain(groundMaterial);
 
     this.fireLights = new FireLights(scene, 3);
     this.coals = new Coals(scene);
@@ -125,10 +128,23 @@ export class World {
   /** what the ground colour is multiplied by: a bright scene lifts the dark texture */
   setGroundTint(c: THREE.Color): void { this.groundMaterial.color.copy(c); }
 
+  /** One chunk's piece of the ground, as fine a mesh as the dunes need; mapped exactly as the flat ground plane is, so craters and textures match. */
+  private groundChunk(x0: number): THREE.Mesh {
+    const GW = 4000, GD = 260, GZ = -80;
+    const geo = new THREE.PlaneGeometry(this.chunkSize, GD, 60, 64).rotateX(-Math.PI / 2).translate(x0 + this.chunkSize / 2, 0, GZ);
+    const p = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / GW + 0.5, -(p.getZ(i) - GZ) / GD + 0.5);
+    const mesh = new THREE.Mesh(geo, this.groundMaterial);
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;                // the shader lifts the vertices: the flat bounds would be wrong
+    return mesh;
+  }
+
   /** The desert: no buildings, only ranks of dunes on the horizon, each fainter in the haze than the one before. */
   private buildDesertChunk(index: number): { group: THREE.Group; buildings: Building[]; props: Building[]; barrels: FireBarrel[]; explosives: ExplosiveBarrel[]; puddles: Puddle[] } {
     const g = new THREE.Group();
     const x0 = index * this.chunkSize;
+    g.add(this.groundChunk(x0));
     DUNE_ROWS.forEach(([z, amp, wave, phase], row) => g.add(duneRidge(x0, this.chunkSize, z, amp, wave, phase + row * 1.7)));
     return { group: g, buildings: [], props: [], barrels: [], explosives: [], puddles: [] };
   }
@@ -216,11 +232,11 @@ export class World {
         if (h > best) best = h;
       }
     }
-    return best > 0 ? best : this.craters.heightAt(x, z);
+    return best > 0 ? best : this.groundHeight(x, z);
   }
 
-  /** the bare ground's height at (x, z): 0, or the crater's floor or lip */
-  groundHeight(x: number, z: number): number { return this.craters.heightAt(x, z); }
+  /** the bare ground's height at (x, z): the dunes' (0 in the city), plus the crater's floor or lip if there is one */
+  groundHeight(x: number, z: number): number { return terrainHeight(x, z) + this.craters.heightAt(x, z); }
 
   /** Is the point inside any intact building member? */
   solidAt(x: number, y: number, z: number): boolean {
@@ -403,8 +419,9 @@ export class World {
     this.craters.update(dt);
     this.fireLights.update(dt, live, cameraX);
     this.coals.update(dt);
-    // the ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world
-    for (const t of this.groundMaps) t.offset.x = cameraX / GROUND_TILE;
+    // the city's ground plane follows the camera, so scroll its texture the other way to keep it fixed in the world (the desert's ground
+    // is cut into chunks that stand in the world, so its texture is already fixed: scrolling it would slide the sand over the dunes)
+    if (this.style !== 'desert') for (const t of this.groundMaps) t.offset.x = cameraX / GROUND_TILE;
     for (const o of this.group.children) if (o instanceof THREE.Mesh) o.position.x = cameraX;
   }
 }

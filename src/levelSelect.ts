@@ -1,20 +1,23 @@
+/** TEMP (testing): the level a page plays when nothing else says; `?level=1` still opens the first. 1 = the normal start. */
+const DEBUG_START_LEVEL = 2;
+
 const LEVEL_KEY = 'walker.level';
 const AUTOSTART_KEY = 'walker.autostart';
 const UNLOCKED_KEY = 'walker.unlocked';
 
 /**
  * Which level this page plays: `?level=N` in the address, or else the one the last page asked for ("next level": the world
- * cannot be put back, so a fresh page is the clean way into the next level), or else the first. The ask is used up at once, so
- * going back to the main menu (a reload) starts again from level 1.
+ * cannot be put back, so a fresh page is the clean way into the next level), or else `DEBUG_START_LEVEL`. The ask is used up at once, so
+ * going back to the main menu (a reload) starts again from the default level.
  */
 export function pickLevel(count: number): number {
-  let n = 1;
+  let n = DEBUG_START_LEVEL;
   try {
     const fromUrl = Number(new URLSearchParams(location.search).get('level'));
     const fromLast = Number(sessionStorage.getItem(LEVEL_KEY));
     sessionStorage.removeItem(LEVEL_KEY);
-    n = fromUrl || fromLast || 1;
-  } catch { /* storage blocked: level 1 */ }
+    n = fromUrl || fromLast || DEBUG_START_LEVEL;
+  } catch { /* storage blocked: the default level */ }
   return Math.min(count, Math.max(1, Math.floor(n)));
 }
 

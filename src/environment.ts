@@ -33,8 +33,8 @@ export const ENVIRONMENTS: Record<string, EnvDef> = {
   /** a harsh white day in the desert: dry, bright, dusty */
   dunes: {
     fog: { color: 0xcdb892, near: 60, far: 240 },
-    hemi: { sky: 0xa9c4ff, ground: 0xa07c4a, intensity: 1.1 },
-    sun: { color: 0xfff1d6, intensity: 2.6, offset: [-22, 34, 16] },
+    hemi: { sky: 0xa9c4ff, ground: 0xa07c4a, intensity: 0.8 },
+    sun: { color: 0xfff1d6, intensity: 3.1, offset: [-30, 16, 10] },
     rim: { color: 0xffffff, intensity: 0 },
     day: 1,
     rain: 0,

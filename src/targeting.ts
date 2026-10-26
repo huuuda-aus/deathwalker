@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Enemy } from './enemies';
 import type { World } from './world';
+import { terrain } from './terrain';
 import type { Building } from './building';
 import type { FireBarrel } from './fire';
 import type { ExplosiveBarrel } from './explosiveBarrel';
@@ -40,7 +41,14 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   }
   // ground
   if (ray.direction.y < 0) {
-    const t = -ray.origin.y / ray.direction.y;
+    let t = -ray.origin.y / ray.direction.y;
+    // over dunes the ground is not at height 0: settle on where the ray meets it (a few steps are plenty on slopes this gentle)
+    if (terrain.on) {
+      for (let k = 0; k < 5 && t > 0; k++) {
+        ray.at(t, tmp);
+        t = (world.groundHeight(tmp.x, tmp.z) - ray.origin.y) / ray.direction.y;
+      }
+    }
     if (t > 0 && t < bestT) { bestT = t; out.kind = 'ground'; ray.at(t, out.point); }
   }
   // walls

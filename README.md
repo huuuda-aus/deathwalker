@@ -27,7 +27,7 @@ The game has several levels, each a JSON file in `src/levels/` (`level1.json`, `
 
 ## Environments
 
-Each scene names a look (`"environment"` in the level file; the presets are in `src/environment.ts`): fog, sky, sun and sky light, the backlight, haze, how much it rains, and the ground colour. The game fades from one scene's look to the next as the scene begins, so a level can change from a harsh white day to a dark interior. `night` is the wet city night; `dunes` is a dry desert day (a bright sky with a sun, no rain, no lightning, dusty haze). A level's `"world"` (`city` or `desert`) says what the world is made of: the desert has no buildings, sand ground and ranks of dunes on the horizon.
+Each scene names a look (`"environment"` in the level file; the presets are in `src/environment.ts`): fog, sky, sun and sky light, the backlight, haze, how much it rains, and the ground colour. The game fades from one scene's look to the next as the scene begins, so a level can change from a harsh white day to a dark interior. `night` is the wet city night; `dunes` is a dry desert day (a bright sky with a sun, no rain, no lightning, dusty haze). A level's `"world"` (`city` or `desert`) says what the world is made of: the desert has no buildings, sand ground and ranks of dunes on the horizon. Its ground rolls: `src/terrain.ts` defines the dunes once (`terrainHeight`), used by the CPU (the mech, enemies, bullets, falling rubble) and by the ground's vertex shader (craters follow it too). Enemies' own logic stays written for flat ground; the enemy manager lifts the ones on the ground onto the dunes after each turn.
 
 ## Settings
 

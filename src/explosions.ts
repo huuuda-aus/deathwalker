@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { terrainHeight } from './terrain';
 import type { Fx } from './fx';
 import type { Dust } from './dust';
 import type { World } from './world';
@@ -43,7 +44,7 @@ export class Explosions {
     const { fx, dust, world, debris } = this.deps;
     this.blasts.spawn(at, radius);
     // a blast at ground level (not on a roof or in the air) scorches the ground
-    if (scorch && at.y < radius * 0.9 + 0.5 && world.surfaceTop(at.x, at.z, at.y + 0.2) < 0.25) {
+    if (scorch && at.y - terrainHeight(at.x, at.z) < radius * 0.9 + 0.5 && world.surfaceTop(at.x, at.z, at.y + 0.2) - terrainHeight(at.x, at.z) < 0.25) {
       world.craters.stamp(at.x, at.z, Math.max(CRATER.scorchMin, radius * CRATER.scorchPerRadius));
     }
     sfx.explosion(at, radius);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GROUND_TILE } from './ground';
 import { mulberry32 } from './util';
 import { CRATER } from './config';
+import { terrain, terrainHeight, applyTerrain } from './terrain';
 
 /** the ground plane's size and place (world.ts): the crater meshes must map the ground textures exactly as it does */
 const GROUND_W = 4000, GROUND_D = 260, GROUND_Z = -80;
@@ -122,6 +123,7 @@ export class Craters {
     this.dentMaterial = new THREE.MeshStandardMaterial({
       map: own(ground.albedo), normalMap: own(ground.normal), normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.95, vertexColors: true,
     });
+    if (terrain.on) applyTerrain(this.dentMaterial);
   }
 
   /** Make the ground material cut the dents' holes (the plane has to be gone where the bowl is). */
@@ -143,7 +145,7 @@ export class Craters {
   /** A scorch mark `diameter` across, flat on the ground at (x, z). */
   stamp(x: number, z: number, diameter: number): void {
     const { dummy, scorch } = this;
-    dummy.position.set(x, 0.02, z);
+    dummy.position.set(x, 0.02 + terrainHeight(x, z), z);
     dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
     dummy.scale.set(diameter, 1, diameter);
     dummy.updateMatrix();
