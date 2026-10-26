@@ -1,5 +1,4 @@
 const NOTES: Record<string, string> = {
-  code: 'ENTER LEVEL CODE: coming soon',
   credits: 'CREDITS: coming soon',
 };
 
@@ -22,7 +21,7 @@ export class Menu {
       li.addEventListener('click', () => { this.select(i); this.activate(); });
     });
     addEventListener('keydown', (e) => {
-      if (!this.visible || document.body.classList.contains('booting') || document.body.classList.contains('fame') || document.body.classList.contains('settings')) return;
+      if (!this.visible || document.body.classList.contains('booting') || document.body.classList.contains('fame') || document.body.classList.contains('settings') || document.body.classList.contains('code')) return;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') this.select((this.selected + 1) % this.items.length);
       else if (e.code === 'ArrowUp' || e.code === 'KeyW') this.select((this.selected + this.items.length - 1) % this.items.length);
       else if (e.code === 'Enter' || e.code === 'Space') this.activate();

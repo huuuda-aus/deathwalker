@@ -1,19 +1,19 @@
 /**
  * A vertical list of menu items (index.html `.menu-items`) picked with the mouse or up/down + enter: the part the
- * pause menu and the game-over menu have in common. Each item's `data-action` is handed to `onPick`.
+ * pause menu and the game-over menu have in common. Each item's `data-action` is handed to `onPick`. Items can come and
+ * go (an item with the `hidden` attribute is skipped).
  */
 export class MenuList {
-  private readonly items: HTMLElement[];
   private selected = 0;
 
-  constructor(list: ParentNode, private readonly onPick: (action: string) => void) {
-    this.items = [...list.querySelectorAll<HTMLElement>('.menu-items li')];
-    this.items.forEach((li, i) => {
-      li.addEventListener('pointerenter', () => this.select(i));
-      li.addEventListener('click', () => { this.select(i); this.pick(); });
-    });
+  constructor(private readonly list: ParentNode, private readonly onPick: (action: string) => void) {
+    const itemOf = (e: Event): number => this.items.indexOf((e.target as HTMLElement).closest('.menu-items li') as HTMLElement);
+    list.addEventListener('pointerover', (e) => { const i = itemOf(e); if (i >= 0) this.select(i); });
+    list.addEventListener('click', (e) => { const i = itemOf(e); if (i >= 0) { this.select(i); this.pick(); } });
     this.select(0);
   }
+
+  private get items(): HTMLElement[] { return [...this.list.querySelectorAll<HTMLElement>('.menu-items li:not([hidden])')]; }
 
   select(i: number): void {
     this.selected = i;
@@ -30,5 +30,5 @@ export class MenuList {
     return true;
   }
 
-  private pick(): void { this.onPick(this.items[this.selected].dataset.action ?? ''); }
+  private pick(): void { this.onPick(this.items[this.selected]?.dataset.action ?? ''); }
 }

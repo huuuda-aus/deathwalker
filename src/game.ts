@@ -19,6 +19,8 @@ import { Bullets } from './bullets';
 import { TargetLock } from './targetLock';
 import { PauseMenu } from './pauseMenu';
 import { GameOverMenu } from './gameOverMenu';
+import { queueLevel, unlockLevel } from './levelSelect';
+import { SceneCard } from './sceneCard';
 import { MechDeath } from './mechDeath';
 import { Score, nominalLevel, gradeFor } from './score';
 import { hof } from './hallOfFame';
@@ -35,7 +37,7 @@ import { Weapon } from './weapon';
 import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
-import { CAM_DIST, LEVEL, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
+import { CAM_DIST, LEVEL, LEVELS, LEVEL_NO, LevelRunner, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
 import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING, STORM } from './config';
 import { Casings } from './casings';
 
@@ -68,6 +70,8 @@ export class Game {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.5, 400);
   private readonly level = new LevelRunner();
+  private readonly overMenu: GameOverMenu;
+  private readonly card = new SceneCard();
   private readonly sun = new THREE.DirectionalLight(0x98a6d8, 1.15); // moonlight
   private readonly rim = new THREE.DirectionalLight(0x40ff90, 0.15); // radioactive green, from behind the skyline
 
@@ -258,8 +262,9 @@ export class Game {
     audio.ctx.addEventListener('statechange', showLock);
     showLock();
     for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => audio.unlock(), { capture: true });
-    new GameOverMenu({
+    this.overMenu = new GameOverMenu({
       isOver: () => this.player.over || this.winShown,
+      onNext: () => { this.endScreen.commit(); queueLevel(LEVEL_NO + 1); location.reload(); },
       onRetry: () => { this.endScreen.commit(); this.reset(); },
       onQuit: () => { this.endScreen.commit(); location.reload(); },
     });
@@ -290,6 +295,8 @@ export class Game {
 
   /** "start game" was chosen on the menu */
   startPlaying(): void {
+    unlockLevel(LEVEL_NO);
+    this.card.show(0);
     this.mode = 'play';
     audio.stopMusic(2);
     audio.setVolume('ambience', 1, 1.5);               // the menu's soundtrack: there is no music in the game itself
@@ -404,6 +411,7 @@ export class Game {
     this.score.reset();
     this.won = this.winShown = false;
     this.winT = 0;
+    this.card.show(0);
   }
 
   private hurtPlayer(n: number): void {
@@ -516,11 +524,15 @@ export class Game {
       kind, score: score.total, scenes: score.results.length, sceneCount: LEVEL.length, time: score.time, kills: score.kills, results: score.results,
       grade: kind === 'win' ? gradeFor(score.total, nominalLevel(LEVEL)) : undefined,
     });
+    this.overMenu.show(kind === 'win' && LEVEL_NO < LEVELS.length);
     this.hud.setGameOver(true, kind === 'win' ? 4 : undefined);
   }
 
   private updateEnemies(dt: number, active: boolean, levelEvent: LevelEvent): void {
-    if (levelEvent === 'arrived') this.score.beginScene();
+    if (levelEvent === 'arrived') {
+      this.score.beginScene();
+      if (this.level.index > 0) this.card.show(this.level.index);          // the first scene's card came up with the level
+    }
     if (levelEvent === 'cleared' || levelEvent === 'complete') {
       this.score.endScene(this.level.index, LEVEL[this.level.index].parTime, this.player.shield, PLAYER.maxShield);
     }

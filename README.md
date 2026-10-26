@@ -21,6 +21,10 @@ Needs a browser with WebGL2.
 
 The page opens on a plain loading screen while the game builds itself (the city, the shaders, the sounds, the menu's soundtrack); only when all of it is ready does the main menu fade in, with every button working. The menu is over the first level's skyline (rain, fires and all). Pick with the mouse, or up/down and Enter. The corner has a stack of named soundtrack buttons (or the keys 1, 2, 3; the last choice is remembered) with the music on/off switch (M) under them. **Start game** begins the level; **Enter level code**, **Hall of fame** shows the best runs, **Settings** is described below, and **Credits** is a placeholder for now. The QR code in the corner links to [ko-fi.com/huuuda](https://ko-fi.com/huuuda) (the image is `public/kofi-qr.svg`).
 
+## Levels
+
+The game has several levels, each a JSON file in `src/levels/` (`level1.json`, `level2.json`; the format is described in the notes of `level1.json`) listed in order in `src/levelData.ts`. A page plays one level: **Next level** on the level complete screen (when there is one) reloads the page into the next level and starts it at once (the world cannot be put back, so a fresh page is the clean way), and `?level=2` in the address opens a given one. Each level is its own run, with its own score, grade and hall of fame entry (which records the level it was). Each level has a themed password (`code` in its level file: `IRONWINT`, `SCORCHED`): the level complete screen shows the next level's, and **Enter level code** on the main menu takes it and goes straight there. The levels reached are remembered in `localStorage`. Level 2 is a placeholder for now.
+
 ## Settings
 
 **Settings** (main menu) holds the scroll direction, remembered between visits. *Right to left* is the classic way: the mech faces left and the level scrolls to the left. *Left to right* mirrors the whole picture: the mech faces right, the level scrolls to the right, and the gauges move to the top left corner, and the mouse, the A/D keys and the stereo pan are flipped to match (`src/view.ts`; the game itself always runs the classic way).
@@ -62,7 +66,7 @@ Bullets are not projectiles. Each shot is an instant ray cast from the camera th
 Every enemy is worth points (a soldier 10, a heavy machine gunner 60, a horse 25, a gun 120, a rocket launcher 300, a truck 200, a plane 250, the zeppelin 800, a silo 1500), and the level's spawns are fixed, so the points available are the same for everyone. What tells two players who kill everything apart:
 
 - **Combo:** kills less than 1.5 s apart build a multiplier (up to x3). Stomping a soldier (+15) or crushing him under falling rubble (+10) pays extra.
-- **Scene bonuses:** each cleared scene pays for **speed** (up to 1000, against the scene's `parTime` in `level1.json`: full at 60% of it or faster, none at 150%), **shield left** (up to 500), **no damage taken** (500) and **no overheat** (300). The boss scene has no kill count, so its speed bonus is the point of it.
+- **Scene bonuses:** each cleared scene pays for **speed** (up to 1000, against the scene's `parTime` in the level file (`src/levels/`): full at 60% of it or faster, none at 150%), **shield left** (up to 500), **no damage taken** (500) and **no overheat** (300). The boss scene has no kill count, so its speed bonus is the point of it.
 - **Grade:** a cleared level is graded S to D by its score as a share of the level's nominal total (every enemy once, every bonus in full, no combos).
 
 The **hall of fame** (main menu) keeps the ten best runs on this machine, in `localStorage`. They are ranked by how far the run got (a cleared level beats any unfinished one), then score, then time, so identical scores are told apart by speed. A run that makes the list asks for three letters on the game over / level complete screen; leaving without typing enters it as AAA.
@@ -115,7 +119,8 @@ Handy tuning knobs:
 
 | File | What |
 |---|---|
-| `src/level.ts` | `LEVEL` (scene widths, kill goals, spawn budgets), `SCREEN_W` |
+| `src/level.ts` | `LEVEL` (the scenes of the level being played: widths, kill goals, spawn budgets), `LEVELS`, `LEVEL_NO`, `SCREEN_W` |
+| `src/levelSelect.ts` | which level this page plays (`?level=N`, or the one "next level" asked for) |
 | `src/main.ts` | `WALK_SPEED`, `MAX_ALIVE`, wave size and interval |
 | `src/weapon.ts` | fire rate, heat per shot, cooling, spread |
 | `src/mech.ts` | `MECH_SCALE`, gait (`STEP`, `LIFT`, `STANCE`), collider radii |

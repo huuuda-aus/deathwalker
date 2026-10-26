@@ -1,4 +1,6 @@
-import raw from './levels/level1.json';
+import level1 from './levels/level1.json';
+import level2 from './levels/level2.json';
+import { pickLevel } from './levelSelect';
 import { AIRCRAFT, CANNON, GUNNER, LAUNCHER } from './config';
 
 /** A vehicle that arrives during a scene. `at` is how much of the scene's infantry has been sent in by then (0..1). */
@@ -125,5 +127,21 @@ export function parseLevel(data: unknown): SceneDef[] {
   });
 }
 
-/** The scenes of the level being played. */
-export const LEVEL: SceneDef[] = parseLevel(raw);
+/** `code` is the level's password: typed at the main menu, shown on the win screen of the level before it */
+export interface LevelDef { name: string; code: string; scenes: SceneDef[] }
+
+/** Every level of the game, in play order. */
+export const LEVELS: LevelDef[] = [level1, level2].map((raw, i) => {
+  const { name, code } = raw as { name?: unknown; code?: unknown };
+  if (typeof code !== 'string' || !/^[A-Z]{4,10}$/.test(code)) fail(`level ${i + 1}`, `code must be 4 to 10 capital letters, got ${JSON.stringify(code)}`);
+  return { name: String(name ?? `Level ${i + 1}`), code: code as string, scenes: parseLevel(raw) };
+});
+
+/** The number (1-based) of the level a password opens, or 0 if it opens none. */
+export function levelForCode(code: string): number {
+  return LEVELS.findIndex((l) => l.code === code.trim().toUpperCase()) + 1;
+}
+
+/** The number (1-based) of the level this page plays, and its scenes. */
+export const LEVEL_NO = pickLevel(LEVELS.length);
+export const LEVEL: SceneDef[] = LEVELS[LEVEL_NO - 1].scenes;

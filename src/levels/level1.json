@@ -1,5 +1,6 @@
 {
-  "name": "Level 1",
+  "name": "Level 1: Iron Winter",
+  "code": "IRONWINT",
   "notes": [
     "Each scene must be cleared by killing everything it sends in: its infantry, plus every vehicle and everyone riding in one.",
     "infantry.count: street infantry sent in over the scene, in waves of waveMin..waveMin+waveExtra-1, every intervalMin..intervalMin+intervalExtra seconds, never more than maxAlive enemies alive at once.",

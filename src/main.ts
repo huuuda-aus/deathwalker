@@ -2,7 +2,9 @@ import { Menu } from './menu';
 import { FamePanel } from './famePanel';
 import { hof } from './hallOfFame';
 import { settingsPanel } from './settingsPanel';
+import { CodePanel } from './codePanel';
 import { loadView } from './view';
+import { takeAutostart } from './levelSelect';
 import type { Game } from './game';
 
 /**
@@ -20,9 +22,10 @@ const GIVE_UP = 20000;
 
 loadView();
 const fame = new FamePanel(hof);
+const codePanel = new CodePanel(() => { game?.startPlaying(); });
 new Menu(
   () => { game?.startPlaying(); },
-  { fame: () => fame.open(), settings: () => settingsPanel.open() },
+  { fame: () => fame.open(), settings: () => settingsPanel.open(), code: () => codePanel.open() },
 );
 
 void (async () => {
@@ -38,4 +41,6 @@ void (async () => {
   progress(1);
   game.show();
   document.body.classList.remove('booting');
+  // "next level" reloads the page and goes straight in
+  if (takeAutostart()) { document.body.classList.remove('menu'); game.startPlaying(); }
 })();

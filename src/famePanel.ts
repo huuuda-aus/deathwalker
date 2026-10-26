@@ -1,8 +1,15 @@
-import type { HallOfFame } from './hallOfFame';
+import type { HallOfFame, FameEntry } from './hallOfFame';
 import { clock } from './endScreen';
-import { LEVEL } from './level';
+import { LEVELS } from './level';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
+
+/** how far a run got, e.g. "LEVEL 2: SCENE 3 / 6", or "LEVEL 1 CLEARED" */
+function progress(e: FameEntry): string {
+  const level = e.level ?? 1;
+  const count = e.sceneCount ?? LEVELS[level - 1]?.scenes.length ?? LEVELS[0].scenes.length;
+  return e.complete ? `LEVEL ${level} CLEARED` : `LEVEL ${level}: SCENE ${Math.min(count, e.scenes + 1)} / ${count}`;
+}
 
 /** The hall of fame on the main menu: the best runs on this machine. Esc, Enter or a click closes it. */
 export class FamePanel {
@@ -26,7 +33,7 @@ export class FamePanel {
     const rows = this.fame.list.map((e, i) => {
       const tr = document.createElement('tr');
       tr.append(cell(String(i + 1)), cell(e.name), cell(e.score.toLocaleString('en-US'), 'num'),
-        cell(e.complete ? 'CLEARED' : `SCENE ${Math.min(LEVEL.length, e.scenes + 1)} / ${LEVEL.length}`), cell(clock(e.time), 'num'));
+        cell(progress(e)), cell(clock(e.time), 'num'));
       return tr;
     });
     if (rows.length === 0) {

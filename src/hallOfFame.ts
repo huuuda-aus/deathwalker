@@ -5,8 +5,12 @@ const KEY = 'walker.hallOfFame';
 export interface FameEntry {
   name: string;
   score: number;
+  /** which level it was (older entries have none: the first) */
+  level?: number;
   /** scenes cleared */
   scenes: number;
+  /** how many scenes that level has (older entries have none: the first level's) */
+  sceneCount?: number;
   /** the whole level was cleared */
   complete: boolean;
   /** seconds of play */
@@ -19,7 +23,7 @@ export interface FameEntry {
  * (Two players who clear everything with the same score are told apart by how quickly they did it.)
  */
 export const compareEntries = (a: FameEntry, b: FameEntry): number =>
-  Number(b.complete) - Number(a.complete) || b.scenes - a.scenes || b.score - a.score || a.time - b.time;
+  Number(b.complete) - Number(a.complete) || (b.level ?? 1) - (a.level ?? 1) || b.scenes - a.scenes || b.score - a.score || a.time - b.time;
 
 /** The best runs on this machine, remembered between visits. */
 class HallOfFame {

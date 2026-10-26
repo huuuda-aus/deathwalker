@@ -21,7 +21,7 @@ const DEBUG_SKIP_SCENES: number = 0;
 /** The first scene begins this far into the first screen. */
 const FIRST_SCENE_START = 0.5;
 
-export { LEVEL, type SceneDef, type SpawnEvent, type BossDef } from './levelData';
+export { LEVEL, LEVELS, LEVEL_NO, type SceneDef, type SpawnEvent, type BossDef } from './levelData';
 
 /** Progress (screens) at which each scene's view first locks in. Scenes are contiguous. */
 const SCENE_START: number[] = LEVEL.reduce<number[]>(

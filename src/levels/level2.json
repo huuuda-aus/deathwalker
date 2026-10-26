@@ -1,0 +1,71 @@
+{
+  "name": "Level 2: Glass Dunes",
+  "code": "SCORCHED",
+  "notes": [
+    "Placeholder scenes for the multi-level plumbing: same format as level1.json (see its notes). The real Glass Dunes scenes come later."
+  ],
+  "scenes": [
+    {
+      "name": "Dune road",
+      "widthScreens": 2,
+      "parTime": 100,
+      "infantry": {
+        "count": 30,
+        "waveMin": 3,
+        "waveExtra": 3,
+        "intervalMin": 3,
+        "intervalExtra": 2.5,
+        "maxAlive": 12
+      },
+      "events": [
+        {
+          "type": "truck",
+          "at": 0.2,
+          "troops": 8
+        },
+        {
+          "type": "gunner",
+          "at": 0.5,
+          "count": 1
+        },
+        {
+          "type": "cannon",
+          "at": 0.8,
+          "count": 1
+        }
+      ],
+      "boss": null
+    },
+    {
+      "name": "Oil field",
+      "widthScreens": 2,
+      "parTime": 110,
+      "infantry": {
+        "count": 34,
+        "waveMin": 3,
+        "waveExtra": 4,
+        "intervalMin": 3,
+        "intervalExtra": 2.5,
+        "maxAlive": 12
+      },
+      "events": [
+        {
+          "type": "aircraft",
+          "at": 0.25,
+          "count": 2
+        },
+        {
+          "type": "launcher",
+          "at": 0.5,
+          "count": 1
+        },
+        {
+          "type": "truck",
+          "at": 0.75,
+          "troops": 10
+        }
+      ],
+      "boss": null
+    }
+  ]
+}

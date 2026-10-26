@@ -1,6 +1,8 @@
 import type { HallOfFame, FameEntry } from './hallOfFame';
 import type { SceneResult, ScoreKind } from './score';
 import { SCORE } from './config';
+import { LEVEL_NO, LEVELS } from './levelData';
+import { unlockLevel } from './levelSelect';
 
 export interface EndSummary {
   /** 'over': the mech was destroyed; 'win': the level was cleared */
@@ -27,6 +29,8 @@ export const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math
 export class EndScreen {
   private readonly root = $('over');
   private readonly title = $('over-title');
+  private readonly level = $('over-level');
+  private readonly code = $('over-code');
   private readonly summary = $('over-summary');
   private readonly entry = $('over-entry') as HTMLFormElement;
   private readonly name = $('over-name') as HTMLInputElement;
@@ -42,6 +46,10 @@ export class EndScreen {
     const win = s.kind === 'win';
     this.root.classList.toggle('win', win);
     this.title.textContent = win ? 'LEVEL COMPLETE' : 'GAME OVER';
+    this.level.textContent = LEVELS[LEVEL_NO - 1].name.toUpperCase();
+    const next = win ? LEVELS[LEVEL_NO] : undefined;
+    if (next) unlockLevel(LEVEL_NO + 1);
+    this.code.textContent = next ? `CODE FOR LEVEL ${LEVEL_NO + 1}: ${next.code}` : '';
     const bonus = (k: 'timeBonus' | 'shieldBonus' | 'noDamageBonus' | 'noOverheatBonus'): number => s.results.reduce((sum, r) => sum + r[k], 0);
     const kills = Object.values(s.kills).reduce((a, b) => a + b, 0);
     const rows: [string, string][] = [
@@ -62,7 +70,7 @@ export class EndScreen {
       row.append(a, b);
       return row;
     }));
-    this.run = { score: s.score, scenes: s.scenes, complete: win, time: s.time };
+    this.run = { score: s.score, level: LEVEL_NO, scenes: s.scenes, sceneCount: s.sceneCount, complete: win, time: s.time };
     const rank = this.fame.rankOf(this.run);
     this.entry.style.display = rank ? 'flex' : 'none';
     this.rankNote.textContent = rank ? `A PLACE IN THE HALL OF FAME: #${rank}` : '';

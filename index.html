@@ -37,12 +37,23 @@
       #hit { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255,0,0,0.6)); opacity: 0; pointer-events: none; }
       #go { position: fixed; left: 40px; top: 45%; font: bold 40px monospace; color: #ffb347; display: none; pointer-events: none;
         animation: blink 0.8s steps(2) infinite; text-shadow: 0 0 10px #ff8c00; }
+      /* the scene title card */
+      #card { position: fixed; left: 50%; top: 20%; transform: translateX(-50%); text-align: center; font-family: monospace; color: #ffb347; pointer-events: none; opacity: 0;
+        white-space: nowrap; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
+      #card.show { animation: card 4s ease-out forwards; }
+      #card-level { font-size: 14px; letter-spacing: 0.4em; padding-left: 0.4em; opacity: 0.75; }
+      #card-name { margin: 8px 0; font-size: clamp(30px, 5vw, 60px); font-weight: bold; letter-spacing: 0.25em; padding-left: 0.25em; color: #ffd9a0; }
+      #card-count { font-size: 13px; letter-spacing: 0.4em; padding-left: 0.4em; opacity: 0.6; }
+      @keyframes card { 0% { opacity: 0; transform: translate(-50%, 10px); } 14% { opacity: 1; transform: translate(-50%, 0); } 76% { opacity: 1; } 100% { opacity: 0; } }
+      body.menu #card, body.gameover #card, body.paused #card { display: none; }
       @keyframes blink { 50% { opacity: 0.15; } }
       #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
         font-family: monospace; color: #ffb347; user-select: none; cursor: default;
         background: radial-gradient(ellipse at 50% 50%, rgba(40,0,0,0.45) 0%, rgba(2,6,10,0.8) 100%); }
       body.gameover #reticle, body.gameover #hud, body.gameover #boss { display: none; }
       #over.win h2 { color: #7dff9a; text-shadow: 0 0 22px rgba(60,255,120,0.55), 4px 4px 0 #002a0a; }
+      #over-level { margin: -12px 0 20px; font-size: 14px; letter-spacing: 0.3em; color: #ffd9a0; opacity: 0.7; }
+      #over-code { margin: -6px 0 16px; font-size: 16px; letter-spacing: 0.2em; color: #7dff9a; min-height: 1.2em; }
       #over-summary { width: min(420px, 80vw); margin-bottom: 18px; font-size: 16px; letter-spacing: 0.12em; }
       #over-summary .row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(255,179,71,0.18); }
       #over-summary .row:first-child { font-size: 26px; color: #ffd9a0; padding-bottom: 8px; }
@@ -76,7 +87,7 @@
       /* the menu fades in behind the loading screen as it fades out */
       #menu { transition: opacity 0.9s ease-out; }
       body.booting #menu { opacity: 0; pointer-events: none; }
-      body.fame #menu-main, body.fame #kofi, body.fame #music-box, body.settings #menu-main, body.settings #kofi, body.settings #music-box { visibility: hidden; }
+      body.fame #menu-main, body.fame #kofi, body.fame #music-box, body.settings #menu-main, body.settings #kofi, body.settings #music-box, body.code #menu-main, body.code #kofi, body.code #music-box { visibility: hidden; }
       /* ---- settings, over the main menu ---- */
       #settings { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 5; font-family: monospace; color: #ffb347;
         background: rgba(2,6,10,0.94); user-select: none; }
@@ -92,7 +103,7 @@
       #menu { position: fixed; inset: 0; display: none; font-family: monospace; color: #ffb347; user-select: none;
         background: radial-gradient(ellipse at 50% 45%, rgba(2,6,10,0.15) 0%, rgba(2,6,10,0.72) 100%); }
       body.menu #menu { display: block; }
-      body.fame #soundhint, body.settings #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
+      body.fame #soundhint, body.settings #soundhint, body.code #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
       #menu-main { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
       #menu h1 { margin: 0; }
       #menu h1 img { display: block; margin: 0 auto; width: clamp(338px, 41.6vw, 624px); height: auto; filter: drop-shadow(0 0 18px rgba(255,140,0,0.35)); }
@@ -105,6 +116,20 @@
       .menu-items li.sel::before { opacity: 1; }
       .menu-items li:hover { border-color: #ffb347; }
       /* ---- pause menu: over the frozen game ---- */
+      /* ---- enter level code, over the main menu ---- */
+      #code { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 5; font-family: monospace; color: #ffb347;
+        background: rgba(2,6,10,0.94); user-select: none; }
+      body.code #code { display: flex; }
+      #code h2 { margin: 0 0 28px; font-size: 36px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
+      #code-form { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      #code-input { width: 11ch; font: inherit; font-size: 30px; text-align: center; letter-spacing: 0.25em; text-transform: uppercase; color: #ffd9a0;
+        background: rgba(255,179,71,0.1); border: 2px solid #ffb347; padding: 8px 12px; outline: none; }
+      #code-input:focus { box-shadow: 0 0 14px rgba(255,140,0,0.6); }
+      #code-note { min-height: 1.4em; font-size: 16px; letter-spacing: 0.2em; color: #ff5a4a; }
+      #code-hint { margin-top: 26px; font-size: 12px; letter-spacing: 0.15em; opacity: 0.6; }
+      #code p { margin: 8px 0 0; font-size: 12px; opacity: 0.6; letter-spacing: 0.15em; }
+      #code-form.shake { animation: shake 0.35s; }
+      @keyframes shake { 20% { transform: translateX(-10px); } 40% { transform: translateX(9px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
       #pause { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
         font-family: monospace; color: #ffb347; user-select: none; background: rgba(2,6,10,0.6); cursor: default; }
       body.paused #pause { display: flex; }
@@ -148,15 +173,19 @@
     <div id="fps">-- FPS</div>
     <div id="flash"></div>
     <div id="hit"></div>
+    <div id="card"><div id="card-level"></div><div id="card-name"></div><div id="card-count"></div></div>
     <div id="go">&#9668; GO</div>
     <div id="over">
       <h2 id="over-title">GAME OVER</h2>
+      <div id="over-level"></div>
       <div id="over-summary"></div>
+      <div id="over-code"></div>
       <form id="over-entry" autocomplete="off">
         <label>ENTER YOUR NAME <input id="over-name" maxlength="3" spellcheck="false" autocomplete="off" /></label>
         <span id="over-rank"></span>
       </form>
       <ul class="menu-items">
+        <li data-action="next" hidden>NEXT LEVEL</li>
         <li data-action="retry">RETRY</li>
         <li data-action="quit">BACK TO MAIN MENU</li>
       </ul>
@@ -177,6 +206,15 @@
         <table id="fame-table"></table>
         <p>ESC, ENTER OR CLICK TO CLOSE</p>
       </div>
+    </div>
+    <div id="code">
+      <h2>ENTER LEVEL CODE</h2>
+      <form id="code-form" autocomplete="off">
+        <input id="code-input" maxlength="10" spellcheck="false" autocomplete="off" />
+        <span id="code-note"></span>
+      </form>
+      <p>ENTER TO GO, ESC TO CLOSE</p>
+      <div id="code-hint"></div>
     </div>
     <div id="settings">
       <h2>SETTINGS</h2>
