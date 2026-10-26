@@ -26,6 +26,10 @@ const PUSH = new THREE.Vector3();
 const KILL_PUSH = WEAPON.killPush;
 /** wet earth, dark to light */
 const MUD = [0x3a2c1e, 0x4a3a28, 0x5c4630, 0x6b5a45];
+/** chips knocked off a wall, concrete grey */
+const CHIPS = [0x8a8f96, 0x6b7077, 0x4a4f55, 0xa8adb2];
+/** how many times the sparks of an enemy's impact are multiplied: every hit throws sparks and a spray of chips in the same colours */
+const HIT_SPARKS = 2;
 const EMBER_VEL = new THREE.Vector3();
 
 /** Hitscan machine gun: ray ends at the reticle (+ heat jitter); damage resolved there. */
@@ -107,7 +111,8 @@ export class Weapon {
     }
     // rubble is cover: if a chunk lies on the line from the gun to the target, the bullet hits that instead
     if (debris.segmentHit(muzzle, hit.point, this.cover)) {
-      fx.sparks(this.cover, 2, 2.5, [0xffd080, 0xffffff]);
+      fx.sparks(this.cover, 5, 3, [0xffd080, 0xffffff]);
+      fx.burst(this.cover, 6, 2.4, CHIPS, true, 0.6);
       debris.kick(this.cover, this.dir.subVectors(hit.point, muzzle).normalize(), 1.5);
       sfx.impact('rubble', this.cover);
       return;
@@ -115,19 +120,20 @@ export class Weapon {
     if (hit.kind === 'barrel' && hit.barrel) {
       // knocked over along the bullet's path (gun to impact), spilling hot coals
       hit.barrel.shoot(this.dir.subVectors(hit.point, muzzle).normalize(), { coals: world.coals, fx, dust, solid: (x, y, z) => world.solidAt(x, y, z) });
-      fx.sparks(hit.point, 3, 3, [0xffd080, 0xffffff]);
+      fx.sparks(hit.point, 8, 3.2, [0xffd080, 0xffffff]);
       sfx.impact('metal', hit.point);
       return;
     }
     if (hit.kind === 'explosive' && hit.explosive) {
       hit.explosive.ignite();
-      fx.sparks(hit.point, 6, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+      fx.sparks(hit.point, 12, 3.8, [0xffd080, 0xffa040, 0xffffff]);
       sfx.impact('metal', hit.point);
       return;
     }
     if (hit.kind === 'enemy' && hit.enemy) {
       const { colors, sparks, embers } = hit.enemy.impact;
-      fx.sparks(hit.point, sparks, 2.5 + 0.4 * sparks, colors);
+      fx.sparks(hit.point, sparks * HIT_SPARKS, 2.5 + 0.4 * sparks, colors);
+      fx.burst(hit.point, sparks * 2, 2.8, colors, true, 0.6);
       sfx.impact(hit.enemy.impact.sound, hit.point);
       for (let i = 0; i < embers; i++) {
         // thrown back toward the viewer and up, then they fall, bounce and cool on whatever is below
@@ -140,17 +146,18 @@ export class Weapon {
     }
     if (hit.kind === 'ground') {
       // a spray of mud that falls back and splatters, now and then a spark off a stone, and some dust
-      fx.burst(hit.point, 9, 2.8, MUD, true, 0.7);
-      if (Math.random() < 0.35) fx.sparks(hit.point, 3, 3.5, [0xffd080, 0xffa040, 0xffffff]);
-      if (Math.random() < 0.4) dust.puff(hit.point, 1, 0.35, 0.6);
+      fx.burst(hit.point, 20, 3.2, MUD, true, 0.8);
+      if (Math.random() < 0.5) fx.sparks(hit.point, 5, 3.5, [0xffd080, 0xffa040, 0xffffff]);
+      if (Math.random() < 0.7) dust.puff(hit.point, 2, 0.4, 0.8);
       sfx.impact('ground', hit.point);
       return;
     }
-    fx.sparks(hit.point, 2, 2.5, [0xffd080, 0xffa040, 0xffffff]);
+    fx.sparks(hit.point, 6, 3, [0xffd080, 0xffa040, 0xffffff]);
     if (hit.kind === 'wall') {
       hit.building?.damage(hit.point.x, hit.point.y, hit.point.z, WALL_RADIUS);
       sfx.impact('wall', hit.point);
-      if (Math.random() < 0.25) dust.puff(hit.point, 1, 0.3, 0.6);
+      fx.burst(hit.point, 14, 2.8, CHIPS, true, 0.7);
+      if (Math.random() < 0.6) dust.puff(hit.point, 2, 0.35, 0.8);
     }
   }
 

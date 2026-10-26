@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Enemy } from './enemies';
 import type { Hit } from './targeting';
+import { ndcToPx } from './view';
 
 /** how close (screen pixels) the reticle has to be to a target's centre to lock it when it is not exactly on it */
 const PICK_RADIUS_PX = 70;
@@ -50,7 +51,7 @@ export class TargetLock {
   get reticlePx(): { x: number; y: number } {
     const edge = 12;
     this.px.set(
-      THREE.MathUtils.clamp((this.ndc.x + 1) / 2 * innerWidth, edge, innerWidth - edge),
+      THREE.MathUtils.clamp(ndcToPx(this.ndc.x, innerWidth), edge, innerWidth - edge),
       THREE.MathUtils.clamp((1 - this.ndc.y) / 2 * innerHeight, edge, innerHeight - edge),
     );
     return this.px;
@@ -68,7 +69,7 @@ export class TargetLock {
     let best: Enemy | null = null, bestD = PICK_RADIUS_PX;
     for (const e of enemies) {
       if (!e.alive || !this.project(e, camera)) continue;
-      const d = Math.hypot((this.ndc.x + 1) / 2 * innerWidth - mousePx.x, (1 - this.ndc.y) / 2 * innerHeight - mousePx.y);
+      const d = Math.hypot(ndcToPx(this.ndc.x, innerWidth) - mousePx.x, (1 - this.ndc.y) / 2 * innerHeight - mousePx.y);
       if (d < bestD) { bestD = d; best = e; }
     }
     return best;

@@ -1,6 +1,8 @@
 import { Menu } from './menu';
 import { FamePanel } from './famePanel';
 import { hof } from './hallOfFame';
+import { settingsPanel } from './settingsPanel';
+import { loadView } from './view';
 import type { Game } from './game';
 
 /**
@@ -11,6 +13,7 @@ import type { Game } from './game';
 let game: Game | null = null;
 let startWhenReady = false;
 
+loadView();
 const fame = new FamePanel(hof);
 new Menu(
   () => {
@@ -18,7 +21,7 @@ new Menu(
     startWhenReady = true;
     document.body.classList.add('loading');
   },
-  { fame: () => fame.open() },
+  { fame: () => fame.open(), settings: () => settingsPanel.open() },
 );
 
 void import('./game').then(({ Game }) => {

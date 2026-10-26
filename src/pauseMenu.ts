@@ -1,4 +1,5 @@
 import { MenuList } from './menuList';
+import { settingsPanel } from './settingsPanel';
 
 export interface PauseMenuDeps {
   /** is there a game to pause right now (not the main menu, not game over)? */
@@ -10,7 +11,7 @@ export interface PauseMenuDeps {
 
 /**
  * The pause menu: Esc during the game opens an HTML overlay (index.html) over the frozen scene; Esc again, or
- * "resume", carries on, and "back to main menu" abandons the game.
+ * "resume", carries on, "settings" opens the settings page (the scroll direction can be flipped mid-game), and "back to main menu" abandons the game.
  */
 export class PauseMenu {
   private readonly list: MenuList;
@@ -18,6 +19,7 @@ export class PauseMenu {
   constructor(private readonly deps: PauseMenuDeps) {
     this.list = new MenuList(document.getElementById('pause')!, (action) => {
       if (action === 'resume') this.close();
+      else if (action === 'settings') settingsPanel.open();
       else if (action === 'quit') deps.onQuit();
     });
     addEventListener('keydown', (e) => {

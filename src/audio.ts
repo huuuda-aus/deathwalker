@@ -1,5 +1,6 @@
 import raw from './sounds.json';
 import { synthBuffer, type SynthDef } from './synth';
+import { view } from './view';
 
 export type BusName = 'sfx' | 'ambience' | 'music';
 
@@ -129,7 +130,7 @@ export class AudioEngine {
 
   /** Play a track from public/audio/music_<name>.opus on a loop, fading in. It waits for the browser to allow sound (a click or key press). */
   playMusic(name: string, fade = 2): void {
-    this.stopMusic(0.1);
+    this.stopMusic(Math.min(fade, 1));
     const el = new Audio(`${import.meta.env.BASE_URL}audio/music_${name}.opus`);
     el.loop = true;
     el.preload = 'auto';
@@ -258,7 +259,7 @@ export class AudioEngine {
     let pan = 0, gain = 1, octaves = 0;
     if (opts.x !== undefined) {
       const dx = opts.x - this.camX;
-      pan = Math.max(-1, Math.min(1, dx / this.half)) * 0.8;
+      pan = Math.max(-1, Math.min(1, dx / this.half)) * 0.8 * (view.mirror ? -1 : 1);
       const beyond = Math.max(0, Math.abs(dx) - this.half);
       gain = 1 / (1 + beyond * FAR_FALLOFF);
       octaves += beyond * FAR_MUFFLE;

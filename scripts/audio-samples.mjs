@@ -145,6 +145,16 @@ const stepLayer = (file, k, file2, chain2, sub) => ({
   fc: `[0:a]aresample=48000,${slow(k)},lowpass=f=2600[a];[1:a]aresample=48000,${chain2}[b];${SUB(sub)}[sub];[a][b][sub]amix=inputs=3:normalize=0,atrim=0:0.55,asetpts=PTS-STARTPTS,afade=t=out:st=0.4:d=0.15`,
 });
 
+/** a slow, deep boom: a tone sliding down from 58 Hz to under 30, dying away in about three quarters of a second, at volume `v` */
+const SUB_HEAVY = (v) => `aevalsrc=0.9*sin(2*PI*(58*t-20*t*t))*exp(-4.5*t):d=1:s=48000,volume=${v}*0.28`;
+/** a heavy step: `file` slowed to `k` and rounded off, a second sound over it, a low rumble of the ground, and the long boom */
+const heavyStep = (file, k, file2, chain2, sub) => ({
+  inputs: [file, file2, X.rumble],
+  fc: `[0:a]aresample=48000,${slow(k)},lowpass=f=1500[a];[1:a]aresample=48000,${chain2}[b];` +
+    '[2:a]aresample=48000,atrim=2:3,asetpts=PTS-STARTPTS,lowpass=f=140,volume=0.9,afade=t=in:d=0.04,afade=t=out:st=0.5:d=0.4[r];' +
+    `${SUB_HEAVY(sub)}[sub];[a][b][r][sub]amix=inputs=4:normalize=0,atrim=0:1,asetpts=PTS-STARTPTS,afade=t=out:st=0.7:d=0.3`,
+});
+
 /** a rumble: the earthquake recording (from `from` seconds in) and a rumble recording under stones falling at the given moments, slowed to `k` */
 function rumble(from, mid, stones, k) {
   const inputs = [X.owl('Ambience/earthquake'), X.rumble, ...stones.map(([n]) => X.b(n))];
@@ -199,12 +209,13 @@ const RECIPES = {
     mix(X.bang('cannon_04'), X.rumble, `${slow(0.6)},lowpass=f=1200`, 'atrim=0:4,afade=t=out:st=2:d=2,lowpass=f=250', 'aecho=0.8:0.8:200|400|700:0.5|0.35|0.25'),
     mix(X.bang('bang_09'), X.rumble, `${slow(0.5)},lowpass=f=1000`, 'atrim=5:9,afade=t=in:d=0.5,afade=t=out:st=2:d=2,lowpass=f=250', 'aecho=0.8:0.8:200|400|700:0.5|0.35|0.25'),
   ],
-  // the mech's foot: a heavy stomp slowed right down and rounded off, with a deep sub-bass boom under it and a little metal on top
+  // the mech's foot: a very heavy stomp slowed way down and rounded off, a long sub-bass boom with a low rumble of the ground
+  // under it, and a dull slam or clank on top: a lot of mass coming down
   step: [
-    { inputs: [X.stomp], fc: `${R},${slow(0.75)},lowpass=f=2600[a];${SUB(1.4)}[sub];[a][sub]amix=inputs=2:normalize=0,atrim=0:0.55,asetpts=PTS-STARTPTS,afade=t=out:st=0.4:d=0.15` },
-    stepLayer(X.stomp, 0.7, X.a('metal_09'), `${slow(0.6)},volume=0.35`, 1.5),
-    stepLayer(X.stomp, 0.8, X.a('slam_04'), `${slow(0.8)},volume=0.7`, 1.3),
-    stepLayer(X.stomp, 0.72, X.mech('clank1'), `${slow(0.7)},adelay=delays=20:all=1,volume=0.25`, 1.5),
+    heavyStep(X.stomp, 0.5, X.a('slam_04'), `${slow(0.5)},lowpass=f=900,volume=0.8`, 1.6),
+    heavyStep(X.stomp, 0.45, X.a('metal_09'), `${slow(0.45)},lowpass=f=1200,volume=0.3`, 1.8),
+    heavyStep(X.stomp, 0.55, X.b('hit_01'), `${slow(0.5)},lowpass=f=700,volume=0.9`, 1.6),
+    heavyStep(X.stomp, 0.48, X.mech('clank1'), `${slow(0.5)},lowpass=f=1500,adelay=delays=25:all=1,volume=0.3`, 1.7),
   ],
   // a leg's servo whine, taken down: slowed, with the thin top cut away, over a low motor growl rising a little in pitch
   servoBurst: [[X.owl('Scifi/robotics1'), 19.2], [X.owl('Scifi/robotics2'), 19.2], [X.mech('mechanical1'), 1.2], [X.mech('mechanical2'), 2.4], [X.mech('squeakyclick1'), 2.4]]

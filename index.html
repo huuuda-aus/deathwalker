@@ -7,6 +7,13 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
       canvas { display: block; cursor: none; }
+      /* scrolling the other way: the finished picture is flipped (see view.ts) */
+      body.mirror canvas { transform: scaleX(-1); }
+      body.mirror #go { left: auto; right: 40px; }
+      /* mirrored, the gauges move to the top left corner, aligned to the left */
+      body.mirror #hud, body.mirror #fps { right: auto; left: 16px; text-align: left; }
+      body.mirror .bar { margin-left: 0; margin-right: auto; }
+      body.mirror #lives { justify-content: flex-start; }
       #reticle {
         position: fixed; left: 0; top: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px;
         border: 2px solid #ffb347; border-radius: 50%; pointer-events: none; box-sizing: border-box;
@@ -60,7 +67,14 @@
       #fame td.num, #fame th:nth-child(3), #fame th:nth-child(5) { text-align: right; }
       #loading { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; font: 22px monospace; letter-spacing: 0.4em; color: #ffb347; z-index: 6; background: #000; }
       body.loading #loading { display: flex; }
-      body.fame #menu-main, body.fame #kofi, body.fame #music-toggle { visibility: hidden; }
+      body.fame #menu-main, body.fame #kofi, body.fame #music-box, body.settings #menu-main, body.settings #kofi, body.settings #music-box { visibility: hidden; }
+      /* ---- settings, over the main menu ---- */
+      #settings { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 5; font-family: monospace; color: #ffb347;
+        background: rgba(2,6,10,0.94); user-select: none; }
+      body.settings #settings { display: flex; }
+      #settings h2 { margin: 0 0 32px; font-size: 36px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
+      #settings .menu-items li { min-width: 420px; }
+      #settings p { margin: 22px 0 0; font-size: 12px; opacity: 0.6; letter-spacing: 0.15em; }
       #fame tr:nth-child(2) td { color: #ffd9a0; font-size: 22px; }
       #fame p { margin: 22px 0 0; text-align: center; font-size: 12px; opacity: 0.6; letter-spacing: 0.15em; }
       #over h2 { margin: 0 0 24px; font-size: clamp(40px, 7vw, 88px); letter-spacing: 0.2em; padding-left: 0.2em; color: #ff5a4a;
@@ -69,7 +83,7 @@
       #menu { position: fixed; inset: 0; display: none; font-family: monospace; color: #ffb347; user-select: none;
         background: radial-gradient(ellipse at 50% 45%, rgba(2,6,10,0.15) 0%, rgba(2,6,10,0.72) 100%); }
       body.menu #menu { display: block; }
-      body.fame #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
+      body.fame #soundhint, body.settings #soundhint, body.menu #hud, body.menu #boss, body.menu #reticle, body.menu #fps, body.menu #hit, body.menu #flash, body.menu #go, body.menu #over { display: none; }
       #menu-main { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
       #menu h1 { margin: 0; }
       #menu h1 img { display: block; margin: 0 auto; width: clamp(338px, 41.6vw, 624px); height: auto; filter: drop-shadow(0 0 18px rgba(255,140,0,0.35)); }
@@ -89,7 +103,16 @@
       #pause h2 { margin: 0 0 32px; font-size: 40px; letter-spacing: 0.2em; text-shadow: 0 0 14px rgba(255,140,0,0.55); }
       #menu-note { min-height: 20px; margin: 18px 0 0; font-size: 14px; opacity: 0; transition: opacity 0.25s; color: #ffd9a0; }
       #menu-note.on { opacity: 0.9; }
-      #music-toggle { position: absolute; right: 24px; top: 24px; width: 44px; height: 44px; padding: 8px; box-sizing: border-box; cursor: pointer;
+      /* the music corner: the track chooser, one button per soundtrack, with the on/off speaker under it */
+      #music-box { position: absolute; right: 24px; top: 24px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+      #tracks-head { font: 12px monospace; letter-spacing: 0.14em; color: #ffd9a0; opacity: 0.55; pointer-events: none; }
+      #tracks { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      #tracks button { height: 36px; padding: 0 16px; font: 14px monospace; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; color: #ffb347;
+        background: rgba(2,6,10,0.5); border: 2px solid transparent; }
+      #tracks button:hover { border-color: #ffb347; background: rgba(255,179,71,0.12); }
+      #tracks button.on { border-color: #ffb347; background: rgba(255,179,71,0.2); color: #ffd9a0; text-shadow: 0 0 8px rgba(255,140,0,0.7); }
+      #music-box.off #tracks, #music-box.off #tracks-head { opacity: 0.4; }
+      #music-toggle { width: 44px; height: 44px; padding: 8px; box-sizing: border-box; cursor: pointer;
         color: #ffb347; background: rgba(2,6,10,0.5); border: 2px solid transparent; }
       #music-toggle:hover { border-color: #ffb347; background: rgba(255,179,71,0.12); }
       #music-toggle svg { width: 100%; height: 100%; fill: currentColor; stroke: currentColor; stroke-width: 2; stroke-linecap: round; fill-rule: evenodd; }
@@ -134,6 +157,7 @@
       <h2>PAUSED</h2>
       <ul class="menu-items">
         <li data-action="resume">RESUME</li>
+        <li data-action="settings">SETTINGS</li>
         <li data-action="quit">BACK TO MAIN MENU</li>
       </ul>
     </div>
@@ -145,6 +169,14 @@
         <p>ESC, ENTER OR CLICK TO CLOSE</p>
       </div>
     </div>
+    <div id="settings">
+      <h2>SETTINGS</h2>
+      <ul class="menu-items">
+        <li data-action="mirror">SCROLL DIRECTION: <b id="setting-direction"></b></li>
+        <li data-action="back">BACK</li>
+      </ul>
+      <p>UP / DOWN, ENTER, LEFT / RIGHT TO CHANGE, ESC TO CLOSE</p>
+    </div>
     <div id="menu">
       <div id="menu-main">
         <h1><img src="deathwalker-headline.png" alt="DEATHWALKER" /></h1>
@@ -153,11 +185,16 @@
           <li data-action="start">START GAME</li>
           <li data-action="code">ENTER LEVEL CODE</li>
           <li data-action="fame">HALL OF FAME</li>
+          <li data-action="settings">SETTINGS</li>
           <li data-action="credits">CREDITS</li>
         </ul>
         <p id="menu-note"></p>
       </div>
-      <button id="music-toggle" type="button" tabindex="-1"></button>
+      <div id="music-box">
+        <div id="tracks-head">&#9834; BGM track:</div>
+        <div id="tracks"></div>
+        <button id="music-toggle" type="button" tabindex="-1"></button>
+      </div>
       <div id="soundhint">CLICK OR PRESS ANY KEY FOR SOUND</div>
       <a id="kofi" href="https://ko-fi.com/huuuda" target="_blank" rel="noopener">
         <img src="kofi-qr.svg" alt="QR code for ko-fi.com/huuuda" />
