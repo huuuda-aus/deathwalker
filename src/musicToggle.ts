@@ -13,7 +13,7 @@ export class MusicToggle {
     try { this.on = localStorage.getItem(KEY) !== 'off'; } catch { /* storage blocked: music stays on */ }
     this.apply();
     this.btn.addEventListener('click', () => { this.toggle(); this.btn.blur(); });
-    addEventListener('keydown', (e) => { if (e.code === 'KeyM' && document.body.classList.contains('menu')) this.toggle(); });
+    addEventListener('keydown', (e) => { if (e.code === 'KeyM' && document.body.classList.contains('menu') && !document.body.classList.contains('booting')) this.toggle(); });
   }
 
   private toggle(): void {

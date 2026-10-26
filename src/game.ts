@@ -132,8 +132,14 @@ export class Game {
   private shake = 0;
   private camX = this.level.camX;
   private last = performance.now();
-  /** the views start black and fade in once the first frame has rendered (the shaders compile on it) */
+  /** the views start black and fade in once the first frame has rendered (the shaders compile on it) and the page calls `show()` */
   private revealed = false;
+  private onFirstFrame: () => void = () => {};
+  /**
+   * Settles once everything the main menu needs is in: the first frame drawn (the shaders compiled), the sound samples
+   * decoded, and the menu's soundtrack buffered. The page keeps the menu hidden behind its loading screen until then.
+   */
+  readonly ready: Promise<void>;
   /** adaptive resolution: the pixel ratio follows frame time, within [MIN_RATIO, ratioCap] */
   private ratioCap = Math.min(devicePixelRatio, 2);
   private perfFrames = 0;
@@ -239,9 +245,10 @@ export class Game {
     this.mech.root.visible = false;
     this.placeCamera();
     // sound: the samples load behind the menu, and the browser wants a click or key press before it will play any
-    void audio.load();
+    const samples = audio.load();
     const track = this.pickMenuTrack();
     audio.playMusic(track);
+    this.ready = Promise.all([samples, audio.musicReady, new Promise<void>((done) => { this.onFirstFrame = done; })]).then(() => undefined);
     audio.setVolume('ambience', MENU_AMBIENCE);
     new SoundTest(audio);
     new MusicToggle();
@@ -283,7 +290,6 @@ export class Game {
 
   /** "start game" was chosen on the menu */
   startPlaying(): void {
-    document.body.classList.remove('loading');
     this.mode = 'play';
     audio.stopMusic(2);
     audio.setVolume('ambience', 1, 1.5);               // the menu's soundtrack: there is no music in the game itself
@@ -291,10 +297,15 @@ export class Game {
     this.last = performance.now();
   }
 
-  /** after the first rendered frame: let the scene fade in from black (a frame later, so the slow first frame is not part of the fade) */
+  /** the first frame has been rendered */
   private reveal(): void {
     if (this.revealed) return;
     this.revealed = true;
+    this.onFirstFrame();
+  }
+
+  /** the page is ready to be seen: let the scene fade in from black (a frame later, so the slow first frame is not part of the fade) */
+  show(): void {
     requestAnimationFrame(() => {
       for (const c of [this.renderer.domElement, this.foreground.canvas]) c.style.opacity = '1';
     });

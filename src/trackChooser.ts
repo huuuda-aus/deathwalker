@@ -36,7 +36,7 @@ export class TrackChooser {
       return b;
     });
     addEventListener('keydown', (e) => {
-      if (!document.body.classList.contains('menu') || document.body.classList.contains('fame') || document.body.classList.contains('settings')) return;
+      if (!document.body.classList.contains('menu') || document.body.classList.contains('booting') || document.body.classList.contains('fame') || document.body.classList.contains('settings')) return;
       const i = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
       if (i >= 0 && i < MENU_TRACKS.length) this.pick(MENU_TRACKS[i]);
     });
