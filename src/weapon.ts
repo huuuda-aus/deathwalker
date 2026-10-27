@@ -125,6 +125,22 @@ export class Weapon {
       world.damageDoor(BLAST_DOOR.bulletDamage, hit.point);
       return;
     }
+    if (hit.kind === 'hall') {
+      // concrete and steel: sparks, chips of plaster, a ring of dust
+      fx.sparks(hit.point, 8, 3.2, [0xffd080, 0xffffff]);
+      fx.burst(hit.point, 6, 2, STONE_CHIPS, true, 0.5);
+      if (Math.random() < 0.5) dust.puff(hit.point, 1, 0.1, 0.5);
+      sfx.impact('rubble', hit.point);
+      return;
+    }
+    if (hit.kind === 'lamp') {
+      // a tube bursts: glass, a shower of sparks, and the light goes out
+      const at = world.corridor?.breakHit();
+      fx.sparks(hit.point, 18, 4, [0xffffff, 0xcfe4ff, 0xffd080]);
+      fx.burst(hit.point, 6, 2, [0xcfe4ff, 0xffffff], true, 0.6);
+      if (at) sfx.impact('metal', hit.point);
+      return;
+    }
     if (hit.kind === 'rockwall') {
       fx.sparks(hit.point, 6, 3, [0xffd080, 0xffffff]);
       fx.burst(hit.point, 8, 2.2, STONE_CHIPS, true, 0.6);
@@ -178,16 +194,16 @@ export class Weapon {
       // a spray of mud that falls back and splatters, now and then a spark off a stone, and some dust
       if (terrain.on) {
         // loose sand: a tall, narrow spout of grains thrown well above the mech's own height, and a plume of dust climbing with it
-        fx.geyser(hit.point, 22, SAND, 1);
+        fx.geyser(hit.point, 22, SAND, 0.5);
         for (let i = 0; i < 4; i++) {
-          GEYSER_VEL.set((Math.random() - 0.5) * 0.5, 3 + Math.random() * 3, (Math.random() - 0.5) * 0.4);
-          dust.billow(hit.point, GEYSER_VEL, 0.3 + Math.random() * 0.3, 1.2 + Math.random() * 0.9, 1.5, 0, 0.45);
+          GEYSER_VEL.set((Math.random() - 0.5) * 0.3, 1.5 + Math.random() * 1.5, (Math.random() - 0.5) * 0.25);
+          dust.billow(hit.point, GEYSER_VEL, 0.06 + Math.random() * 0.06, 0.9 + Math.random() * 0.7, 1.5, 0, 0.45);
         }
         if (Math.random() < 0.3) fx.sparks(hit.point, 3, 3.5, [0xffd080, 0xffa040, 0xffffff]);
       } else {
         fx.burst(hit.point, 20, 3.2, MUD, true, 0.8);
         if (Math.random() < 0.5) fx.sparks(hit.point, 5, 3.5, [0xffd080, 0xffa040, 0xffffff]);
-        if (Math.random() < 0.7) dust.puff(hit.point, 2, 0.4, 0.8);
+        if (Math.random() < 0.7) dust.puff(hit.point, 2, 0.1, 0.8);
       }
       sfx.impact('ground', hit.point);
       return;

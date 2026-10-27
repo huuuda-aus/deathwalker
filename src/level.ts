@@ -68,6 +68,8 @@ export class LevelRunner {
   bossDown = false;
   /** which of the scene's events have gone (by index into `scene.events`) */
   readonly fired = new Set<number>();
+  /** (the doors are down) the camera may follow the mech past the end of the last scene */
+  free = false;
   camX = START_CAM_X;
   /** signed camera velocity (negative = advancing left) */
   camVel = 0;
@@ -106,7 +108,8 @@ export class LevelRunner {
       this.camX = Math.max(max, this.camX - RAIL_SPEED * dt);
       if (this.camX <= max) { this.camX = max; this.phase = 'active'; event = 'arrived'; }
     } else if (this.phase === 'active') {
-      const { min, max } = this.range(this.index);
+      const { min: lo, max } = this.range(this.index);
+      const min = this.free ? -Infinity : lo;
       this.camX += (Math.min(max, Math.max(min, follow)) - this.camX) * Math.min(1, dt * 4);
       // (testing, DEBUG.noResistance: every scene but the last is cleared at once, and the last never is)
       const cleared = DEBUG.noResistance ? this.index < LEVEL.length - 1 : this.scene.boss ? this.bossDown : this.kills >= this.scene.spawnBudget;

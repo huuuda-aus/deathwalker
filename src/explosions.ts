@@ -64,6 +64,7 @@ export class Explosions {
     world.blastScenery(at, radius);
     world.blastWalls(at, radius);
     world.blastDoor(at, radius);
+    world.corridor?.blast(at, radius);
     // the shockwave shoves rubble outwards, and the ground throws up clods
     debris.blast(at, radius * SHOCK_REACH, SHOCK_SPEED * Math.sqrt(scale) * shock);
     const floor = (x: number, z: number, y: number): number => world.surfaceTop(x, z, y);

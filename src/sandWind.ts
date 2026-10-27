@@ -33,8 +33,13 @@ export class SandWind {
 
   constructor(private readonly dust: Dust) {}
 
+  private on = true;
+  /** the wind is shut out (the mech is inside) */
+  setEnabled(on: boolean): void { this.on = on; }
+
   update(dt: number, camX: number): void {
     this.t += dt;
+    if (!this.on) return;
     const gust = this.gust;
     // the harder it gusts, the more is lifted (and not in proportion: a strong gust is much more than twice a mild one)
     this.streamerDebt += (STREAMERS.calm + (STREAMERS.gust - STREAMERS.calm) * gust * gust) * dt;

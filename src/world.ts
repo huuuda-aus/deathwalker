@@ -19,6 +19,7 @@ import { Wreckage } from './wreckage';
 import { farDunes } from './farDunes';
 import { RockWall } from './rockWall';
 import { BlastDoor, DOOR_OFFSET_Z } from './blastDoor';
+import type { Corridor } from './corridor';
 import { LANE } from './mech';
 import type { Blocker } from './debris';
 
@@ -382,6 +383,11 @@ export class World {
 
   /** Where a ray meets the blast doors (distance, point in out), or Infinity. */
   raycastDoor(ray: THREE.Ray, out: THREE.Vector3): number { return this.door ? this.door.raycast(ray, out) : Infinity; }
+
+  /** the hall behind the doors (set by the game): its lamps can be shot out */
+  corridor: Corridor | null = null;
+  raycastHall(ray: THREE.Ray, out: THREE.Vector3): number { return this.corridor ? this.corridor.raycastShell(ray, out) : Infinity; }
+  raycastLamps(ray: THREE.Ray, out: THREE.Vector3): number { return this.corridor ? this.corridor.raycast(ray, out) : Infinity; }
 
   /** A bullet into the doors. */
   damageDoor(amount: number, at: THREE.Vector3): void { this.door?.damage(amount, at); }

@@ -5,6 +5,7 @@ import { settingsPanel } from './settingsPanel';
 import { CodePanel } from './codePanel';
 import { loadView } from './view';
 import { takeAutostart } from './levelSelect';
+import { audio } from './audio';
 import type { Game } from './game';
 
 /**
@@ -28,6 +29,9 @@ new Menu(
   { fame: () => fame.open(), settings: () => settingsPanel.open(), code: () => codePanel.open() },
 );
 
+// the sound recordings start downloading and decoding at once, alongside the game's own code (the game picks the same load up)
+void audio.load();
+
 void (async () => {
   progress(0.08);
   await painted();
@@ -35,8 +39,10 @@ void (async () => {
   progress(0.4);
   await painted();
   game = new Game();
-  game.start();
+  progress(0.6);
+  await game.precompile();
   progress(0.75);
+  game.start();
   await Promise.race([game.ready, new Promise((done) => setTimeout(done, GIVE_UP))]);
   progress(1);
   game.show();

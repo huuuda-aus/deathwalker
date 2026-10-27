@@ -18,6 +18,8 @@ export interface Road {
   /** its middle (z) and half width */
   zc: number;
   halfWidth: number;
+  /** how far the hall behind the doors runs (it is hollow: no dune over it) */
+  hall: number;
 }
 
 export const terrain: { on: boolean; road: Road | null } = { on: false, road: null };
@@ -62,9 +64,9 @@ function valleyRise(x: number, z: number, r: Road): number {
   // the far side climbs and climbs away from the street (a slope, never a shelf), to a height that fills the top of the view at the doors
   const far = 34 * smooth(r.zc - r.halfWidth - 2, r.zc - r.halfWidth - 46, z) * (1 - smooth(-62, -100, z)) * (0.9 + 0.1 * Math.sin(x * 0.045 + z * 0.02 + 1));
   const near = 1.8 * smooth(r.zc + r.halfWidth + 5, r.zc + r.halfWidth + 12, z);
-  const lateral = 1 - smooth(30, 46, Math.abs(z - r.zc));
+  const lateral = (1 - smooth(30, 46, r.zc - z)) * (1 - smooth(14, 18, z - r.zc));
   // (the tunnel itself is hollow: no sand over the floor of its mouth, the length of the portal)
-  const tunnel = smooth(r.doorX - 6.5, r.doorX - 6, x) * smooth(r.doorX + 1.5, r.doorX + 0.5, x) * (1 - smooth(10.5, 11.5, Math.abs(z - (r.zc - 3))));
+  const tunnel = smooth(r.doorX - r.hall, r.doorX - r.hall + 0.5, x) * smooth(r.doorX + 1.5, r.doorX + 0.5, x) * (1 - smooth(10.5, 11.5, Math.abs(z - (r.zc - 3))));
   const cap = 24 * smooth(r.doorX - 0.5, r.doorX - 17, x) * lateral * (1 - tunnel);                         // the huge dune the tunnel is cut into
   // the road runs downhill into the valley: its floor sinks (and the ground either side blends back up to the dunes)
   const dip = -5.5 * smooth(r.doorX + 95, r.doorX + 8, x) * (1 - smooth(r.halfWidth, r.halfWidth + 12, Math.abs(z - r.zc)));
@@ -95,8 +97,8 @@ float valleyRise(vec2 p) {
   float depth = sm(${num(r.doorX + 110)}, ${num(r.doorX + 10)}, p.x);
   float far = 34.0 * sm(${num(r.zc - r.halfWidth - 2)}, ${num(r.zc - r.halfWidth - 46)}, p.y) * (1.0 - sm(-62.0, -100.0, p.y)) * (0.9 + 0.1 * sin(p.x * 0.045 + p.y * 0.02 + 1.0));
   float near = 1.8 * sm(${num(r.zc + r.halfWidth + 5)}, ${num(r.zc + r.halfWidth + 12)}, p.y);
-  float lateral = 1.0 - sm(30.0, 46.0, abs(p.y - ${num(r.zc)}));
-  float tunnel = sm(${num(r.doorX - 6.5)}, ${num(r.doorX - 6)}, p.x) * sm(${num(r.doorX + 1.5)}, ${num(r.doorX + 0.5)}, p.x) * (1.0 - sm(10.5, 11.5, abs(p.y - ${num(r.zc - 3)})));
+  float lateral = (1.0 - sm(30.0, 46.0, ${num(r.zc)} - p.y)) * (1.0 - sm(14.0, 18.0, p.y - ${num(r.zc)}));
+  float tunnel = sm(${num(r.doorX - r.hall)}, ${num(r.doorX - r.hall + 0.5)}, p.x) * sm(${num(r.doorX + 1.5)}, ${num(r.doorX + 0.5)}, p.x) * (1.0 - sm(10.5, 11.5, abs(p.y - ${num(r.zc - 3)})));
   float cap = 24.0 * sm(${num(r.doorX - 0.5)}, ${num(r.doorX - 17)}, p.x) * lateral * (1.0 - tunnel);
   float dip = -5.5 * sm(${num(r.doorX + 95)}, ${num(r.doorX + 8)}, p.x) * (1.0 - sm(${num(r.halfWidth)}, ${num(r.halfWidth + 12)}, abs(p.y - ${num(r.zc)})));
   return max(depth * max(far, near), cap) + dip;
@@ -131,6 +133,8 @@ function roadColour(): string {
   const r = terrain.road;
   if (!r) return '';
   return /* glsl */ `
+  // (no ground inside the hall behind the doors: it has a floor of its own)
+  if (vTPos.x < ${num(r.doorX - 6)} && vTPos.x > ${num(r.doorX - r.hall)} && abs(vTPos.z - ${num(r.zc - 3 + 0.5)}) < 11.0) discard;
   {
     float road = roadMask(vTPos.xz);
     if (road > 0.0) {

@@ -7,7 +7,7 @@ import type { FireBarrel } from './fire';
 import type { ExplosiveBarrel } from './explosiveBarrel';
 import type { Scenery } from './scenery';
 
-export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'prop' | 'rockwall' | 'door' | 'ground' | 'backdrop';
+export type HitKind = 'enemy' | 'wall' | 'barrel' | 'explosive' | 'prop' | 'rockwall' | 'door' | 'lamp' | 'hall' | 'ground' | 'backdrop';
 
 export interface Hit {
   kind: HitKind;
@@ -45,8 +45,9 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   }
   // ground
   if (ray.direction.y < 0) {
-    let t = -ray.origin.y / ray.direction.y;
-    // over dunes the ground is not at height 0: settle on where the ray meets it (a few steps are plenty on slopes this gentle)
+    // over dunes the ground is not at height 0 (and where the road dives into the valley or the hall the camera itself is below 0):
+    // start from the ground under the middle of the street and settle on where the ray meets it (a few steps are plenty on slopes this gentle)
+    let t = ((terrain.on ? world.groundHeight(ray.origin.x, 0) : 0) - ray.origin.y) / ray.direction.y;
     if (terrain.on) {
       for (let k = 0; k < 5 && t > 0; k++) {
         ray.at(t, tmp);
@@ -70,6 +71,12 @@ export function castRay(ray: THREE.Ray, enemies: Enemy[], world: World, out: Hit
   // the bunker's blast doors
   const dt2 = world.raycastDoor(ray, tmp);
   if (dt2 < bestT) { bestT = dt2; out.kind = 'door'; out.point.copy(tmp); }
+  // the hall's walls and ceiling
+  const ht = world.raycastHall(ray, tmp);
+  if (ht < bestT) { bestT = ht; out.kind = 'hall'; out.point.copy(tmp); }
+  // the hall's lamps
+  const lt = world.raycastLamps(ray, tmp);
+  if (lt < bestT) { bestT = lt; out.kind = 'lamp'; out.point.copy(tmp); }
   // the dry-stone walls
   const rt = world.raycastWalls(ray, tmp);
   if (rt < bestT) { bestT = rt; out.kind = 'rockwall'; out.point.copy(tmp); }

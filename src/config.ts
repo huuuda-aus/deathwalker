@@ -4,14 +4,14 @@
  * TEMP (testing): `noResistance` turns the enemies off (nothing is sent in) and the scenes clear themselves as soon as they begin (the
  * camera follows the mech through all of them), and the last scene never ends, so the mech can walk the whole level to the end of it.
  */
-export const DEBUG = { noResistance: true, noTurrets: false };
+export const DEBUG = { noResistance: true, noTurrets: false, /** start just inside the blast doors (open), in the hall */ startInHall: true };
 
-/** the bunker's blast doors: what they take. A bullet barely scratches them (it is a vault door); a blast (a shell, a bomb, a barrel or a crate going up) does the real harm. */
+/** the bunker's blast doors: what they take. One bullet is enough to breach them (hp-sized damage), as is any blast. */
 export const BLAST_DOOR = {
   hp: 700,
-  bulletDamage: 1,
+  bulletDamage: 700,
   /** damage of a blast right against the door, falling to nothing at the edge of its radius */
-  blastPower: 100,
+  blastPower: 700,
   /** the breach: how many blasts go off across the door, how long they take (s), and how big each is */
   breachBlasts: 7,
   breachTime: 0.9,

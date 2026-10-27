@@ -106,18 +106,24 @@ export class AudioEngine {
   }
 
   /** Fetch whatever recordings exist (public/audio/index.json lists them) and decode them. Missing ones stay placeholders. */
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    return (this.loading ??= this.fetchAll());
+  }
+  private loading: Promise<void> | null = null;
+
+  private async fetchAll(): Promise<void> {
     try {
       const res = await fetch(`${import.meta.env.BASE_URL}audio/index.json`);
       if (!res.ok) throw new Error(String(res.status));
       const index = (await res.json()) as Record<string, number>;
       await Promise.all(Object.entries(index).map(async ([id, count]) => {
         if (!(id in DEFS)) return;
-        const list: AudioBuffer[] = [];
-        for (let n = 1; n <= count; n++) {
-          const r = await fetch(`${import.meta.env.BASE_URL}audio/${id}_${n}.opus`);
-          if (r.ok) list.push(await this.ctx.decodeAudioData(await r.arrayBuffer()));
-        }
+        // every variant of every sound is fetched and decoded at once (one after another, the round trips alone took seconds)
+        const decoded = await Promise.all(Array.from({ length: count }, async (_, n) => {
+          const r = await fetch(`${import.meta.env.BASE_URL}audio/${id}_${n + 1}.opus`);
+          return r.ok ? this.ctx.decodeAudioData(await r.arrayBuffer()) : null;
+        }));
+        const list = decoded.filter((b): b is AudioBuffer => b !== null);
         if (list.length) { this.buffers.set(id as SoundId, list); this.fromFile.add(id as SoundId); }
       }));
     } catch { /* no recordings yet: the placeholders play */ }

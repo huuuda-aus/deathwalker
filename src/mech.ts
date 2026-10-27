@@ -109,6 +109,8 @@ export class Mech {
   onStep: ((at: THREE.Vector3, strength: number) => void) | null = null;
   /** set by the game: a foot has come down, once per step: under the middle of the sole (world), which way the foot points (0 = toe to the left), the strength 0..1 (a footprint, a cloud of dust) */
   onPrint: ((at: THREE.Vector3, yaw: number, strength: number) => void) | null = null;
+  /** set by the game: the height of the ground at a world (x, z); the feet follow it up and down the dunes */
+  ground: ((x: number, z: number) => number) | null = null;
   private flames: Flame[] = [];
   /** the cockpit pod with its guns (it turns to face the reticle) */
   get cockpitModel(): THREE.Object3D { return this.cockpit; }
@@ -121,6 +123,8 @@ export class Mech {
   /** which way the lower half faces: 0 = left (-x), PI/2 = toward the camera, PI = right */
   private bodyYaw = 0;
   private idleTime = 0;
+  private tmpW = new THREE.Vector3();
+  private tmpX = new THREE.Vector3();
   private cockpit = new THREE.Group();
   private legs: Leg[] = [];
   /** gait cycles completed (fractional) */
@@ -330,6 +334,7 @@ export class Mech {
     this.pelvis.position.y = PELVIS_Y - bob + this.settle;
     const hipHeight = this.pelvis.position.y - HIP_DROP - ANKLE_H;
 
+    this.root.updateMatrixWorld(true);
     for (const leg of this.legs) {
       const u = this.cycle + leg.offset;
       // forward the foot lands as the cycle comes round to 0; played in reverse, as it comes back down to the end of its stance
@@ -358,7 +363,20 @@ export class Mech {
         fx = STEP - 2 * STEP * v * v * (3 - 2 * v);
         lift = Math.sin(Math.PI * v) * LIFT;
       }
-      this.solveLeg(leg, fx * amp, -hipHeight + lift * amp);
+      // the sole lands on the ground where it is (up or down the slope from the body), tilted to lie on it
+      let rise = 0, tilt = 0;
+      if (this.ground) {
+        const e = 0.3;
+        const foot = this.lower.localToWorld(this.tmpV.set(fx * amp, 0, leg.hip.position.z));
+        const ahead = this.lower.localToWorld(this.tmpW.set(fx * amp + e, 0, leg.hip.position.z));
+        const behind = this.lower.localToWorld(this.tmpX.set(fx * amp - e, 0, leg.hip.position.z));
+        const h = this.ground(foot.x, foot.z);
+        rise = THREE.MathUtils.clamp((h - this.root.position.y) / MECH_SCALE, -1.4, 1.4);
+        const along = (this.ground(ahead.x, ahead.z) - this.ground(behind.x, behind.z)) / (2 * e);   // ground rise per world unit along the foot's +x
+        tilt = Math.atan(THREE.MathUtils.clamp(along, -1, 1)) * (1 - Math.min(1, lift / (LIFT * 0.5)));
+      }
+      this.solveLeg(leg, fx * amp, -hipHeight + lift * amp + rise);
+      leg.foot.rotation.z += tilt;
     }
 
     // Cockpit aim. Forward is -x; yaw turns toward +z (camera), pitch lifts the guns.

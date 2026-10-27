@@ -53,6 +53,20 @@ export const ENVIRONMENTS: Record<string, EnvDef> = {
     shimmer: 1,
     dust: 0xc78a58,
   },
+  /** inside the bunker: cold, dim, lit by the hall's own lamps (the sun is gone) */
+  bunker: {
+    fog: { color: 0x07090b, near: 30, far: 120 },
+    hemi: { sky: 0x4a5560, ground: 0x1c2125, intensity: 0.7 },
+    sun: { color: 0x9fb4c8, intensity: 0, offset: [34, 6, 4] },
+    rim: { color: 0xffffff, intensity: 0 },
+    day: 0,
+    rain: 0,
+    haze: { color: [0.03, 0.04, 0.05], density: 0.25 },
+    ground: [1, 1, 1],
+    sky: { zenith: [0, 0, 0], mid: [0, 0, 0], sun: [0, 1, 0] },
+    shimmer: 0,
+    dust: 0x7a7e80,
+  },
 };
 
 /** the blendable numbers of a look */

@@ -142,7 +142,7 @@ export class Fx {
       this.particles.push({
         pos: at.clone(),
         vel: new THREE.Vector3(Math.cos(a) * out, (4.5 + Math.random() * 4.5) * height, Math.sin(a) * out * 0.6),
-        life, maxLife: life, size: 0.06 + Math.random() * 0.1,
+        life, maxLife: life, size: 0.025 + Math.random() * 0.04,
       });
       this.mesh.setColorAt(this.particles.length - 1, this.tmpColor.setHex(colors[(Math.random() * colors.length) | 0]));
     }

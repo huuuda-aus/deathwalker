@@ -9,7 +9,8 @@ import { BLAST_DOOR } from './config';
 export const DOOR_H = 7;
 export const DOOR_W = DOOR_H * 3;
 /** the concrete mouth of the tunnel they are set in: how high and how deep (into the dune) */
-const PORTAL_H = 9.2, PORTAL_D = 6;
+const PORTAL_H = 9.2;
+export const PORTAL_D = 6;
 /** the doors stand across the street, this far toward the far side from the middle of the road (z) */
 export const DOOR_OFFSET_Z = -3;
 
@@ -191,6 +192,14 @@ export class BlastDoor {
     this.hp -= n;
     this.scorch();
     if (this.hp <= 0) this.breach(at);
+  }
+
+  /** (testing) the doors stand open without ceremony: no leaves, no blasts */
+  open(): void {
+    this.breached = true;
+    this.hp = 0;
+    this.leaves.forEach((l) => { l.visible = false; });
+    this.amber.emissiveIntensity = this.red.emissiveIntensity = 0.05;
   }
 
   /** the steel darkens and glows with the heat as the doors weaken */

@@ -9,8 +9,10 @@ import { Sky } from './sky';
 import { Wind } from './wind';
 import { Litter } from './litter';
 import { SandWind } from './sandWind';
+import { Corridor, CORRIDOR_LENGTH } from './corridor';
+import { DOOR_OFFSET_Z, PORTAL_D } from './blastDoor';
 import { Footprints } from './footprints';
-import { terrain } from './terrain';
+import { terrain, terrainHeight } from './terrain';
 import { Rain } from './rain';
 import { FootSplasher, SplashFx } from './water';
 import { Fx } from './fx';
@@ -41,8 +43,8 @@ import { Weapon } from './weapon';
 import { Debris } from './debris';
 import { Dust } from './dust';
 import { Post } from './post';
-import { CAM_DIST, LEVEL, LEVELS, LEVEL_NO, LevelRunner, endDoorX, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
-import { PLAYER, CAMERA, MECH_DEATH, CRATER, CASING, STORM } from './config';
+import { CAM_DIST, FOLLOW_OFFSET, LEVEL, LEVELS, LEVEL_NO, LevelRunner, endDoorX, SCREEN_W, START_MECH_X, type LevelEvent } from './level';
+import { DEBUG, PLAYER, CAMERA, MECH_DEATH, CRATER, CASING, STORM } from './config';
 import { Casings } from './casings';
 
 /** adaptive resolution tuning (ms are per-frame averages over one second) */
@@ -90,6 +92,10 @@ export class Game {
   private readonly litter: Litter | null;
   private readonly sand: Dust | null;
   private readonly sandWind: SandWind | null;
+  /** the hall behind the blast doors (levels that end at a bunker) and whether the mech is in it */
+  private readonly corridor: Corridor | null;
+  private indoors = false;
+  private hallLight = 0;
   private readonly footprints: Footprints;
   private readonly rain: Rain;
   private readonly splashFx: SplashFx;
@@ -197,9 +203,11 @@ export class Game {
 
     this.dust = new Dust(scene);
     this.debris = new Debris(scene, this.dust);
-    const road = LEVELS[LEVEL_NO - 1].approach === 'bunker' ? { doorX: endDoorX(), full: 24, to: 74, zc: 0.5, halfWidth: 10 } : null;
+    const road = LEVELS[LEVEL_NO - 1].approach === 'bunker' ? { doorX: endDoorX(), full: 24, to: 74, zc: 0.5, halfWidth: 10, hall: PORTAL_D + CORRIDOR_LENGTH + 2 } : null;
     this.world = new World(scene, this.debris, this.dust, LEVELS[LEVEL_NO - 1].world, road);
     this.sky = new Sky(scene);
+    this.corridor = road ? new Corridor(scene, road.doorX, road.zc + DOOR_OFFSET_Z, terrainHeight(road.doorX, road.zc + DOOR_OFFSET_Z)) : null;
+    this.world.corridor = this.corridor;
     const desert = LEVELS[LEVEL_NO - 1].world === 'desert';
     this.litter = desert ? null : new Litter(scene, this.wind);
     this.sand = desert ? new Dust(scene) : null;
@@ -217,12 +225,13 @@ export class Game {
     this.mech.root.position.x = START_MECH_X;
     // each heavy footfall bursts the ground from under the foot: clods of dirt in the ground's colour, a puff of dust, a faint jolt
     // (a puddle is splashed instead)
+    this.mech.ground = (x, z) => this.world.groundHeight(x, z);
     this.mech.onStep = (at, strength) => {
       this.shakeScreen(at, (FOOTFALL_SHAKE * strength) / 2);
       if (this.world.puddleDepth(at.x, at.z) > 0.2) return;
       this.footDust.set(at.x, this.mech.root.position.y + 0.03, at.z);
-      this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, LEVELS[LEVEL_NO - 1].world === 'desert' ? SAND_CLODS : GROUND_CLODS, true, 1.5);
-      this.dust.puff(this.footDust, 1, 0.3 * strength, 1.2);
+      this.fx.burst(this.footDust, Math.round(16 * strength), 3.2, LEVELS[LEVEL_NO - 1].world === 'desert' ? SAND_CLODS : GROUND_CLODS, true, 0.5);
+      this.dust.puff(this.footDust, 1, 0.08 * strength, 1.2);
     };
     // in the sand each step leaves a footprint and throws up a cloud of dust: a ring of low puffs rolling out from the foot, and a few that billow up
     this.mech.onPrint = (at, yaw, strength) => {
@@ -232,11 +241,11 @@ export class Game {
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2 + Math.random() * 0.4, speed = (1.1 + Math.random() * 1.7) * (0.5 + 0.5 * strength);
         this.stepPuff.set(Math.cos(a) * speed, 0.2 + Math.random() * 0.5, Math.sin(a) * speed * 0.6);
-        this.dust.billow(this.footDust, this.stepPuff, 0.3 + Math.random() * 0.3, 0.9 + Math.random() * 0.9, 2.4, 0, 0.42);
+        this.dust.billow(this.footDust, this.stepPuff, 0.06 + Math.random() * 0.06, 0.9 + Math.random() * 0.9, 2.4, 0, 0.42);
       }
       for (let i = 0; i < 5; i++) {
         this.stepPuff.set((Math.random() - 0.5) * 0.8, 0.9 + Math.random() * 0.9, (Math.random() - 0.5) * 0.6);
-        this.dust.billow(this.footDust, this.stepPuff, 0.45 + Math.random() * 0.4, 1.6 + Math.random() * 1.2, 1.1, 0, 0.36);
+        this.dust.billow(this.footDust, this.stepPuff, 0.09 + Math.random() * 0.08, 1.6 + Math.random() * 1.2, 1.1, 0, 0.36);
       }
     };
     scene.add(this.mech.root);
@@ -332,6 +341,19 @@ export class Game {
   /** the main menu's soundtrack: the one the player chose last time, else one of them at random */
   private pickMenuTrack(): string { return savedTrack() ?? MENU_TRACKS[Math.floor(Math.random() * MENU_TRACKS.length)]; }
 
+  /**
+   * Have the GPU compile the scene's shaders in parallel and wait for them without blocking the page (the loading screen keeps moving, the
+   * sounds keep decoding), instead of stalling the first frame while they compile one after the other. The mech is hidden in the menu, so
+   * it is shown for the compile or its shaders would be built at the first click on PLAY.
+   */
+  async precompile(): Promise<void> {
+    const { renderer, scene, camera, mech } = this;
+    const was = mech.root.visible;
+    mech.root.visible = true;
+    try { await renderer.compileAsync(scene, camera); } catch { /* the first frame compiles whatever is left */ }
+    mech.root.visible = was;
+  }
+
   start(): void {
     if (import.meta.env.DEV) Object.assign(window, { __game: this });     // dev: poke at it from the console
     this.frame();
@@ -342,6 +364,7 @@ export class Game {
     unlockLevel(LEVEL_NO);
     this.card.show(0);
     this.mode = 'play';
+    this.startInHall();
     audio.stopMusic(2);
     audio.setVolume('ambience', 1, 1.5);               // the menu's soundtrack: there is no music in the game itself
     this.mech.root.visible = true;
@@ -460,6 +483,26 @@ export class Game {
     this.winT = 0;
     this.card.show(0);
     this.env.snap(LEVEL[0].environment);
+    this.indoors = false;
+    this.startInHall();
+  }
+
+  /** (testing, DEBUG.startInHall) begin just inside the blast doors, which stand open, in the hall's own light */
+  private startInHall(): void {
+    const c = this.corridor;
+    if (!DEBUG.startInHall || !c) return;
+    const x = c.x0 - 6;
+    this.level.index = LEVEL.length - 1;
+    this.level.phase = 'active';
+    this.level.camX = x - FOLLOW_OFFSET;
+    this.camX = this.level.camX;
+    this.camLift = c.floorY;
+    this.mech.root.position.set(x, c.floorY, 0.4);
+    this.world.update(this.camX, 0);
+    this.world.door?.open();
+    this.indoors = true;
+    this.hallLight = 1;
+    this.env.snap('bunker');
   }
 
   private hurtPlayer(n: number): void {
@@ -524,11 +567,12 @@ export class Game {
   /** rails camera, then keep the mech on screen (visible half-width shrinks toward the camera) */
   private updateCamera(dt: number): LevelEvent {
     const { level, mech } = this;
+    level.free = !!this.world.door?.breached;                       // the doors are down: the camera follows him in
     const levelEvent = level.update(dt, mech.root.position.x);
     this.camX = level.camX;
     const halfVis = ((CAM_DIST - mech.root.position.z) / CAM_DIST) * (SCREEN_W / 2) * CAMERA.mechMargin;
     // (and never into the tunnel's mouth, until the doors are blown: then as far in as the portal goes)
-    const stop = terrain.road ? terrain.road.doorX + (this.world.door?.breached ? -4.2 : 1.6) : -Infinity;
+    const stop = !terrain.road ? -Infinity : !this.world.door?.breached ? terrain.road.doorX + 1.6 : this.corridor ? this.corridor.stopX : terrain.road.doorX - 4.2;
     mech.root.position.x = THREE.MathUtils.clamp(mech.root.position.x, Math.max(this.camX - halfVis, stop), this.camX + halfVis);
     // the camera rides up and down with the ground the mech is on (the road runs downhill into the valley)
     this.camLift += (mech.root.position.y - this.camLift) * Math.min(1, dt * 2.5);
@@ -602,6 +646,12 @@ export class Game {
   private updateEnvironment(dt: number, now: number): void {
     const { sun, rim, camX, mech, rain, post, hazeLights, muzzlePos, weapon, world } = this;
     // the look of the scene: fades from one scene's environment to the next
+    // (the look of the hall behind the doors, once the mech is in it)
+    const inside = !!this.corridor && this.mech.root.position.x < this.corridor.x0 - 1;
+    if (inside !== this.indoors) { this.indoors = inside; this.env.fadeTo(inside ? 'bunker' : this.level.scene.environment, 2.2); }
+    this.hallLight += ((inside ? 1 : 0) - this.hallLight) * Math.min(1, dt * 1.5);
+    this.corridor?.update(this.camX, this.hallLight, dt);
+    this.sandWind?.setEnabled(!inside);
     this.env.update(dt);
     const look = this.env.now;
     rain.scale = look.rain;
