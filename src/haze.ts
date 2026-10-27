@@ -112,14 +112,35 @@ uniform sampler2D tScene;
 uniform sampler2D tHaze;
 uniform sampler2D tDepth;
 uniform float cameraNear, cameraFar, uTime, uShimmer, uHorizon;
+bool isSky(vec2 p) { return texture2D(tDepth, p).r > 0.9999; }
+bool farLand(vec2 p) {
+  float d = texture2D(tDepth, p).r;
+  return d < 0.9999 && -perspectiveDepthToViewZ(d, cameraNear, cameraFar) > 36.0;
+}
 void main() {
   vec2 uv = vUv;
   if (uShimmer > 0.001) {
     float dist = -perspectiveDepthToViewZ(texture2D(tDepth, vUv).r, cameraNear, cameraFar);
     float far = smoothstep(70.0, 130.0, dist);
     float band = exp(-pow((vUv.y - uHorizon) / 0.06, 2.0));
-    float w = 0.6 * sin(vUv.y * 260.0 + uTime * 2.6 + sin(vUv.x * 9.0 + uTime) * 1.5) + 0.4 * sin(vUv.y * 110.0 - uTime * 1.7 + vUv.x * 5.0);
-    uv.x += w * 0.0022 * uShimmer * far * band;
+    float w = 0.6 * sin(vUv.y * 260.0 - uTime * 9.5 + sin(vUv.x * 9.0 + uTime * 3.0) * 1.5) + 0.4 * sin(vUv.y * 110.0 - uTime * 6.0 + vUv.x * 5.0);
+    // hot air rising off the dunes (the waves climb, a few cycles a second): the crest line against the sky wavers, the air above it most and the sand just under it a little.
+    // (looked for by the depth buffer: sky above a far dune, within a few percent of the screen's height)
+    float edge = 0.0;
+    if (isSky(vUv)) {
+      for (int i = 1; i <= 8; i++) {
+        vec2 q = vUv - vec2(0.0, float(i) * 0.011);
+        if (farLand(q)) { edge = 1.0 - float(i - 1) / 8.0; break; }
+      }
+    } else if (farLand(vUv)) {
+      for (int i = 1; i <= 3; i++) {
+        vec2 q = vUv + vec2(0.0, float(i) * 0.011);
+        if (isSky(q)) { edge = 0.7 * (1.0 - float(i - 1) / 3.0); break; }
+      }
+    }
+    float w2 = sin(vUv.x * 40.0 - uTime * 7.0 + sin(vUv.y * 70.0 - uTime * 4.5) * 2.0) * 0.7 + 0.3 * sin(vUv.y * 190.0 - uTime * 12.0);
+    uv.x += w * 0.0022 * uShimmer * far * band + (w * 0.0042 + w2 * 0.002) * uShimmer * edge;
+    uv.y += w2 * 0.0016 * uShimmer * edge;
   }
   vec4 scene = texture2D(tScene, uv);
   vec4 haze = texture2D(tHaze, uv);

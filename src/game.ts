@@ -708,6 +708,7 @@ export class Game {
     this.foreground.update(this.camX);
     if (this.mode === 'menu') {
       this.updateEnvironment(dt, now);
+      this.sand?.update(dt);                  // (the wind-blown sand moves behind the menu too)
       this.post.render(dt, 0);
       this.reveal();
       requestAnimationFrame(this.frame);

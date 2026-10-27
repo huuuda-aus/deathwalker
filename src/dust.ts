@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { PointPool } from './pointpool';
 
-const MAX_DUST = 1800;
+const MAX_DUST = 3000;
 
-interface Puff { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; size0: number; size1: number; drag: number; alpha: number; dark: number; windK: number }
+interface Puff { pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number; size0: number; size1: number; drag: number; alpha: number; dark: number; windK: number; /** gravity (units/s²) for a puff that respects the ground, or undefined for one that ignores it */ grav?: number }
 
 /** Soft smoke/dust puffs: one Points draw call with per-particle size and alpha. */
 export class Dust {
@@ -34,6 +34,8 @@ export class Dust {
   private pool: PointPool<Puff>;
   /** wind speed toward -x (units/s); the older a cloud, the more it is carried along */
   windSpeed = 0;
+  /** the height of the ground at (x, z): puffs thrown with a gravity ride up the slopes, hop, and fall back onto them */
+  ground: ((x: number, z: number) => number) | null = null;
 
   constructor(scene: THREE.Scene) {
     this.pool = new PointPool(scene, MAX_DUST, this.material, { position: 3, aSize: 1, aAlpha: 1, aDark: 1 });
@@ -71,11 +73,11 @@ export class Dust {
   setColor(c: THREE.Color): void { (this.material.uniforms.uColor.value as THREE.Color).copy(c); }
 
   /** One puff thrown with a velocity of the caller's choosing: the pieces of a mushroom cloud. @param drag how fast it slows (1/s) @param alpha how solid it is */
-  billow(at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number, drag: number, dark: number, alpha = 0.7): void {
+  billow(at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number, drag: number, dark: number, alpha = 0.7, grav?: number): void {
     if (this.pool.full) return;
     this.pool.push({
       pos: at.clone(), vel: vel.clone(),
-      life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag, alpha, dark, windK: 0.6,
+      life, maxLife: life, size0: size * 0.6, size1: size * (1.8 + Math.random()), drag, alpha, dark, windK: 0.6, grav,
     });
   }
 
@@ -96,7 +98,16 @@ export class Dust {
       p.life -= dt;
       if (p.life <= 0) { this.pool.removeAt(i); continue; }
       p.vel.multiplyScalar(Math.max(0, 1 - p.drag * dt));
+      if (p.grav !== undefined && this.ground) p.vel.y -= p.grav * dt;
       p.pos.addScaledVector(p.vel, dt);
+      if (p.grav !== undefined && this.ground) {
+        // the ground is solid: grains climb a dune on the wind, leave the crest with the speed they have, and drop back onto the lee side
+        const h = this.ground(p.pos.x, p.pos.z) + 0.01;
+        if (p.pos.y < h) {
+          p.pos.y = h;
+          p.vel.y = p.vel.y < -0.8 ? -p.vel.y * 0.25 : Math.max(0, p.vel.y);
+        }
+      }
       p.pos.x -= this.windSpeed * p.windK * (1 - p.life / p.maxLife + 0.15) * dt;
     }
     this.pool.upload((p, i, a) => {
